@@ -5,18 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Second Brain: Dari AI-Using ke AI-Native</title>
 <style>
-  /* ── Tokens: one committed theme (projector dark) ─────────────── */
   :root {
-    --ink:      #0E1420;   /* deep blue-black ground */
+    --ink:      #0E1420;
     --panel:    #171F2F;
     --panel-2:  #1E2839;
     --line:     #2A3547;
-    --text:     #EAE6DC;   /* warm paper white */
+    --text:     #EAE6DC;
     --muted:    #97A0B0;
-    --amber:    #E8A33D;   /* terminal amber, the one accent */
+    --amber:    #E8A33D;
     --amber-dim:#a97828;
-    --teal:     #6FB5AC;   /* "with second brain" state */
-    --red:      #D97B6C;   /* "before" state */
+    --teal:     #6FB5AC;
+    --red:      #D97B6C;
     --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
     --sans: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
   }
@@ -24,103 +23,121 @@
   html, body { height: 100%; background: var(--ink); color: var(--text);
     font-family: var(--sans); overflow: hidden; }
 
-  /* ── Deck machinery ───────────────────────────────────────────── */
   .deck { height: 100%; position: relative; }
   .slide {
     position: absolute; inset: 0; display: none;
-    padding: clamp(2rem, 6vh, 4.5rem) clamp(2rem, 8vw, 7rem);
-    flex-direction: column; justify-content: center;
+    padding: clamp(1.6rem, 5vh, 3.4rem) clamp(1.6rem, 7vw, 6rem);
+    flex-direction: column; justify-content: center; overflow-y: auto;
   }
   .slide.active { display: flex; }
-  .slide-inner { width: 100%; max-width: 1120px; margin: 0 auto; }
+  .slide-inner { width: 100%; max-width: 1180px; margin: 0 auto; }
 
-  .hud { position: fixed; bottom: 1.1rem; right: 1.4rem; z-index: 10;
-    font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+  .hud { position: fixed; bottom: 1.05rem; right: 1.3rem; z-index: 10;
+    font-family: var(--mono); font-size: .76rem; color: var(--muted); }
   .progress { position: fixed; top: 0; left: 0; height: 3px;
     background: var(--amber); width: 0; transition: width .25s ease; z-index: 10; }
-  .navhint { position: fixed; bottom: 1.1rem; left: 1.4rem; z-index: 10;
-    font-family: var(--mono); font-size: .78rem; color: var(--muted); opacity: .8; }
+  .navhint { position: fixed; bottom: 1.05rem; left: 1.3rem; z-index: 10;
+    font-family: var(--mono); font-size: .76rem; color: var(--muted); opacity: .75; }
 
-  /* ── Type scale ───────────────────────────────────────────────── */
-  .eyebrow { font-family: var(--mono); font-size: .82rem; letter-spacing: .18em;
-    text-transform: uppercase; color: var(--amber); margin-bottom: 1.1rem; }
-  h1 { font-size: clamp(2.2rem, 5.2vw, 4.2rem); font-weight: 800;
+  .eyebrow { font-family: var(--mono); font-size: .8rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--amber); margin-bottom: 1rem; }
+  h1 { font-size: clamp(2.1rem, 5vw, 4.1rem); font-weight: 800;
     line-height: 1.06; letter-spacing: -.02em; text-wrap: balance; }
-  h2 { font-size: clamp(1.7rem, 3.6vw, 2.7rem); font-weight: 800;
-    line-height: 1.12; letter-spacing: -.015em; text-wrap: balance;
-    margin-bottom: 1.4rem; }
-  .lead { font-size: clamp(1.02rem, 1.7vw, 1.3rem); color: var(--muted);
-    line-height: 1.55; max-width: 62ch; }
-  .lead strong, li strong, td strong { color: var(--text); }
-  ul.points { list-style: none; margin-top: 1.4rem; display: grid; gap: .85rem; }
-  ul.points li { padding-left: 1.6rem; position: relative;
-    font-size: clamp(1rem, 1.55vw, 1.22rem); line-height: 1.5; color: var(--muted); }
+  h2 { font-size: clamp(1.55rem, 3.4vw, 2.5rem); font-weight: 800;
+    line-height: 1.12; letter-spacing: -.015em; text-wrap: balance; margin-bottom: 1.1rem; }
+  .lead { font-size: clamp(1rem, 1.6vw, 1.25rem); color: var(--muted);
+    line-height: 1.55; max-width: 66ch; }
+  .lead strong, li strong, td strong, .cap p strong { color: var(--text); }
+  ul.points { list-style: none; margin-top: 1.2rem; display: grid; gap: .75rem; }
+  ul.points li { padding-left: 1.5rem; position: relative;
+    font-size: clamp(.98rem, 1.5vw, 1.18rem); line-height: 1.5; color: var(--muted); }
   ul.points li::before { content: "▸"; position: absolute; left: 0; color: var(--amber); }
 
   .cmd { font-family: var(--mono); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 6px; padding: .95rem 1.15rem; font-size: clamp(.85rem, 1.4vw, 1.05rem);
-    color: var(--text); overflow-x: auto; white-space: pre; line-height: 1.65; }
+    border-radius: 6px; padding: .9rem 1.1rem; font-size: clamp(.8rem, 1.35vw, 1rem);
+    color: var(--text); overflow-x: auto; white-space: pre; line-height: 1.6; }
   .cmd .p  { color: var(--amber); }
   .cmd .c  { color: var(--muted); }
   .cmd .ok { color: var(--teal); }
 
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; align-items: start; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
   @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
 
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    padding: 1.3rem 1.4rem; }
-  .card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .5rem; }
-  .card p { font-size: .95rem; color: var(--muted); line-height: 1.5; }
-  .card .tag { font-family: var(--mono); font-size: .72rem; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--amber); display: block; margin-bottom: .55rem; }
-  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.6rem; }
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.6rem; }
-  @media (max-width: 820px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  /* Capability cards: the "› ask" + outcome pattern */
+  .caps { display: grid; gap: .9rem; margin-top: 1.3rem; }
+  .caps.two { grid-template-columns: 1fr 1fr; }
+  .caps.three { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .caps.two, .caps.three { grid-template-columns: 1fr; } }
+  .cap { background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    padding: .95rem 1.1rem; }
+  .cap .ask { font-family: var(--mono); font-size: clamp(.82rem, 1.25vw, .98rem);
+    color: var(--amber); line-height: 1.4; margin-bottom: .4rem; }
+  .cap .ask::before { content: "› "; color: var(--muted); }
+  .cap p { font-size: clamp(.85rem, 1.2vw, .98rem); color: var(--muted); line-height: 1.45; }
 
-  table { border-collapse: collapse; width: 100%; margin-top: 1.4rem;
-    font-size: clamp(.88rem, 1.35vw, 1.05rem); }
-  th, td { text-align: left; padding: .62rem .9rem; border-bottom: 1px solid var(--line); }
-  th { font-family: var(--mono); font-size: .74rem; letter-spacing: .14em;
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.2rem 1.3rem; }
+  .card h3 { font-size: 1.02rem; font-weight: 700; margin-bottom: .45rem; }
+  .card p { font-size: .93rem; color: var(--muted); line-height: 1.5; }
+  .card .tag, .cap .tag { font-family: var(--mono); font-size: .7rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--amber); display: block; margin-bottom: .5rem; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.4rem; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.4rem; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 1.2rem;
+    font-size: clamp(.85rem, 1.3vw, 1.02rem); }
+  th, td { text-align: left; padding: .55rem .85rem; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em;
     text-transform: uppercase; color: var(--muted); font-weight: 600; }
   td.num { font-variant-numeric: tabular-nums; text-align: right; font-family: var(--mono); }
   .tablewrap { overflow-x: auto; }
 
-  .bar { height: 26px; border-radius: 4px; margin: .35rem 0 1rem; }
+  .bar { height: 24px; border-radius: 4px; margin: .3rem 0 1rem; }
   .bar.before { background: var(--red); width: 70%; }
   .bar.after  { background: var(--teal); width: 30%; }
-  .barlabel { font-family: var(--mono); font-size: .8rem; color: var(--muted); }
+  .barlabel { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
 
-  /* Benefit-cost calculator */
-  .calc label { display: flex; align-items: center; gap: .7rem; padding: .5rem .2rem;
-    font-size: clamp(.92rem, 1.4vw, 1.08rem); cursor: pointer; color: var(--muted);
+  .calc label { display: flex; align-items: center; gap: .65rem; padding: .4rem .15rem;
+    font-size: clamp(.85rem, 1.3vw, 1rem); cursor: pointer; color: var(--muted);
     border-bottom: 1px solid var(--line); }
   .calc label:hover { color: var(--text); }
-  .calc input { accent-color: var(--amber); width: 1.05rem; height: 1.05rem; }
+  .calc .grp { font-family: var(--mono); font-size: .68rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--amber-dim); margin: .7rem 0 .1rem; }
+  .calc input { accent-color: var(--amber); width: 1rem; height: 1rem; flex: none; }
   .calc .price { margin-left: auto; font-family: var(--mono);
-    font-variant-numeric: tabular-nums; }
-  .total { margin-top: 1.1rem; display: flex; justify-content: space-between;
-    align-items: baseline; }
-  .total .n { font-family: var(--mono); font-size: clamp(1.5rem, 2.6vw, 2.2rem);
+    font-variant-numeric: tabular-nums; color: var(--text); flex: none; }
+  .total { margin-top: .9rem; display: flex; justify-content: space-between; align-items: baseline; }
+  .total .n { font-family: var(--mono); font-size: clamp(1.4rem, 2.4vw, 2rem);
     font-weight: 700; font-variant-numeric: tabular-nums; }
   .total.hemat .n { color: var(--teal); }
   .total.mahal .n { color: var(--red); }
-  .kurs { font-family: var(--mono); font-size: .74rem; color: var(--muted); margin-top: 1rem; }
+  .kurs { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin-top: .9rem; }
 
-  .big-quote { font-size: clamp(1.5rem, 3.2vw, 2.4rem); font-weight: 700;
+  .big-quote { font-size: clamp(1.4rem, 3vw, 2.3rem); font-weight: 700;
     line-height: 1.3; text-wrap: balance; }
   .big-quote em { color: var(--amber); font-style: normal; }
 
   .offer { border: 1px solid var(--amber-dim); background:
-    linear-gradient(180deg, rgba(232,163,61,.08), rgba(232,163,61,.02));
-    border-radius: 12px; padding: 1.6rem 1.8rem; margin-top: 1.6rem; }
-  .offer .harga { font-family: var(--mono); font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+    linear-gradient(180deg, rgba(232,163,61,.09), rgba(232,163,61,.02));
+    border-radius: 11px; padding: 1.2rem 1.4rem; }
+  .offer .harga { font-family: var(--mono); font-size: clamp(1.5rem, 2.8vw, 2.2rem);
     font-weight: 700; color: var(--amber); }
   .offer .coret { text-decoration: line-through; color: var(--muted);
-    font-size: 1.1rem; margin-left: .8rem; }
+    font-size: 1rem; margin-left: .6rem; }
+  .offer h3 { font-size: 1rem; margin-bottom: .5rem; }
+  .memtiers { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 1.1rem;
+    font-family: var(--mono); font-size: .9rem; color: var(--muted); }
+  .memtiers b { color: var(--text); }
 
   a { color: var(--amber); text-decoration: none; }
   .keys { font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 4px; padding: .1rem .45rem; font-size: .8em; }
+    border-radius: 4px; padding: .08rem .4rem; font-size: .82em; white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: 1.3rem;
+    font-family: var(--mono); font-size: clamp(.8rem, 1.3vw, 1rem); }
+  .flow span { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: .45rem .75rem; color: var(--text); }
+  .flow .arw { background: none; border: none; color: var(--amber); padding: 0 .1rem; }
   @media (prefers-reduced-motion: reduce) { .progress { transition: none; } }
 </style>
 </head>
@@ -131,10 +148,10 @@
 <!-- 1 ─ Title -->
 <section class="slide active">
   <div class="slide-inner">
-    <div class="eyebrow">Workshop · Sabtu, 11 Juli 2026</div>
+    <div class="eyebrow">Workshop AI Circle · Juli 2026</div>
     <h1>AI Second Brain:<br>dari <span style="color:var(--red)">AI-Using</span> ke <span style="color:var(--amber)">AI-Native</span></h1>
-    <p class="lead" style="margin-top:1.4rem">Bangun partner AI yang kenal kerjaanmu, jalan di laptopmu sendiri, dan ngerjain beban administratifmu. Hari ini kita install bareng, langkah demi langkah.</p>
-    <p class="lead" style="margin-top:2.2rem; font-size:1rem">Brian Arfi Faridhi · Product Leader &amp; Content Creator</p>
+    <p class="lead" style="margin-top:1.3rem">Partner AI yang kenal kerjaan lo, jalan di laptop lo sendiri, dan ngerjain beban administratif lo tiap hari. Ini bukan tab ChatGPT biasa. Hari ini kita bongkar isinya, dan kalian install sendiri.</p>
+    <p class="lead" style="margin-top:2rem; font-size:1rem">Brian Arfi Faridhi · Product Leader &amp; Content Creator</p>
   </div>
 </section>
 
@@ -146,131 +163,274 @@
     <ul class="points">
       <li><strong>Tokopedia</strong>: optimasi OTP yang menghemat sekitar <strong>$2 juta per tahun</strong>.</li>
       <li><strong>Flip</strong>: efisiensi biaya operasional sekitar <strong>$2,12 juta per tahun</strong>.</li>
-      <li>Sekarang: <strong>product leader di Merit</strong> (Saudi Arabia), memimpin 4 tim produk sekaligus: Marketplace, Platform, B2C Super App, E-Commerce Solution.</li>
-      <li>Sisi lain: content creator <strong>Brobri</strong>, ngajarin Applied AI untuk pekerja kantoran.</li>
+      <li>Sekarang <strong>product leader di Merit</strong> (Saudi Arabia), memimpin 4 tim produk sekaligus: Marketplace, Platform, B2C Super App, E-Commerce Solution.</li>
+      <li>Sisi lain: content creator <strong>Brobri</strong>, ngajarin Applied AI buat pekerja kantoran.</li>
     </ul>
-    <p class="lead" style="margin-top:1.6rem">Empat tim, dua negara, satu timezone yang gak sinkron. Satu-satunya cara ini semua jalan: sistem AI yang kerja bareng gw tiap hari.</p>
+    <p class="lead" style="margin-top:1.4rem">Empat tim, dua negara, satu orang. Yang bikin ini semua jalan bukan gw kerja lebih keras. Tapi satu sistem AI yang kerja bareng gw tiap hari. Itu yang mau gw tunjukkin.</p>
   </div>
 </section>
 
-<!-- 3 ─ Seminggu gw -->
+<!-- 3 ─ The promise / teaser -->
 <section class="slide">
   <div class="slide-inner">
-    <div class="eyebrow">Seminggu gw kayak gimana</div>
-    <h2>Ini bukan demo. Ini rutinitas beneran.</h2>
-    <div class="grid2">
-      <div class="card"><span class="tag">09:13 pagi</span><h3>Morning briefing otomatis</h3><p>Second brain sudah menyapu 60 channel Slack, 5 board Jira, kalender, dan email. Gw bangun, prioritas hari ini sudah tersusun.</p></div>
-      <div class="card"><span class="tag">Setelah meeting</span><h3>MOM dalam hitungan menit</h3><p>Transcript meeting ditarik dari recorder, disusun jadi minutes of meeting rapi lengkap dengan action item dan owner-nya.</p></div>
-      <div class="card"><span class="tag">Kamis sore</span><h3>Weekly report sekali perintah</h3><p>"Buatkan weekly report." Dia baca semua transcript dan update seminggu, timbang mana yang penting, tulis dalam format standar gw, quality check, lalu jadi Google Doc.</p></div>
-      <div class="card"><span class="tag">Kapan pun</span><h3>Draft Slack dan PRD</h3><p>Semua draft pakai konteks dan gaya bahasa gw. Dan ada guardrail: dia tidak pernah kirim apa pun tanpa approval eksplisit.</p></div>
+    <div class="eyebrow">Sebelum masuk teknis</div>
+    <h2>Coba bayangin kamu tinggal ngomong, dan ini semua kelar</h2>
+    <div class="caps three">
+      <div class="cap"><div class="ask">sapu semua Slack, ringkas, siapin balasan</div></div>
+      <div class="cap"><div class="ask">rekam meeting ini, bikin notulennya</div></div>
+      <div class="cap"><div class="ask">bikin Google Doc dari draft ini, kasih link + diagram</div></div>
+      <div class="cap"><div class="ask">bikin laporan mingguan buat bos</div></div>
+      <div class="cap"><div class="ask">bikinin gambar + carousel buat post</div></div>
+      <div class="cap"><div class="ask">potong podcast ini jadi 5 klip viral</div></div>
+      <div class="cap"><div class="ask">tarik data funnel dari Mixpanel</div></div>
+      <div class="cap"><div class="ask">inget ya, gw gak suka kalimat bertele-tele</div></div>
+      <div class="cap"><div class="ask">riset 20 tools sekaligus, paralel</div></div>
+    </div>
+    <p class="lead" style="margin-top:1.3rem">Sembilan ini cuma pembuka. Sekarang kita lihat satu-satu, semuanya kerjaan beneran yang gw pakai.</p>
+  </div>
+</section>
+
+<!-- 4 ─ Showcase: Komunikasi -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 1/8 · Komunikasi</div>
+    <h2>Slack, email, WhatsApp: disapu, dibaca, dibalas sebagai kamu</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Slack sweep + balas</span><div class="ask">sapu 60 channel, ringkas blocker &amp; keputusan, siapin balasan</div><p>Baca history lintas channel, deteksi pola, draft balasan, lewat <strong>quality-check otomatis</strong>, lalu kirim <strong>sebagai kamu</strong> (bukan bot) setelah kamu bilang "kirim".</p></div>
+      <div class="cap"><span class="tag">Email</span><div class="ask">balas email ini, gaya gw, cc atasan gw</div><p>Susun email dari akun kerjamu, multi-baris, dengan cc dan subjek. Selalu minta approval eksplisit sebelum benar-benar terkirim.</p></div>
+      <div class="cap"><span class="tag">WhatsApp</span><div class="ask">teruskan post channel ini ke grup komunitas gw</div><p>Lewat sesi WhatsApp Web yang tersimpan: cari grup, ketik, kirim, atau forward post channel ke banyak grup sekaligus, dengan aturan safety.</p></div>
+      <div class="cap"><span class="tag">Balasan komentar</span><div class="ask">bales komentar si A di Google Doc ini</div><p>Cari thread komentar, tulis balasan sebagai kamu, tempel sebagai reply tanpa bikin komentar nyasar.</p></div>
     </div>
   </div>
 </section>
 
-<!-- 4 ─ Masalah -->
+<!-- 5 ─ Showcase: Dokumen -->
 <section class="slide">
   <div class="slide-inner">
-    <div class="eyebrow">Masalahnya</div>
+    <div class="eyebrow">Bisa ngapain aja · 2/8 · Dokumen</div>
+    <h2>Dari markdown jadi Google Doc rapi, lengkap sama editnya</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Bikin GDoc</span><div class="ask">jadiin PRD ini Google Doc, rapiin tabelnya</div><p>Convert markdown jadi Google Doc asli, formatting pass buat lebar kolom tabel, lalu <strong>restrict sharing ke domain kantor</strong> otomatis, keluar link + file ID.</p></div>
+      <div class="cap"><span class="tag">Edit bedah</span><div class="ask">tambahin hyperlink ke sheet, sisipkan diagram arsitektur</div><p>Edit dokumen yang sudah ada di tempat: tambah link, sisip baris tabel, embed diagram Mermaid jadi PNG inline. Bukan overwrite, jadi editan tanganmu aman.</p></div>
+      <div class="cap"><span class="tag">Diagram</span><div class="ask">gambarin flow Order Fulfillment</div><p>Dari deskripsi bahasa biasa jadi diagram Mermaid, divalidasi dulu biar gak error, baru di-embed ke dokumen.</p></div>
+      <div class="cap"><span class="tag">Export PDF</span><div class="ask">jadiin lead magnet ini PDF yang rapi</div><p>Markdown jadi PDF A4 ber-brand: font serif, heading sans, tabel bergaya, nomor halaman. Siap dibagikan atau di-download.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ─ Showcase: Meeting -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 3/8 · Meeting</div>
+    <h2>Rekam, transkrip, notulen, action item, semua otomatis</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Rekam lokal</span><div class="ask">rekam meeting yang lagi jalan ini</div><p>Rekam audio sistem + mic di laptop, transkrip lokal pakai GPU (gratis, tanpa Fathom), langsung jadi draft notulen di folder yang benar.</p></div>
+      <div class="cap"><span class="tag">MOM dari transkrip</span><div class="ask">bikin notulen rapi dari meeting tadi</div><p>Tarik transkrip, pisahkan keputusan &amp; action item, draft notulen dalam format standar, lewat quality-check, jadi Google Doc, lalu <strong>update to-do list dengan owner + deadline</strong>.</p></div>
+      <div class="cap"><span class="tag">Prep interview</span><div class="ask">siapin plan interview dari CV kandidat ini</div><p>Parse CV, susun rubrik 7 dimensi + bank pertanyaan. Habis interview: nilai kandidat dari transkrip, kasih verdict HIRE / NO HIRE + catatan.</p></div>
+      <div class="cap"><span class="tag">Calendar</span><div class="ask">tunjukin meeting minggu ini</div><p>Sapu semua acara hari ini / minggu ini, dikelompokkan per hari dengan peserta + link, siap ditempel ke dashboard.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ─ Showcase: Reporting & operasi -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 4/8 · Laporan &amp; operasi</div>
+    <h2>Briefing harian, laporan eksekutif, dashboard hidup</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Briefing pagi</span><div class="ask">mulai hari gw: apa yang penting hari ini</div><p>Sapu kalender + Slack + email + notulen kemarin + to-do, ringkas jadi <strong>top-5 prioritas</strong> sebelum kamu buka laptop.</p></div>
+      <div class="cap"><span class="tag">Weekly report</span><div class="ask">bikin laporan mingguan buat bos</div><p>Baca semua transkrip + notulen + Slack seminggu, <strong>timbang mana yang penting</strong> (bukan yang terbaru), verifikasi klaim, tulis laporan eksekutif, update dokumen lama di tempat.</p></div>
+      <div class="cap"><span class="tag">PRD bergaransi</span><div class="ask">bikin PRD fitur X</div><p>Cek dulu apakah PRD-nya sudah ada (anti-duplikat), gali lewat interview terstruktur, draft, lewat quality-gate, jadi Google Doc + terdaftar di master product list.</p></div>
+      <div class="cap"><span class="tag">Dashboard hidup</span><div class="ask">buka dashboard semua proyek gw</div><p>Satu halaman di <span class="keys">localhost:3737</span>: status 4 tim, blocker, sprint health, kalender, penghematan biaya, refresh tiap 5 menit dari markdown + Drive + Slack + Jira.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ─ Showcase: Data & analytics -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 5/8 · Data</div>
+    <h2>Tanya data, bukan bikin query manual</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Jira</span><div class="ask">siapa yang overload di sprint sekarang</div><p>Query sprint aktif di dua instance Jira, samakan status, <strong>flag kalau ada orang megang lebih dari 40% tiket</strong>, keluar digest rapi buat briefing.</p></div>
+      <div class="cap"><span class="tag">Mixpanel</span><div class="ask">tarik konversi funnel B2C bulan ini</div><p>Hit Mixpanel API: jumlah event, dropoff funnel, kurva retensi cohort, bisa di-export ke CSV buat analisis lebih dalam.</p></div>
+      <div class="cap"><span class="tag">Metabase</span><div class="ask">jalanin query ini ke database, kasih tabelnya</div><p>Autentikasi, jalankan SQL atau tarik card dashboard dengan filter, balikin hasil sebagai tabel siap-laporan.</p></div>
+      <div class="cap"><span class="tag">SEO</span><div class="ask">audit SEO halaman AI Circle gw</div><p>Crawl halaman, cek title/meta/heading/schema, analisis keyword vs intent, kasih checklist perbaikan konten &amp; teknis.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 ─ Showcase: Desain & media -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 6/8 · Desain &amp; media</div>
+    <h2>Gambar, carousel, diagram, presentasi: dari kalimat</h2>
+    <div class="caps two">
+      <div class="cap"><span class="tag">Generate + edit gambar</span><div class="ask">bikin infografik 3 tips, warna brand gw</div><p>Generate gambar via model image terbaru dari prompt teks, buat post LinkedIn, cover carousel, atau lead magnet, siap dipasang.</p></div>
+      <div class="cap"><span class="tag">Carousel PNG</span><div class="ask">bikin carousel 9 slide dari poin-poin ini</div><p>Render 9 gambar 1080×1350 dengan font + warna + spacing brand, siap posting ke IG, atau distitch jadi video.</p></div>
+      <div class="cap"><span class="tag">Presentasi</span><div class="ask">bikin deck dari outline ini</div><p>Susun deck HTML atau slide (persis seperti deck yang lagi kalian lihat ini), atau lewat integrasi Canva / Figma Slides.</p></div>
+      <div class="cap"><span class="tag">Slide bertema</span><div class="ask">render carousel tema tertentu, teks kanan-ke-kiri</div><p>Renderer lokal dengan layout khusus, tipografi, dan aturan brand, gratis tanpa tools berbayar.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 ─ Showcase: Konten & video (generate post detail) -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 7/8 · Konten &amp; video</div>
+    <h2>Satu topik, jadi post lengkap plus klip video</h2>
+    <p class="lead">"Bikin post" bukan sekadar bikin caption. Ini pipeline penuhnya:</p>
+    <div class="flow">
+      <span>rencana pilar</span><span class="arw">→</span>
+      <span>draft hook</span><span class="arw">→</span>
+      <span>de-AI pass</span><span class="arw">→</span>
+      <span>gambar / carousel</span><span class="arw">→</span>
+      <span>jadwal multi-platform</span><span class="arw">→</span>
+      <span>auto-comment</span><span class="arw">→</span>
+      <span>growth report</span>
+    </div>
+    <div class="caps two" style="margin-top:1.3rem">
+      <div class="cap"><span class="tag">De-AI pass</span><p>Ini yang bikin beda: konten dicek biar <strong>gak kerasa AI</strong>. Buang pola "ini bukan soal X, tapi soal Y", em-dash, dan colon paksa. Dicocokkan ke gaya bahasamu yang asli.</p></div>
+      <div class="cap"><span class="tag">Video clipper</span><div class="ask">potong podcast ini jadi 5 klip viral</div><p>Long-form jadi shorts: deteksi hook di 3 detik pertama, auto-caption, reframe ke 9:16 / 4:5 / 1:1, plus overlay brand.</p></div>
+      <div class="cap"><span class="tag">HTML jadi video</span><div class="ask">jadiin landing page ini video walkthrough</div><p>Render HTML jadi MP4 durasi 2-5 menit, buat tur produk atau demo, tanpa buka editor video.</p></div>
+      <div class="cap"><span class="tag">Growth report</span><div class="ask">gimana tren IG/TikTok/LinkedIn gw minggu ini</div><p>Agregasi reach + engagement + save per pilar, deteksi post viral, hitung cost-per-follower, rekomendasi fokus minggu depan.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 ─ Showcase: Learn & memory -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Bisa ngapain aja · 8/8 · Belajar &amp; ingat</div>
+    <h2>Koreksi sekali. Dia inget selamanya.</h2>
+    <p class="lead">Ini pembeda paling besar dari tab ChatGPT yang mulai dari nol tiap chat. Second brain punya memori permanen.</p>
+    <div class="cols" style="margin-top:1.3rem">
+      <div class="cmd"><span class="c"># hari Senin, kamu koreksi:</span>
+<span class="p">You:</span> jangan pakai em-dash, ganti
+     koma atau restrukturisasi kalimat
+<span class="p">You:</span> /learn
+<span class="ok">  ✔ disimpan ke memory: no-emdash</span>
+<span class="c"># hari Kamis, minggu depan, bulan depan:</span>
+<span class="ok">  ✔ dia sudah tidak pernah pakai em-dash lagi</span></div>
+      <div>
+        <ul class="points">
+          <li><strong>Yang dia ingat:</strong> siapa kamu, aturan gayamu, keputusan proyek, siapa owner apa, link penting, dan setiap koreksi yang pernah kamu kasih.</li>
+          <li><strong>Contoh nyata yang dia pegang:</strong> "selalu sertakan permalink Slack", "jangan tebak nama orang", "kirim email sebagai kamu, bukan bot".</li>
+          <li>Tiap sesi baru, dia baca ingatannya dulu. Makin lama dipakai, makin ngerti kamu, bukan makin lupa.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 ─ Multi-agent -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Superpower tersembunyi</div>
+    <h2>Satu perintah, satu tim agent bergerak paralel</h2>
+    <p class="lead">Kerjaan besar gak dikerjain satu percakapan. Second brain nyebar banyak agent sekaligus, tiap agent kerja paralel, lalu hasilnya disatukan.</p>
+    <div class="grid3">
+      <div class="card"><span class="tag">Router</span><h3>Kamu di kursi pimpinan</h3><p>Percakapan utamamu membagi kerja, memilih agent yang tepat, lalu menyatukan hasilnya jadi satu output.</p></div>
+      <div class="card"><span class="tag">Model murah</span><h3>Kerja kasar didelegasi</h3><p>Baca-bulk transkrip, sapu Slack, kumpulkan file: dilempar ke model murah dan cepat, paralel.</p></div>
+      <div class="card"><span class="tag">Model flagship</span><h3>Mikir beratnya di atas</h3><p>Menimbang, memutuskan, menulis deliverable: dikerjakan model paling pintar. Murah untuk kerja kasar, mahal hanya untuk yang perlu.</p></div>
+    </div>
+    <div class="offer" style="margin-top:1.3rem">
+      <span class="tag" style="font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber)">Contoh hidup · barusan, sambil kita ngobrol</span>
+      <p class="lead" style="margin-top:.5rem; color:var(--text)">Deck ini butuh harga asli 20-an tools plus daftar kemampuan dari repo. Gw sebar <strong>5 agent paralel</strong>: satu ngecek harga AI Circle, tiga riset harga tools, satu ngumpulin 33 workflow dari kode. Kelar dalam <strong>2,5 menit</strong>, sementara gw tetap ngobrol sama kalian.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 13 ─ Ekosistem -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Satu pola, banyak kehidupan</div>
+    <h2>Begitu polanya nempel, kamu bisa turunin apa aja</h2>
+    <p class="lead">Semua tadi anak dari satu pola: otak + refleks + tangan. Dari pola yang sama gw sudah turunin sistem lain:</p>
+    <div class="grid2">
+      <div class="card"><span class="tag">lamar-ai</span><h3>Career ops</h3><p>CV, riwayat impact, dan materi lamaran kerja dalam satu repo. AI yang nulis aplikasi dengan data pencapaianmu yang sebenarnya.</p></div>
+      <div class="card"><span class="tag">wa-for-pm</span><h3>WhatsApp Channel bridge</h3><p>AI yang bisa posting ke WhatsApp Channel langsung dari terminal, dengan lapisan safety sendiri.</p></div>
+      <div class="card"><span class="tag">Brobri content engine</span><h3>Mesin konten personal brand</h3><p>Pipeline penuh tadi: rencana, draft, de-AI, carousel, jadwal, auto-comment, growth report, semuanya jadi satu.</p></div>
+      <div class="card"><span class="tag">agy-bridge</span><h3>Hemat biaya otomatis</h3><p>Kerja kasar dialihkan ke model lebih murah kalau memang lebih hemat, dengan jaminan fallback, dan penghematannya dicatat.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 ─ Problem 70/30 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Kenapa ini penting</div>
     <h2>70% minggu kita habis buat kerja administratif</h2>
-    <p class="lead">Meeting 6-10 kali seminggu, notulen, laporan progres, follow-up, nyari file, nyalin dari tab satu ke tab lain. Yang tersisa buat mikir strategis cuma sisanya.</p>
-    <div style="margin-top:2rem; max-width:640px">
+    <p class="lead">Meeting, notulen, laporan, follow-up, nyari file, nyalin dari tab satu ke tab lain. Yang tersisa buat mikir strategis cuma sisanya. Second brain dirancang buat membalik rasio itu.</p>
+    <div style="margin-top:1.8rem; max-width:640px">
       <div class="barlabel">SEBELUM · waktu buat admin</div>
       <div class="bar before"></div>
       <div class="barlabel">SESUDAH · waktu buat admin</div>
       <div class="bar after"></div>
     </div>
-    <p class="lead" style="margin-top:1.2rem">Second brain dirancang untuk membalik rasio itu: ambil beban administratifnya, kembalikan waktunya buat mikir.</p>
+    <p class="lead" style="margin-top:1.1rem">Ambil beban administratifnya. Kembalikan waktu buat mikirnya.</p>
   </div>
 </section>
 
-<!-- 5 ─ Mindset -->
+<!-- 15 ─ Mindset -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Mindset</div>
     <h2>AI-Using vs AI-Native</h2>
-    <div class="cols" style="margin-top:1.6rem">
+    <div class="cols" style="margin-top:1.3rem">
       <div class="card">
         <span class="tag" style="color:var(--red)">AI-Using</span>
         <h3>Copy-paste ke tab ChatGPT</h3>
-        <p>Buka browser, tempel teks, minta rapikan, salin balik. Tiap percakapan mulai dari nol. AI-nya gak kenal kamu, gak kenal proyekmu, gak bisa pegang file-mu. Mekanis dan gak scalable.</p>
+        <p>Buka browser, tempel teks, minta rapikan, salin balik. Tiap sesi mulai dari nol. AI-nya gak kenal kamu, gak kenal proyekmu, gak bisa pegang file-mu. Mekanis dan gak scalable.</p>
       </div>
       <div class="card">
         <span class="tag" style="color:var(--teal)">AI-Native</span>
         <h3>AI hidup di dalam sistem kerjamu</h3>
-        <p>AI punya akses aman ke workspace lokalmu. Dia tahu proyekmu, kenal stakeholder-mu, ingat aturanmu, dan ngerjain beban berat di belakang layar. Kamu gak pernah copy-paste. Kamu tinggal minta.</p>
+        <p>AI punya akses aman ke workspace lokalmu. Dia tahu proyekmu, kenal stakeholder-mu, ingat aturanmu, dan ngerjain beban berat di belakang layar. Kamu tinggal minta.</p>
       </div>
     </div>
-    <p class="big-quote" style="margin-top:2rem">Bedanya bukan di tools-nya. Bedanya di <em>sistem yang kamu bangun di sekeliling AI-nya</em>.</p>
+    <p class="big-quote" style="margin-top:1.6rem">Modelnya bisa sama persis. Yang menentukan justru <em>sistem yang kamu bangun di sekelilingnya</em>.</p>
   </div>
 </section>
 
-<!-- 6 ─ Arsitektur -->
+<!-- 16 ─ Arsitektur -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Cara kerjanya</div>
     <h2>Tiga lapisan: otak, refleks, tangan</h2>
     <div class="grid3">
-      <div class="card"><span class="tag">Otak</span><h3>CLAUDE.md</h3><p>Job description AI-mu. Siapa kamu, proyek apa saja, aturan main apa. Satu file markdown yang dibaca AI di awal setiap sesi.</p></div>
-      <div class="card"><span class="tag">Refleks</span><h3>.claude/</h3><p>Perintah siap pakai (/weekly-report, /mom), subagent, dan guardrail otomatis. Rutinitas yang tinggal dipanggil.</p></div>
-      <div class="card"><span class="tag">Tangan</span><h3>.agent/skills/</h3><p>Konektor ke dunia nyata: Google Docs, Drive, Slack, Calendar, meeting recorder, Jira. Dipasang hanya yang kamu butuhkan.</p></div>
+      <div class="card"><span class="tag">Otak</span><h3>CLAUDE.md</h3><p>Job description AI-mu. Siapa kamu, proyek apa saja, aturan main apa. Satu file yang dibaca AI di awal setiap sesi.</p></div>
+      <div class="card"><span class="tag">Refleks</span><h3>.claude/</h3><p>Perintah siap pakai, subagent, dan guardrail otomatis. Rutinitas yang tinggal dipanggil.</p></div>
+      <div class="card"><span class="tag">Tangan</span><h3>.agent/skills/</h3><p>Konektor ke dunia nyata: Google, Slack, Calendar, recorder, Jira, analytics. Pasang hanya yang kamu butuh.</p></div>
     </div>
-    <p class="lead" style="margin-top:1.6rem">Semuanya file lokal di laptopmu, berbasis teks, di bawah kendalimu penuh. Dan semuanya open template: <span class="keys">github.com/BrianArfi/ai-second-brain</span></p>
+    <p class="lead" style="margin-top:1.4rem">Semuanya file lokal di laptopmu, di bawah kendalimu penuh, dan open template: <span class="keys">github.com/BrianArfi/ai-second-brain</span></p>
   </div>
 </section>
 
-<!-- 7 ─ Superpower / demo -->
-<section class="slide">
-  <div class="slide-inner">
-    <div class="eyebrow">Live demo</div>
-    <h2>Empat superpower yang gw pakai tiap hari</h2>
-    <div class="grid2">
-      <div class="card"><span class="tag">1 · Daily briefing</span><p><span class="keys">/morning-update</span> menyapu kalender, Slack, Jira, dan email, lalu menyusun prioritas harimu sebelum kamu buka laptop.</p></div>
-      <div class="card"><span class="tag">2 · Meeting jadi action</span><p>Lempar transcript meeting ke <span class="keys">inbox/</span>, bilang "organize my inbox". Keluar: MOM rapi, action item, user story siap sprint.</p></div>
-      <div class="card"><span class="tag">3 · Weekly report</span><p><span class="keys">/weekly-report</span> memanen seminggu penuh pekerjaan lintas sumber dan mensintesis laporan eksekutif dalam formatmu.</p></div>
-      <div class="card"><span class="tag">4 · Draft apa pun, gayamu</span><p>PRD, email, pesan Slack. Semua ditulis dengan konteks proyek dan gaya bahasamu, dan tidak pernah terkirim tanpa approval.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- 8 ─ Ekosistem -->
-<section class="slide">
-  <div class="slide-inner">
-    <div class="eyebrow">Satu pola, banyak kehidupan</div>
-    <h2>Begitu polanya nempel, kamu bisa bangun apa aja</h2>
-    <p class="lead">Second brain ini pola dasarnya. Dari pola yang sama, gw sudah menurunkan sistem-sistem lain:</p>
-    <div class="grid2">
-      <div class="card"><span class="tag">lamar-ai</span><h3>Career ops</h3><p>CV, riwayat impact, dan materi lamaran kerja dalam satu repo. AI yang nulis aplikasi dengan data pencapaianmu yang sebenarnya.</p></div>
-      <div class="card"><span class="tag">wa-for-pm</span><h3>WhatsApp bridge</h3><p>AI yang bisa posting ke WhatsApp Channel langsung dari terminal, dengan lapisan safety sendiri.</p></div>
-      <div class="card"><span class="tag">brobri content engine</span><h3>Mesin konten</h3><p>Pipeline konten personal brand: riset, draft, review gaya bahasa, jadwal posting multi-platform.</p></div>
-      <div class="card"><span class="tag">dashboard + recorder</span><h3>Mata dan telinga</h3><p>Dashboard visual untuk memantau semua proyek, plus meeting recorder lokal yang feed langsung ke second brain.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- 9 ─ Safety -->
+<!-- 17 ─ Safety -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Aman dipakai buat kerja</div>
     <h2>Guardrail sebelum kecepatan</h2>
     <ul class="points">
-      <li><strong>Local-first.</strong> Dokumen sensitif, draft roadmap, dan todo-mu tinggal di harddisk-mu sendiri.</li>
+      <li><strong>Local-first.</strong> Dokumen sensitif, draft roadmap, dan to-do-mu tinggal di harddisk-mu sendiri.</li>
       <li><strong>Kredensial diblokir dari git.</strong> Token dan API key tidak pernah ikut ter-upload.</li>
-      <li><strong>Approval eksplisit.</strong> AI tidak bisa kirim Slack, email, atau menulis ke API eksternal tanpa konfirmasimu di terminal.</li>
+      <li><strong>Approval eksplisit.</strong> AI tidak bisa kirim Slack, email, atau menulis ke API eksternal tanpa konfirmasimu.</li>
       <li><strong>Quality gate.</strong> Draft penting direview subagent dulu sebelum sampai ke kamu.</li>
     </ul>
   </div>
 </section>
 
-<!-- 10 ─ Install Level 0 -->
+<!-- 18 ─ Install Level 0 -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Sekarang giliran kalian · Level 0</div>
     <h2>15 menit menuju second brain pertamamu</h2>
-    <div class="cols" style="margin-top:.4rem">
+    <div class="cols" style="margin-top:.3rem">
       <div>
         <ul class="points">
           <li><strong>1.</strong> Install VS Code + Node.js</li>
-          <li><strong>2.</strong> Install Claude Code: <span class="keys">npm install -g @anthropic-ai/claude-code</span></li>
+          <li><strong>2.</strong> <span class="keys">npm install -g @anthropic-ai/claude-code</span></li>
           <li><strong>3.</strong> Clone repo template-nya</li>
           <li><strong>4.</strong> Jalankan installer</li>
           <li><strong>5.</strong> Isi CLAUDE.md: siapa kamu, aturanmu</li>
@@ -284,92 +444,106 @@ $ <span class="p">bash</span> install.sh
 <span class="ok">  ✔ CLAUDE.md created from template</span>
 <span class="ok">  ✔ .env created</span>
 $ <span class="p">claude</span>
-<span class="c">&gt; Baca CLAUDE.md dan perkenalkan dirimu
-  sebagai second brain saya.</span></div>
+<span class="c">&gt; Baca CLAUDE.md dan perkenalkan
+  dirimu sebagai second brain saya.</span></div>
     </div>
-    <p class="lead" style="margin-top:1.4rem">Panduan tertulisnya ikut di dalam repo: <span class="keys">docs/INSTALL_ID.md</span> (Bahasa Indonesia). Macet? Tempel error-nya ke Claude, biar dia yang benerin.</p>
+    <p class="lead" style="margin-top:1.2rem">Panduan tertulisnya di dalam repo: <span class="keys">docs/INSTALL_ID.md</span>. Macet? Tempel error-nya ke Claude, biar dia yang benerin.</p>
   </div>
 </section>
 
-<!-- 11 ─ Level 1-2 -->
+<!-- 19 ─ Level 1-2 -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Setelah hari ini</div>
     <h2>Naik level sesuai kebutuhan, bukan sekaligus</h2>
     <div class="grid3">
       <div class="card"><span class="tag">Level 0 · hari ini</span><h3>Brain percakapan</h3><p>AI yang kenal kamu dan menulis dengan konteksmu. Tanpa API key, tanpa OAuth.</p></div>
-      <div class="card"><span class="tag">Level 1 · 1-2 jam</span><h3>Google connected</h3><p>Bikin Google Docs asli, baca Drive, kelola kalender. Satu kali setup OAuth, panduannya di SETUP.md.</p></div>
-      <div class="card"><span class="tag">Level 2 · sesuai kebutuhan</span><h3>Skill lanjutan</h3><p>Slack, meeting recorder, Jira, Figma, analytics. Pasang hanya yang benar-benar kamu pakai.</p></div>
+      <div class="card"><span class="tag">Level 1 · 1-2 jam</span><h3>Google connected</h3><p>Bikin Google Docs asli, baca Drive, kelola kalender. Satu kali setup OAuth.</p></div>
+      <div class="card"><span class="tag">Level 2 · sesuai kebutuhan</span><h3>Skill lanjutan</h3><p>Slack, recorder, Jira, image, video, analytics. Pasang hanya yang kamu pakai.</p></div>
     </div>
-    <p class="lead" style="margin-top:1.6rem">Mindset-nya: kamu gak lagi nunggu ada tools jadi. Kamu <strong>merakit tools-mu sendiri</strong>, satu skill kecil setiap kali butuh.</p>
+    <p class="lead" style="margin-top:1.4rem">Mindset-nya: kamu gak lagi nunggu ada tools jadi. Kamu <strong>merakit tools-mu sendiri</strong>, satu skill kecil setiap kali butuh.</p>
   </div>
 </section>
 
-<!-- 12 ─ Benefit-cost calculator -->
+<!-- 20 ─ Benefit-cost calculator -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Hitung-hitungan</div>
-    <h2>Beli terpisah vs rakit sendiri</h2>
-    <div class="cols" style="margin-top:.2rem">
+    <h2>Beli tiap tools terpisah vs rakit sendiri</h2>
+    <div class="cols" style="margin-top:.2rem; grid-template-columns: 1.15fr .85fr">
       <div class="calc" id="calc">
-        <p class="lead" style="font-size:.95rem; margin-bottom:.6rem">Stack tools AI kalau dibeli satu-satu (harga list, per bulan):</p>
-        <label><input type="checkbox" checked data-usd="20"> ChatGPT Plus · asisten umum <span class="price">$20</span></label>
-        <label><input type="checkbox" checked data-usd="17"> Otter.ai Pro · notulen meeting <span class="price">$17</span></label>
-        <label><input type="checkbox" checked data-usd="18"> Fireflies Pro · action item meeting <span class="price">$18</span></label>
-        <label><input type="checkbox" checked data-usd="20"> Zapier Pro · otomasi antar-app <span class="price">$20</span></label>
-        <label><input type="checkbox" checked data-usd="10"> Notion AI · dokumen &amp; knowledge base <span class="price">$10</span></label>
-        <div class="total mahal"><span>Total stack terpisah</span><span class="n" id="totalSep">Rp 1.385.500</span></div>
+        <p class="lead" style="font-size:.9rem; margin-bottom:.2rem">Centang tools yang kamu pakai (harga list per bulan, USD):</p>
+        <div class="grp">Umum &amp; kantor</div>
+        <label><input type="checkbox" checked data-usd="20"> ChatGPT Plus <span class="price">$20</span></label>
+        <label><input type="checkbox" checked data-usd="17"> Otter · notulen meeting <span class="price">$17</span></label>
+        <label><input type="checkbox" checked data-usd="30"> Zapier Pro · automation <span class="price">$30</span></label>
+        <label><input type="checkbox" checked data-usd="20"> Notion AI <span class="price">$20</span></label>
+        <label><input type="checkbox" checked data-usd="10"> Gamma · presentasi <span class="price">$10</span></label>
+        <div class="grp">Gambar &amp; video</div>
+        <label><input type="checkbox" checked data-usd="30"> Midjourney · gambar <span class="price">$30</span></label>
+        <label><input type="checkbox" checked data-usd="29"> Opus Clip · clipper <span class="price">$29</span></label>
+        <label><input type="checkbox" checked data-usd="35"> Descript · edit video <span class="price">$35</span></label>
+        <label><input type="checkbox" checked data-usd="29"> HeyGen · video avatar <span class="price">$29</span></label>
+        <div class="total mahal"><span>Total stack terpisah</span><span class="n" id="totalSep">Rp 3.586.000</span></div>
       </div>
       <div>
-        <p class="lead" style="font-size:.95rem; margin-bottom:.6rem">Rakit sendiri dengan second brain:</p>
-        <div class="card" style="margin-bottom:1rem">
+        <p class="lead" style="font-size:.9rem; margin-bottom:.2rem">Rakit sendiri:</p>
+        <div class="card" style="margin-bottom:.8rem">
           <h3>Claude Pro <span style="float:right; font-family:var(--mono)">$20</span></h3>
-          <p>Satu langganan. Chat, coding agent, semua skill di repo ini: notulen, laporan, otomasi, dokumen. Tanpa batas jumlah "tools" karena tools-nya kamu rakit sendiri.</p>
+          <p>Satu langganan. Chat + agent + semua skill di repo: notulen, laporan, otomasi, dokumen, gambar, video, data. Tools-nya kamu rakit sendiri, jadi jumlahnya gak dibatasi.</p>
         </div>
         <div class="card">
-          <h3>AI Circle <span style="float:right; font-family:var(--mono)">Rp 99rb</span></h3>
-          <p>Komunitas + sesi live bulanan: tempat nanya pas macet, update pola baru, dan library skill yang terus bertambah.</p>
+          <h3>AI Circle <span style="float:right; font-family:var(--mono)">Rp 95rb</span></h3>
+          <p>Komunitas + sesi live bulanan: tempat nanya pas macet, update pola baru, library skill yang terus nambah.</p>
         </div>
-        <div class="total hemat"><span>Total rakit sendiri</span><span class="n">± Rp 425.000</span></div>
-        <div class="total hemat" style="border-top:1px solid var(--line); padding-top:.7rem"><span>Hemat per bulan</span><span class="n" id="hemat">± Rp 960.500</span></div>
+        <div class="total hemat"><span>Total rakit sendiri</span><span class="n">± Rp 421.000</span></div>
+        <div class="total hemat" style="border-top:1px solid var(--line); padding-top:.6rem"><span>Hemat / bulan</span><span class="n" id="hemat">± Rp 3.165.000</span></div>
       </div>
     </div>
-    <p class="kurs">Asumsi kurs Rp 16.300/USD · harga list per Juli 2026, bisa berubah · detail di docs/workshop/benefit-cost.md</p>
+    <p class="kurs">Kurs Rp 16.300/USD · harga list mainstream per Juli 2026 · Otter dan Fireflies itu substitusi, pilih satu · detail: docs/workshop/benefit-cost.md</p>
   </div>
 </section>
 
-<!-- 13 ─ AI Circle offer -->
+<!-- 21 ─ AI Circle offer -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Kalau mau jalan bareng</div>
-    <h2>AI Circle: Applied AI buat pekerja kantoran</h2>
-    <p class="lead">Yang hari ini kita mulai, bisa kamu terusin sendiri: repo dan panduannya open. Kalau mau lebih cepat dan gak jalan sendirian, ada AI Circle: workshop onboarding 2 hari + komunitas + sesi live tiap bulan.</p>
-    <div class="offer">
-      <span class="tag" style="font-family:var(--mono); font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--amber)">Founding Member · 50 kursi pertama</span>
-      <div style="margin-top:.6rem"><span class="harga">Rp 499.000</span><span class="coret">Rp 943.000</span></div>
-      <ul class="points" style="margin-top:1rem">
-        <li>Workshop 2 hari (foundations, hands-on)</li>
-        <li>3 bulan membership</li>
-        <li>Harga membership terkunci Rp 99rb/bulan selamanya</li>
-      </ul>
+    <h2>AI Circle: turn AI into your second brain at work</h2>
+    <p class="lead">Repo dan panduannya open, silakan jalan sendiri. AI Circle buat yang mau lebih cepat dan gak jalan sendirian: workshop onboarding + komunitas + sesi live tiap bulan.</p>
+    <div class="cols" style="margin-top:1.1rem">
+      <div class="offer">
+        <span class="tag" style="font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber)">Founding Workshop · 50 kursi pertama</span>
+        <div style="margin-top:.5rem"><span class="harga">Rp 997.000</span><span class="coret">Rp 2.397.000</span></div>
+        <p class="lead" style="font-size:.92rem; margin-top:.6rem">Sesi inti 12 Jul + Q&amp;A 19 Jul, plus sistem AI assistant. Hemat ~58%.</p>
+      </div>
+      <div class="offer" style="border-color:var(--teal)">
+        <span class="tag" style="font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--teal)">Founding Bundle · Best Value · 10 kursi</span>
+        <div style="margin-top:.5rem"><span class="harga" style="color:var(--teal)">Rp 1.387.000</span></div>
+        <p class="lead" style="font-size:.92rem; margin-top:.6rem">Workshop + 12 bulan membership, dengan garansi uang kembali buat 10 pendaftar pertama.</p>
+      </div>
     </div>
-    <p class="lead" style="margin-top:1.4rem">Daftar: <strong>brianarfi.com/ai-circle</strong> <span style="color:var(--muted)">· atau scan QR di layar</span></p>
+    <div class="memtiers">
+      <div>Membership bulanan <b>Rp 95rb/bln</b></div>
+      <div>6 bulan <b>Rp 475rb</b> (~79rb/bln)</div>
+      <div>Tahunan <b>Rp 790rb</b> (~66rb/bln)</div>
+    </div>
+    <p class="lead" style="margin-top:1.2rem">Daftar: <strong>brianarfi.com/ai-circle</strong> <span style="color:var(--muted)">· atau scan QR di layar</span></p>
   </div>
 </section>
 
-<!-- 14 ─ Closing -->
+<!-- 22 ─ Closing -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Penutup</div>
     <p class="big-quote">AI gak akan gantiin kamu.<br>Tapi orang yang <em>punya sistem AI</em> akan lebih cepat dari yang cuma punya tab ChatGPT.</p>
-    <p class="lead" style="margin-top:2rem">Repo: <strong>github.com/BrianArfi/ai-second-brain</strong><br>LinkedIn: <strong>linkedin.com/in/brianarfi</strong><br>AI Circle: <strong>brianarfi.com/ai-circle</strong></p>
-    <p class="lead" style="margin-top:1.6rem">Terima kasih. Sekarang, buka laptop kalian.</p>
+    <p class="lead" style="margin-top:1.8rem">Repo: <strong>github.com/BrianArfi/ai-second-brain</strong><br>LinkedIn: <strong>linkedin.com/in/brianarfi</strong><br>AI Circle: <strong>brianarfi.com/ai-circle</strong></p>
+    <p class="lead" style="margin-top:1.4rem">Terima kasih. Sekarang, buka laptop kalian.</p>
   </div>
 </section>
 
 </div>
-<div class="navhint">← → navigasi · klik kanan layar untuk maju</div>
-<div class="hud" id="hud">1 / 14</div>
+<div class="navhint">← → navigasi · klik kanan layar buat maju</div>
+<div class="hud" id="hud">1 / 22</div>
 <script>
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
@@ -394,7 +568,6 @@ $ <span class="p">claude</span>
     if (e.target.closest("a, label, input")) return;
     show(e.clientX > window.innerWidth / 2 ? i + 1 : i - 1);
   });
-  // Benefit-cost calculator
   var KURS = 16300;
   var boxes = document.querySelectorAll("#calc input[type=checkbox]");
   function fmtRp(n) { return "Rp " + Math.round(n).toLocaleString("id-ID"); }
@@ -402,10 +575,10 @@ $ <span class="p">claude</span>
     var usd = 0;
     boxes.forEach(function (b) { if (b.checked) usd += parseFloat(b.dataset.usd); });
     var sep = usd * KURS;
-    var own = 20 * KURS + 99000;
+    var own = 20 * KURS + 95000;
     document.getElementById("totalSep").textContent = fmtRp(sep);
     document.getElementById("hemat").textContent =
-      (sep > own ? "± " : "− ") + fmtRp(Math.abs(sep - own));
+      (sep >= own ? "± " : "− ") + fmtRp(Math.abs(sep - own));
   }
   boxes.forEach(function (b) { b.addEventListener("change", recalc); });
   recalc();

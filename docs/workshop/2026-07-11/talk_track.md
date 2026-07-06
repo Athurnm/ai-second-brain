@@ -1,80 +1,90 @@
-# Talk Track: Workshop AI Second Brain (Sabtu, 11 Juli 2026)
+# Talk Track: Workshop AI Second Brain (Juli 2026)
 
-> Companion untuk `deck.html`. Buka deck di browser, navigasi pakai panah kiri/kanan. Durasi target: 30-40 menit materi + 45-60 menit hands-on install + Q&A.
+> Companion untuk `deck.html` (22 slide). Buka deck di browser, navigasi panah kiri/kanan. Durasi target: 40-50 menit materi + 45-60 menit hands-on install + Q&A.
+>
+> Struktur: kenalan → jualan besar (8 slide showcase + multi-agent) → mindset & arsitektur → install → benefit-cost → AI Circle → penutup.
 
 ## Slide 1: Pembuka
 
-Selamat datang, terima kasih sudah meluangkan Sabtu-nya. Hari ini kita gak cuma nonton demo AI. Di akhir sesi, setiap orang di ruangan ini pulang dengan second brain yang jalan di laptopnya sendiri. Setengah pertama gw cerita sistemnya dan mindset-nya, setengah kedua kita install bareng, langkah demi langkah.
+Selamat datang, terima kasih meluangkan waktunya. Hari ini kita gak cuma nonton demo AI. Di akhir sesi, setiap orang pulang dengan second brain yang jalan di laptopnya. Setengah pertama gw tunjukin bisa ngapain aja, setengah kedua kita install bareng.
 
 ## Slide 2: Kenalan
 
-Perkenalan singkat: dua dekade di produk. Di Tokopedia, optimasi OTP yang menghemat sekitar $2 juta per tahun. Di Flip, efisiensi biaya sekitar $2,12 juta per tahun. Sekarang product leader di Merit, perusahaan loyalty & rewards di Saudi Arabia, megang 4 tim produk sekaligus. Plus jalanin Brobri sebagai content creator.
+Dua dekade di produk. Tokopedia: optimasi OTP hemat ~$2 juta/tahun. Flip: efisiensi ~$2,12 juta/tahun. Sekarang product leader di Merit, Saudi Arabia, megang 4 tim sekaligus, plus jalanin Brobri. Poinnya: yang bikin beban 4 tim ini mungkin bukan gw kerja lebih keras, tapi satu sistem AI.
 
-Poin pentingnya bukan angkanya. Poinnya: beban kerja 4 tim lintas negara itu mustahil gw pegang sendirian dengan cara kerja lama. Yang bikin mungkin adalah sistem yang mau gw tunjukkan hari ini.
+## Slide 3: Teaser "bisa ngapain aja"
 
-## Slide 3: Seminggu gw
+Baca cepat sembilan contoh di layar. Jangan dijelasin satu-satu di sini, ini pancingan. Bilang: "sembilan ini cuma pembuka, sekarang kita lihat satu per satu." Tujuannya bikin penasaran sebelum masuk detail.
 
-Ceritakan sehari beneran, jangan teori. Jam 9 pagi briefing sudah jadi sebelum gw buka laptop: 60 channel Slack, 5 board Jira, kalender, email, semua sudah disapu. Habis meeting, transcript langsung jadi MOM lengkap dengan action item. Kamis sore, weekly report tinggal satu perintah. Tekankan: ini rutinitas harian yang jalan berbulan-bulan, bukan demo yang disiapkan semalam.
+## Slide 4-11: Delapan slide showcase (JUALAN UTAMA)
 
-## Slide 4: Masalah 70/30
+Ini bagian terpenting sesi. Jualan dulu sebelum teori. Untuk tiap slide, ambil 1-2 kartu dan ceritain pengalaman nyata, jangan bacain semua kartu.
 
-Tanya audiens dulu: seminggu, berapa jam kalian habis buat notulen, laporan, follow-up, nyari file? Biarkan 2-3 orang jawab. Lalu: riset internal gw sendiri konsisten, sekitar 70% waktu PM dan knowledge worker habis di admin. Second brain dirancang untuk membalik rasio itu.
+- **Slide 4 Komunikasi**: highlight Slack sweep + balas sebagai kamu (bukan bot), tekankan approval gate.
+- **Slide 5 Dokumen**: highlight "edit bedah", tambah link + sisip diagram tanpa overwrite editan tangan.
+- **Slide 6 Meeting**: highlight rekam lokal (gratis, tanpa Fathom) + MOM yang langsung isi to-do dengan owner.
+- **Slide 7 Laporan**: highlight weekly report yang "menimbang mana yang penting, bukan yang terbaru" + dashboard hidup di localhost:3737 (buka live kalau bisa).
+- **Slide 8 Data**: highlight Jira "flag kalau ada yang megang >40% tiket".
+- **Slide 9 Desain**: tekankan deck yang lagi mereka lihat ini dibuat pakai sistem yang sama.
+- **Slide 10 Konten & video**: JELASKAN pipeline generate-post penuh, terutama **de-AI pass** (biar gak kerasa AI: buang pola "ini bukan soal X tapi soal Y", em-dash). Lalu clipper long→shorts.
+- **Slide 11 Learn & memory**: momen "aha" terbesar. Ceritakan: di ChatGPT tiap chat mulai dari nol. Di sini, kamu koreksi sekali ("jangan em-dash"), `/learn`, dan dia inget selamanya. Tunjukkan contoh nyata: aturan Slack permalink, gaya bahasa.
 
-## Slide 5: Mindset AI-Using vs AI-Native
+## Slide 12: Multi-agent
 
-Ini slide paling penting sesi ini, pelan-pelan di sini. AI-Using: kamu buka tab ChatGPT, tempel, salin balik. Tiap sesi mulai dari nol. AI-Native: AI hidup di dalam sistem kerjamu, punya akses ke file dan konteksmu, dan kamu tinggal minta. Perbedaannya bukan kecerdasan model. Model yang dipakai bisa sama persis. Yang beda adalah sistem di sekelilingnya: konteks, memori, akses, guardrail.
+Konsep: satu perintah menggerakkan satu tim agent yang kamu pimpin. Router (kamu) bagi kerja, model murah harvest, model flagship sintesis. Lalu tunjuk kotak contoh hidup: "deck ini butuh harga 20-an tools, gw sebar 5 agent paralel barusan, kelar 2,5 menit sambil ngobrol." Ini demo meta yang selalu bikin kagum karena baru saja terjadi.
 
-## Slide 6: Tiga lapisan
+## Slide 13: Ekosistem
 
-Analogi tubuh: otak (CLAUDE.md, siapa kamu dan aturan mainmu), refleks (perintah dan guardrail otomatis), tangan (konektor ke Google, Slack, kalender, recorder). Tekankan: semuanya file teks lokal di laptop sendiri. Bisa dibaca, bisa diedit, bisa dihapus. Gak ada black box.
+Pesan: yang kalian pelajari itu satu POLA, bukan satu tools. Dari pola yang sama gw turunin lamar-ai (career), wa-for-pm (WhatsApp), Brobri content engine, agy-bridge (hemat biaya). Satu pola, banyak kehidupan.
 
-## Slide 7: Live demo
+## Slide 14: Problem 70/30
 
-Demo langsung dari terminal, urutan aman:
-1. `claude` lalu minta dia baca CLAUDE.md dan jelaskan konteks kerjanya. Menunjukkan "dia kenal gw".
-2. Lempar satu file transcript dummy ke inbox/, minta "organize my inbox".
-3. Tunjukkan hasil weekly report yang sudah jadi (jangan generate live, terlalu lama; tunjukkan hasil kemarin).
-4. Minta draft pesan Slack, tunjukkan bahwa dia berhenti minta approval sebelum kirim.
+Tanya audiens: seminggu berapa jam habis buat admin? Biarkan 2-3 jawab. Lalu: ~70% waktu knowledge worker habis di admin. Second brain membalik rasio itu.
 
-Backup kalau internet/demo mati: screenshot tiap langkah ada di folder ini.
+## Slide 15: Mindset AI-Using vs AI-Native
 
-## Slide 8: Ekosistem
+Slide konsep paling penting, pelan-pelan. Tekankan kalimat kunci: bedanya bukan modelnya, modelnya bisa sama persis, bedanya sistem di sekelilingnya.
 
-Pesannya: yang kalian install hari ini bukan satu tools, tapi satu POLA. Begitu polanya nempel, kalian bisa menurunkan sistem lain: lamar-ai buat career, wa-for-pm buat WhatsApp, content engine buat personal brand. Semua anak dari pola yang sama: brain + refleks + tangan.
+## Slide 16: Arsitektur 3 lapisan
 
-## Slide 9: Safety
+Otak (CLAUDE.md), refleks (perintah + guardrail), tangan (konektor). Semua file lokal, open template.
 
-Singkat tapi jangan dilewat, ini pertanyaan pertama orang kantoran: datanya aman gak? Local-first, kredensial diblokir dari git, dan aturan besinya: AI gak pernah kirim apa pun keluar tanpa approval eksplisit di terminal.
+## Slide 17: Safety
 
-## Slide 10: Install Level 0 (hands-on dimulai)
+Singkat tapi jangan dilewat, ini pertanyaan pertama orang kantoran. Local-first, kredensial diblokir dari git, approval eksplisit, quality gate.
 
-Pindah ke mode hands-on. Semua buka laptop. Pandu langkah 1-6 di layar, ikuti `docs/INSTALL_ID.md`. Dua opsi untuk peserta: manual ikuti panduan, atau yang sudah punya Claude Code tinggal minta AI-nya sendiri yang setup. Sediakan 30-45 menit. Keliling ruangan.
+## Slide 18: Install Level 0 (hands-on dimulai)
 
-Trik yang selalu berhasil: kalau ada yang macet, minta dia tempel error-nya ke Claude dan minta dibenerin. Itu momen "aha" pertama mereka sebagai AI-Native.
+Semua buka laptop. Pandu langkah 1-6, ikuti `docs/INSTALL_ID.md`. Sediakan 30-45 menit, keliling ruangan. Trik andalan: yang macet, minta dia tempel error ke Claude dan minta dibenerin, itu momen AI-Native pertama mereka.
 
-## Slide 11: Level 1-2
+## Slide 19: Level 1-2
 
-Set ekspektasi: hari ini cukup Level 0. Level 1 (Google OAuth) dikerjakan santai di rumah, 1-2 jam, panduannya lengkap. Level 2 pasang sesuai kebutuhan. Jangan pasang semua konektor sekaligus, pasang yang dipakai.
+Set ekspektasi: hari ini cukup Level 0. Level 1 (Google OAuth) di rumah, 1-2 jam. Level 2 pasang sesuai kebutuhan, jangan semua sekaligus.
 
-## Slide 12: Benefit-cost
+## Slide 20: Benefit-cost (interaktif)
 
-Interaktif: centang/uncentang tools di kalkulator sesuai yang audiens benar-benar pakai. Narasinya: stack AI kalau dibeli satu-satu itu $85-an per bulan, hampir 1,4 juta rupiah, dan tools-nya gak saling kenal. Notulenmu gak tahu isi todo-mu. Dengan pola second brain: satu langganan Claude, semua kemampuan tadi, dalam SATU konteks yang saling nyambung. Dan tools barunya kamu rakit sendiri, gratis, tiap kali butuh.
+Centang/uncentang tools sesuai yang audiens pakai. Narasi: stack "do it all" kalau dibeli satu-satu ~$220/bln, hampir Rp 3,6 juta, dan tools-nya gak saling kenal. Yang paling mahal justru media: gambar + clipper + edit video + avatar. Dengan pola second brain: satu Claude Pro + AI Circle, semua kemampuan tadi dalam SATU konteks. Hemat ~Rp 3,1 juta/bulan. Catat: Otter dan Fireflies itu substitusi, jangan dihitung dua.
 
-## Slide 13: AI Circle
+## Slide 21: AI Circle (harga asli dari brianarfi.com/ai-circle)
 
-Nada: tawaran, bukan tekanan. Repo dan panduan sudah open, silakan jalan sendiri. AI Circle buat yang mau lebih cepat dan gak jalan sendirian: workshop 2 hari + komunitas + sesi live bulanan. Founding member 50 kursi pertama Rp 499rb, harga membership terkunci Rp 99rb selamanya. Tunjukkan QR, kasih waktu 30 detik.
+Nada tawaran, bukan tekanan. Repo sudah open, silakan jalan sendiri. AI Circle buat yang mau lebih cepat:
+- Founding Workshop Rp 997.000 (dari Rp 2.397.000, hemat ~58%), sesi inti 12 Jul + Q&A 19 Jul, 50 kursi pertama.
+- Founding Bundle (Best Value) Rp 1.387.000, workshop + 12 bulan membership, garansi uang kembali buat 10 pendaftar pertama.
+- Membership: bulanan Rp 95rb, 6 bulan Rp 475rb, tahunan Rp 790rb.
+Tunjukkan QR, kasih 30 detik. Positioning: "turn AI into your second brain at work."
 
-## Slide 14: Penutup
+## Slide 22: Penutup
 
-Tutup dengan kalimat di layar. Lalu ajakan konkret: sebelum pulang, pastikan Level 0 kalian jalan dan CLAUDE.md sudah terisi minimal bagian "siapa kamu". Foto bareng, selesai.
+Tutup dengan kalimat di layar. Ajakan konkret: sebelum pulang, pastikan Level 0 jalan dan CLAUDE.md terisi minimal "siapa kamu". Foto bareng, selesai.
 
 ---
 
 ## Checklist sebelum hari H
 
-- [ ] Deck dibuka dan dites di laptop presentasi (arrow keys, kalkulator slide 12)
-- [ ] QR code GoAkal/landing AI Circle final, ganti placeholder di slide 13
-- [ ] Demo environment siap: satu transcript dummy di inbox/, hasil weekly report kemarin
-- [ ] Screenshot backup tiap langkah demo
+- [ ] Deck dites di laptop presentasi (arrow keys + kalkulator slide 20)
+- [ ] QR code brianarfi.com/ai-circle final di slide 21
+- [ ] Cek ulang tanggal: deck pakai "Juli 2026" netral; slide AI Circle pakai 12 Jul (sesi inti) + 19 Jul (Q&A) sesuai halaman. Sesuaikan kalau tanggal live workshop beda.
+- [ ] Demo environment: transcript dummy di inbox/, hasil weekly report kemarin, dashboard localhost:3737 nyala
+- [ ] Screenshot backup tiap langkah demo (kalau internet mati)
 - [ ] Link repo dishare ke grup peserta sebelum sesi (biar bisa clone duluan)
-- [ ] Internet backup (tethering) untuk sesi install
+- [ ] Internet backup (tethering) buat sesi install
