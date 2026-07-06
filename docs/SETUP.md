@@ -9,7 +9,7 @@ Estimated time: **2–4 hours**, mostly spent on Google OAuth.
 
 0. [Quick-Start: Conversational Brain (15 Mins)](#0-quick-start-conversational-brain-15-mins) ← *Fastest path!*
 1. [System Requirements](#1-system-requirements)
-2. [macOS Setup (Recommended for Secondary Team)](#2-macos-setup-recommended-for-secondary-team)
+2. [macOS Setup](#2-macos-setup)
 3. [Windows / WSL Setup](#3-windows--wsl-setup)
 4. [Install Python Dependencies](#4-install-python-dependencies)
 5. [Install Claude Code](#5-install-claude-code)
@@ -17,7 +17,7 @@ Estimated time: **2–4 hours**, mostly spent on Google OAuth.
 7. [Google OAuth Setup](#7-google-oauth-setup) ← most involved step
 8. [Slack Setup](#8-slack-setup)
 9. [Other API Keys](#9-other-api-keys)
-10. [Which Skills Do You Actually Need?](#<YOUR_DRIVE_ID>)
+10. [Which Skills Do You Actually Need?](#10-which-skills-do-you-actually-need)
 11. [Browser Service Setup](#11-browser-service-setup)
 12. [Verify Everything Works](#12-verify-everything-works)
 13. [Troubleshooting](#13-troubleshooting)
@@ -39,10 +39,10 @@ You need the workspace files to start your Second Brain. Choose one of two easy 
 *   **Method A: Clone via Git (For Developers)**
     Open your terminal and run:
     ```bash
-    git clone https://github.com/you/ai-second-brain.git
+    git clone https://github.com/BrianArfi/ai-second-brain.git
     ```
 *   **Method B: Download as ZIP (No Git required!)**
-    *   [Download the ZIP File directly](https://github.com/you/ai-second-brain/archive/refs/heads/main.zip)
+    *   [Download the ZIP File directly](https://github.com/BrianArfi/ai-second-brain/archive/refs/heads/main.zip)
     *   Extract the downloaded ZIP file to a folder on your computer (e.g., your Desktop or Documents).
 
 ### Step 3: Open the Folder in VS Code
@@ -73,7 +73,7 @@ You need the workspace files to start your Second Brain. Choose one of two easy 
 
 ---
 
-## 2. macOS Setup (Recommended for Secondary Team)
+## 2. macOS Setup
 
 Most of our team uses MacBooks. The setup here is completely native and does not require virtual machines or WSL.
 

@@ -217,21 +217,33 @@ Two levers are pulling at the same time:
 
 ## Getting Started
 
-```
-   ① clone   ──▶  ② read SETUP  ──▶  ③ fill CLAUDE.md  ──▶  ④ connect tools  ──▶  ⑤ talk
+### The 15-minute path (no API keys, no OAuth)
+
+```bash
+git clone https://github.com/BrianArfi/ai-second-brain.git
+cd ai-second-brain
+bash install.sh
+claude
 ```
 
-1. **Clone this repository** and open the folder in your editor (VS Code or a JetBrains IDE both work well with Claude Code).
-2. **Read `docs/SETUP.md`.** It walks you through installing the tooling and connecting Google, Slack, and the rest, step by step. The fastest path is a conversational setup that needs no programming environment.
-3. **Fill in `CLAUDE.md`.** Rename `CLAUDE.md.template` to `CLAUDE.md` and describe yourself, your work contexts, and your rules. `docs/CUSTOMIZING.md` explains each section.
-4. **Connect the tools you actually use.** You do not need all of them. `docs/SETUP.md` has a section on choosing only the skills you need.
-5. **Start talking.** Ask it to organize a file, draft a document, or summarize a meeting.
+`install.sh` checks your tooling, creates `CLAUDE.md` from the template, and prepares `.env`. Open `CLAUDE.md`, describe who you are and how you work, then start talking. That alone gives you a brain that drafts, summarizes, and organizes in your voice, with no connectors needed yet.
+
+### The full path (connect your real tools)
+
+```
+   ① clone + install.sh  ──▶  ② fill CLAUDE.md  ──▶  ③ connect tools  ──▶  ④ talk
+```
+
+1. **Fill in `CLAUDE.md`.** Describe yourself, your work contexts, and your rules. `docs/CUSTOMIZING.md` explains each section.
+2. **Connect the tools you actually use** with `docs/SETUP.md`: Google, Slack, calendars, meeting recorders, Jira, step by step. You do not need all of them; there is a section on choosing only the skills you need. Budget 2-4 hours, mostly for Google OAuth.
+3. **Start talking.** Ask it to organize a file, draft a document, or summarize a meeting.
 
 Deeper references:
 
 - **`docs/SETUP.md`** — the full install and authentication guide.
 - **`docs/CUSTOMIZING.md`** — how to write a strong `CLAUDE.md`.
 - **`docs/ARCHITECTURE.md`** — how the pieces fit together.
+- **`docs/INSTALL_ID.md`** -- panduan instalasi langkah demi langkah dalam Bahasa Indonesia (workshop companion).
 
 ---
 
