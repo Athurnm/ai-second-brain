@@ -11,7 +11,7 @@
 | Fireflies Pro | Meeting action items | $18 |
 | Zapier Pro | Automation between apps | $20 |
 | Notion AI | Docs and knowledge base AI | $10 |
-| **Total** | | **$85 ≈ Rp 1,385,000** |
+| **Total** | | **$85 ≈ Rp 1,385,500** |
 
 Three structural problems, beyond the price:
 
@@ -27,7 +27,7 @@ Three structural problems, beyond the price:
 | AI Circle membership | Community, monthly live session, growing skill library, help when you are stuck | Rp 99,000 |
 | **Total** | | **≈ Rp 425,000** |
 
-**Savings: roughly Rp 960,000 per month (~69%)**, against the five-tool stack above.
+**Savings: roughly Rp 960,500 per month (~69%)**, against the five-tool stack above.
 
 The structural differences matter more than the savings:
 
