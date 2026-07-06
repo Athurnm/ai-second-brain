@@ -1,0 +1,185 @@
+{
+  "_comment": "agy-bridge config. Tasks resolve a CAPABILITY -> ordered candidate models (or an explicit chain override). The bridge tries each; first success wins; if all fail it exits 3 with a claude_fallback sentinel. Every model has a per-Mtok price (model_prices) so cost/savings are computed honestly for ALL backends, including subscription ones (NOT $0).",
+  "_agy_note": "agy ids = EXACT `agy models` display strings; agy SILENTLY routes an unknown id to a default, so run.py refuses any id not in known_agy_models. agy token usage is NOT exposed by the CLI -> agy token counts are ESTIMATED (chars/4, flagged). agy auth is flaky per-call (auth-blip -> run.py retries once).",
+  "_zai_note": "zai = z.ai GLM Coding Plan (subscription, Anthropic-compatible). Token in ZAI_API_TOKEN or token.env. Real server -> exact usage in response, and it ERRORS on a bad model id (no silent fallback).",
+  "_agy_models_seen": "2026-06-24: Gemini 3.5 Flash (Low/Med/High), Gemini 3.1 Pro (Low/High), GPT-OSS 120B (Medium), Claude Sonnet 4.6 (Thinking), Claude Opus 4.6 (Thinking).",
+  "time_routing": "on",
+  "_time_routing_note": "off | advisory | on. Now 'on' because the zai/GLM peak window is VERIFIED from the z.ai dashboard (not a guess). It acts ONLY on verified windows: agy's peak_wib is EMPTY (unverified) so agy is never demoted until `--analyze` provides measured data. Soft-demote: an in-peak backend sinks to the back of its chain but is still tried before the Claude fallback.",
+  "backends": {
+    "agy": {
+      "type": "cli"
+    },
+    "zai": {
+      "type": "anthropic-compatible",
+      "base_url": "https://api.z.ai/api/anthropic",
+      "token_env": "ZAI_API_TOKEN",
+      "token_file": "token.env",
+      "max_tokens": 8192,
+      "quota": {
+        "_source": "z.ai dashboard 2026-06-24: GLM-5.2/GLM-5-Turbo share one usage quota; peak 14:00-18:00 UTC+8 = 13:00-17:00 WIB.",
+        "peak_mult": 3,
+        "offpeak_mult": 1,
+        "offpeak_mult_after_promo": 2,
+        "promo_until": "2026-09-30",
+        "_promo_note": "Off-peak charged 1x (not 2x) through end of Sep 2026; after that set offpeak to 2x. Peak is always 3x."
+      }
+    }
+  },
+  "known_agy_models": [
+    "Gemini 3.5 Flash (Low)",
+    "Gemini 3.5 Flash (Medium)",
+    "Gemini 3.5 Flash (High)",
+    "Gemini 3.1 Pro (Low)",
+    "Gemini 3.1 Pro (High)",
+    "GPT-OSS 120B (Medium)",
+    "Claude Sonnet 4.6 (Thinking)",
+    "Claude Opus 4.6 (Thinking)"
+  ],
+  "model_prices": {
+    "_unit": "USD per 1,000,000 tokens, [input, output]. List/published rates as of 2026-06-24. Subscription backends are NOT free; this is their per-Mtok equivalent.",
+    "_sources": "Claude: metacto/tldl 2026. Gemini: ai.google.dev/pricing. GPT-OSS: pricepertoken. GLM: estimated ~2.6x cheaper than Gemini Pro (confirm at z.ai pricing).",
+    "by_model": {
+      "glm-5.2": [
+        0.6,
+        2.2
+      ],
+      "Gemini 3.1 Pro (Low)": [
+        2.0,
+        12.0
+      ],
+      "Gemini 3.1 Pro (High)": [
+        2.0,
+        12.0
+      ],
+      "Gemini 3.5 Flash (High)": [
+        1.5,
+        9.0
+      ],
+      "GPT-OSS 120B (Medium)": [
+        0.04,
+        0.1
+      ]
+    },
+    "by_family": {
+      "glm": [
+        0.6,
+        2.2
+      ],
+      "Gemini 3.5 Flash": [
+        1.5,
+        9.0
+      ],
+      "Gemini 3.1 Pro": [
+        2.0,
+        12.0
+      ],
+      "GPT-OSS": [
+        0.04,
+        0.1
+      ]
+    },
+    "estimated_models": [
+      "glm-5.2",
+      "glm"
+    ],
+    "claude_tiers": {
+      "haiku": [
+        1.0,
+        5.0
+      ],
+      "sonnet": [
+        3.0,
+        15.0
+      ],
+      "opus": [
+        5.0,
+        25.0
+      ],
+      "main-loop": [
+        5.0,
+        25.0
+      ]
+    }
+  },
+  "subscriptions": {
+    "_note": "Flat monthly outlay (USD). Context only: shown on the dashboard, NEVER folded into per-call cost as $0. You to confirm exact tiers.",
+    "zai_glm_coding": 10,
+    "antigravity_agy": 0
+  },
+  "peak_wib": {
+    "_note": "Demote windows in WIB (UTC+7), [startHour, endHour) 24h. zai = VERIFIED from z.ai dashboard: 14:00-18:00 UTC+8 = 13:00-17:00 WIB (3x quota burn in peak vs 1x off-peak now). agy = EMPTY/unverified, so agy is NEVER demoted until `--analyze` gives measured data; this keeps 'on' acting ONLY on the verified GLM window.",
+    "agy": [],
+    "zai": [
+      [
+        13,
+        17
+      ]
+    ]
+  },
+  "capabilities": {
+    "_note": "capability -> ordered backend+model candidates, grounded in model strengths/context. Tasks reference one of these. Cost is NOT the only axis here (context window + lineage matter); the cost dashboard reveals where a choice does/doesn't save vs its claude_fallback so chains can be retuned from data.",
+    "_bulk_cheap_note": "KEPUTUSAN BRIAN 2026-07-04: Gemini Flash TETAP memimpin harvest walau cost log menunjukkan GLM lebih murah per-call. Alasan: subscription Gemini (agy) jarang kepake, jadi utilisasi subscription > penghematan per-call. JANGAN 'optimasi' ini balik ke GLM-first berdasarkan agy_usage_log saja.",
+    "bulk-cheap": [
+      "Gemini 3.5 Flash (High)",
+      {
+        "backend": "zai",
+        "model": "glm-5.2"
+      },
+      "Gemini 3.1 Pro (Low)"
+    ],
+    "reasoning": [
+      {
+        "backend": "zai",
+        "model": "glm-5.2"
+      },
+      "Gemini 3.1 Pro (High)",
+      "GPT-OSS 120B (Medium)"
+    ],
+    "cross-lineage": [
+      {
+        "backend": "zai",
+        "model": "glm-5.2"
+      },
+      "GPT-OSS 120B (Medium)",
+      "Gemini 3.1 Pro (High)"
+    ],
+    "long-context": [
+      "Gemini 3.1 Pro (High)",
+      "Gemini 3.5 Flash (High)",
+      {
+        "backend": "zai",
+        "model": "glm-5.2"
+      }
+    ],
+    "draft": [
+      {
+        "backend": "zai",
+        "model": "glm-5.2"
+      },
+      "Gemini 3.1 Pro (High)"
+    ],
+    "image": "NOT handled by the bridge -> use the gemini-image skill (gemini-3-pro-image / imagen-4.0)."
+  },
+  "tasks": {
+    "harvest": {
+      "capability": "bulk-cheap",
+      "claude_fallback": "haiku",
+      "intent": "Bulk read transcripts/MOM/Slack/Dashboard -> raw facts, no synthesis. Cheap + fast + big context."
+    },
+    "critic": {
+      "capability": "cross-lineage",
+      "claude_fallback": "sonnet",
+      "intent": "Adversarial / cross-model second opinion. Three distinct lineages (GLM/GPT-OSS/Gemini) for genuine diversity."
+    },
+    "research": {
+      "capability": "reasoning",
+      "claude_fallback": "main-loop",
+      "intent": "Deep-research fan-out / non-Claude reasoning for diversity. Strongest reasoning first."
+    },
+    "draft": {
+      "capability": "draft",
+      "claude_fallback": "sonnet",
+      "intent": "Generate content drafts (social posts, SEO fixes, copy) on the cheap strong writer GLM 5.2; specialist agents call this for generation. Falls back to Claude sonnet for voice/quality."
+    }
+  }
+}

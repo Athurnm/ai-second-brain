@@ -1,0 +1,40 @@
+# System
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# === CREDENTIALS & TOKENS (never commit) ===
+.env
+*.env
+token.json
+token_*.json
+credentials.json
+.figma_token
+.linkedin_cookie
+*.token
+
+# Generated outputs (personal data)
+_temp/
+_output/
+brain/
+
+# Personal knowledge base (your actual work data)
+# These folders exist in the repo for structure, but your real content stays local
+Clients/*/meetings/*.md
+Clients/*/strategy/*.md
+Clients/*/Research/*.md
+Clients/*/*/*.md
+journal/todo_*.md
+
+# Editor
+.vscode/
+.idea/

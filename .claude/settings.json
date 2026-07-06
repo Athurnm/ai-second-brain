@@ -1,0 +1,101 @@
+{
+  "model": "opus",
+  "alwaysThinkingEnabled": true,
+  "permissions": {
+    "allow": [],
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "~/You/You",
+      "~/antigravity-projects/You"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session_git_sync.sh\"",
+            "shell": "bash",
+            "timeout": 45,
+            "statusMessage": "Syncing with GitHub..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/dashboard_context.py\"'",
+            "timeout": 10,
+            "statusMessage": "Loading dashboard context (trimmed)..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/wib_clock.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking WIB clock..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/glm_mode.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking GLM mode..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && bash .agent/scripts/ensure_dashboard.sh >/dev/null 2>&1 &",
+            "timeout": 10,
+            "statusMessage": "Ensuring dashboard (localhost:3737)..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*[Ss]lack.*__.*(post|send|reply).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/slack_send_guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/drive_verify.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/emdash_guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
