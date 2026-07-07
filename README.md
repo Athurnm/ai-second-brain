@@ -131,6 +131,32 @@ The point is to secondary your week: less time compiling and formatting, more ti
 
 ---
 
+## What It Actually Does, Every Day
+
+Not a feature list. This is what one real week of use looks like, drawn from the activity log:
+
+- **Every morning:** "prep my day." It sweeps calendar, Slack, email, and yesterday's meetings, then hands back the five things that matter before you open your laptop.
+- **Every evening:** "close my day." It scores what got done against the morning plan, updates tomorrow's carryover, and asks if it should remember any correction you made.
+- **After every meeting:** "write the notes." Transcript in, structured minutes out, action items filed to your tracker with owners and due dates.
+- **All day:** "reply to this," "update this ticket's status," "draft the BRD for X." In a typical week that is dozens of Slack replies drafted, dozens of tickets synced, and a stack of documents published to Drive, each one gated by your approval before it goes out.
+- **On a schedule:** the weekly executive report, the weekly plan, the content calendar. Each one harvests a week of scattered work and returns a finished draft.
+
+The point is not any single trick. It is that the boring, structured 70% of the week runs on rails, so your attention goes to the 30% that needs a human.
+
+### One recording, everywhere
+
+The same pattern powers a content pipeline that would otherwise cost half a day and a stack of subscriptions:
+
+```
+   record once  ─▶  auto-edit  ─▶  "post it"  ─▶  YouTube + Instagram
+                                                   + LinkedIn + Facebook
+                                                   + WhatsApp channel ─▶ groups
+```
+
+Hand it a raw recording. It transcribes, scores the most compelling segments, cuts a captioned vertical clip with a branded closing frame, and on one approval uploads it to YouTube and Instagram natively, cross-posts to LinkedIn and Facebook, publishes to a WhatsApp channel, and forwards it across your WhatsApp groups with human-like pacing. You record, and you say the word. The distribution runs itself.
+
+---
+
 ## Multi-Agent Setup: Faster and Cheaper
 
 Here is the part that makes it economical to run every day.

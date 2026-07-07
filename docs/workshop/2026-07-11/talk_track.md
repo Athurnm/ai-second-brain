@@ -16,7 +16,11 @@ Dua dekade di produk. Tokopedia: optimasi OTP hemat ~$2 juta/tahun. Flip: efisie
 
 Baca cepat sembilan contoh di layar. Jangan dijelasin satu-satu di sini, ini pancingan. Bilang: "sembilan ini cuma pembuka, sekarang kita lihat satu per satu." Tujuannya bikin penasaran sebelum masuk detail.
 
-## Slide 4-11: Delapan slide showcase (JUALAN UTAMA)
+## Slide 4: Sehari-hari yang gw minta (bukti frekuensi)
+
+Ini slide kredibilitas. Angka di layar dari log kerja nyata 6 hari terakhir: dashboard sync 62×, balas Slack 24×, doc/BRD 32×, morning + evening tiap hari, MOM tiap meeting. Pesannya: ini bukan fitur brosur, ini yang beneran gw pakai tiap hari. Boleh cerita satu contoh nyata (misal MOM meeting tadi pagi yang langsung jadi).
+
+## Delapan slide showcase (JUALAN UTAMA)
 
 Ini bagian terpenting sesi. Jualan dulu sebelum teori. Untuk tiap slide, ambil 1-2 kartu dan ceritain pengalaman nyata, jangan bacain semua kartu.
 
@@ -27,7 +31,13 @@ Ini bagian terpenting sesi. Jualan dulu sebelum teori. Untuk tiap slide, ambil 1
 - **Slide 8 Data**: highlight Jira "flag kalau ada yang megang >40% tiket".
 - **Slide 9 Desain**: tekankan deck yang lagi mereka lihat ini dibuat pakai sistem yang sama.
 - **Slide 10 Konten & video**: JELASKAN pipeline generate-post penuh, terutama **de-AI pass** (biar gak kerasa AI: buang pola "ini bukan soal X tapi soal Y", em-dash). Lalu clipper long→shorts.
-- **Slide 11 Learn & memory**: momen "aha" terbesar. Ceritakan: di ChatGPT tiap chat mulai dari nol. Di sini, kamu koreksi sekali ("jangan em-dash"), `/learn`, dan dia inget selamanya. Tunjukkan contoh nyata: aturan Slack permalink, gaya bahasa.
+- **Slide Konten & video**: JELASKAN pipeline generate-post penuh, terutama **de-AI pass**.
+
+## Slide studi kasus: Content Distribution Engine (setelah Konten & video)
+
+Slide paling "wow" buat audiens creator/marketing. Ceritakan flow nyata konten gw: rekam video → `video-suite` edit otomatis (skor viral, potong, subtitle, closing screen) → bilang "gas" → auto-upload YouTube Shorts + IG Reels (native, ada bukti post minggu ini) + LinkedIn/FB via Repliz → post WA Channel → auto-forward ke grup WA. Tekankan JUJUR: WA Story masih difinalisasi, jangan diklaim jalan. Angle jualan: yang biasanya makan setengah hari editing + posting manual, kelar sambil ngopi. Ini bukti pola second brain bisa dipakai buat hidup content creator, bukan cuma kerjaan kantor.
+
+- **Slide Learn & memory**: momen "aha" terbesar. Ceritakan: di ChatGPT tiap chat mulai dari nol. Di sini, kamu koreksi sekali ("jangan em-dash"), `/learn`, dan dia inget selamanya. Tunjukkan contoh nyata: aturan Slack permalink, gaya bahasa.
 
 ## Slide 12: Multi-agent
 
