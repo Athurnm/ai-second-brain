@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>PSB Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+  <div class="shell">
+
+    <header class="app-header">
+      <h1 class="app-title">🧠 Product Second Brain</h1>
+      <span class="app-date" id="app-date"></span>
+      <div class="app-meta">
+        <span id="app-updated"></span>
+        <button class="btn-refresh" id="btn-refresh" title="Refresh now">↻ Refresh</button>
+      </div>
+    </header>
+
+    <nav class="tab-nav" id="tab-nav">
+      <button class="tab-btn" data-tab="today">⭐ Today</button>
+      <button class="tab-btn" data-tab="work">📋 Work</button>
+      <button class="tab-btn" data-tab="meetings">🎥 Meetings</button>
+      <button class="tab-btn" data-tab="system">⚙ System<span class="tab-dot"></span></button>
+    </nav>
+
+    <main>
+      <section class="tab-panel" id="tab-today"></section>
+      <section class="tab-panel" id="tab-work"></section>
+      <section class="tab-panel" id="tab-meetings"></section>
+      <section class="tab-panel" id="tab-system"></section>
+    </main>
+
+  </div>
+
+  <div class="drawer-root" id="drawer-root"></div>
+  <div class="toast-root" id="toast-root"></div>
+
+  <script src="components.js" defer></script>
+  <script src="tab-work.js" defer></script>
+  <script src="tab-meetings.js" defer></script>
+  <script src="tab-system.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,1948 @@
+/* ═══════════════════════════════════════════
+   PSB DASHBOARD — design tokens + component CSS
+   Stage 1 of the 4-tab redesign. Stage 2 tab modules use ONLY the
+   classes below via components.js — no inline styles except --pct.
+
+   Palette gate (dataviz skill): validate_palette.js
+   "#3987e5,#199e70,#c98500,#008300,#9085e9,#e66767,#d55181,#d95926"
+   --mode dark --surface "#14151F"  →  ALL CHECKS PASS (2026-07-11).
+   Final categorical hexes = as listed (no snapping needed). CVD worst
+   adjacent ΔE 10.3 sits in the legal floor band; mitigation = icons +
+   labels always accompany color (Comp.badge auto-prefixes ✓ ⚠ ⏳ ⛔).
+   ═══════════════════════════════════════════ */
+:root {
+  /* HSL System for Precision (seed kept from v1) */
+  --h-indigo: 235;
+  --h-violet: 265;
+  --h-emerald: 160;
+  --h-amber: 40;
+  --h-rose: 350;
+
+  /* Backgrounds */
+  --bg-primary: hsl(var(--h-indigo), 30%, 4%);
+  --bg-secondary: hsl(var(--h-indigo), 25%, 7%);
+  --bg-card: hsla(var(--h-indigo), 20%, 10%, 0.6);
+  --bg-card-hover: hsla(var(--h-indigo), 20%, 14%, 0.8);
+  --bg-input: rgba(255, 255, 255, 0.03);
+  --bg-glass: rgba(255, 255, 255, 0.04);
+
+  /* Text */
+  --text-primary: hsl(var(--h-indigo), 15%, 94%);
+  --text-secondary: hsl(var(--h-indigo), 12%, 65%);
+  --text-muted: hsl(var(--h-indigo), 10%, 45%);
+  --text-accent: hsl(var(--h-violet), 80%, 85%);
+
+  /* Priority Colors */
+  --p0: hsl(var(--h-rose), 90%, 65%);
+  --p0-bg: hsla(var(--h-rose), 90%, 65%, 0.1);
+  --p0-border: hsla(var(--h-rose), 90%, 65%, 0.25);
+
+  --p1: hsl(var(--h-amber), 90%, 60%);
+  --p1-bg: hsla(var(--h-amber), 90%, 60%, 0.1);
+  --p1-border: hsla(var(--h-amber), 90%, 60%, 0.25);
+
+  --p2: hsl(210, 90%, 65%);
+  --p2-bg: hsla(210, 90%, 65%, 0.1);
+  --p2-border: hsla(210, 90%, 65%, 0.25);
+
+  /* Client Colors */
+  --work: hsl(var(--h-emerald), 70%, 55%);
+  --work-bg: hsla(var(--h-emerald), 70%, 55%, 0.08);
+  --work-border: hsla(var(--h-emerald), 70%, 55%, 0.2);
+
+  --secondary: hsl(var(--h-violet), 70%, 75%);
+  --secondary-bg: hsla(var(--h-violet), 70%, 75%, 0.08);
+  --secondary-border: hsla(var(--h-violet), 70%, 75%, 0.2);
+
+  /* Borders & Surfaces */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-active: rgba(255, 255, 255, 0.14);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 80px hsla(var(--h-violet), 50%, 50%, 0.05);
+
+  /* Sizing */
+  --radius: 20px;
+  --radius-sm: 12px;
+  --radius-xs: 8px;
+
+  /* ── Status palette (fixed, reserved — never themed, never color-alone) ── */
+  --st-good: #0CA30C;
+  --st-warn: #FAB219;
+  --st-serious: #EC835A;
+  --st-crit: #D03B3B;
+  --st-good-bg: rgba(12, 163, 12, 0.12);
+  --st-warn-bg: rgba(250, 178, 25, 0.12);
+  --st-serious-bg: rgba(236, 131, 90, 0.12);
+  --st-crit-bg: rgba(208, 59, 59, 0.12);
+
+  /* ── Categorical palette (fixed order, never cycled) ──
+     project map: 1 Marketplace · 2 B2C · 3 PIM · 4 Seller Portal ·
+     5 Example Program · 6 Work ID · 7 Ecommerce · 8 Other */
+  --cat-1: #3987E5;
+  --cat-2: #199E70;
+  --cat-3: #C98500;
+  --cat-4: #008300;
+  --cat-5: #9085E9;
+  --cat-6: #E66767;
+  --cat-7: #D55181;
+  --cat-8: #D95926;
+
+  --surface-opaque: #14151F;   /* chart/validator surface */
+
+  /* ── RGB ambient tokens — chrome/decoration ONLY, never data encoding.
+     Status + categorical palettes above stay reserved for data marks.
+     First stop == last stop so the hue-rotate cycle loops seamlessly. ── */
+  --rgb-grad: linear-gradient(90deg, #ff3b6b, #ff8a00, #ffe000, #3bff6f, #00e5ff, #6a8bff, #c86bff, #ff3b6b);
+  --rgb-conic: conic-gradient(from 0deg, #ff3b6b, #ff8a00, #ffe000, #3bff6f, #00e5ff, #6a8bff, #c86bff, #ff3b6b);
+
+  /* ── Spacing scale ── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ── Type scale ── */
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 26px;
+  --fs-hero: 36px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+/* ═══════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* aurora mesh v2 — lives on a fixed pseudo so it can drift without
+   repainting the page. z-index:-1 paints above the canvas (body bg
+   propagates to the canvas) but behind ALL content. Brightened per You
+   ("RGB gaming rig meets command center") — visible color pools, text
+   contrast untouched. Static under reduced motion. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 520px at 80% -10%, hsla(var(--h-violet), 75%, 52%, 0.17), transparent 62%),
+    radial-gradient(900px 520px at 0% 0%, hsla(210, 85%, 48%, 0.15), transparent 58%),
+    radial-gradient(760px 480px at 55% 112%, hsla(var(--h-emerald), 70%, 45%, 0.12), transparent 62%),
+    radial-gradient(620px 440px at 22% 78%, hsla(var(--h-rose), 80%, 55%, 0.09), transparent 60%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body::before {
+    will-change: transform, filter;
+    animation: aurora-drift 45s ease-in-out infinite alternate;
+  }
+  @keyframes aurora-drift {
+    from { transform: translate3d(-1.5%, -1%, 0) rotate(-0.5deg); filter: hue-rotate(0deg); }
+    to   { transform: translate3d(1.5%, 1.5%, 0) rotate(0.75deg); filter: hue-rotate(55deg); }
+  }
+}
+
+a { color: var(--text-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.num, .tab-count { font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════════
+   APP SHELL — header + nav + tab panels
+   ═══════════════════════════════════════════ */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-5) 80px;
+}
+
+.app-header {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+/* ── SIGNATURE RGB ELEMENT: 2px spectrum hairline under the header,
+   always on. ::after = the crisp line, ::before = its blurred glow halo.
+   Static rainbow under reduced motion (gradient stays, cycle stops). ── */
+.app-header::after,
+.app-header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: var(--rgb-grad);
+  background-size: 200% 100%;
+}
+.app-header::before {
+  height: 9px;
+  bottom: -4px;
+  filter: blur(8px);
+  opacity: 0.6;
+}
+
+.app-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  /* brand glow — hue cycles under no-preference; static violet fallback */
+  filter: drop-shadow(0 0 14px hsla(var(--h-violet), 90%, 65%, 0.55));
+}
+
+.app-date { color: var(--text-secondary); font-size: var(--fs-sm); }
+
+.app-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.btn-refresh {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  background: var(--bg-glass);
+  transition: border-color .15s, color .15s;
+}
+.btn-refresh:hover { border-color: var(--border-active); color: var(--text-primary); }
+.btn-refresh.is-busy { opacity: .5; pointer-events: none; }
+
+/* ── Tab nav ── */
+.tab-nav {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  position: relative;
+  padding: var(--sp-2) var(--sp-4) 10px;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.is-active {
+  color: var(--text-primary);
+  border-bottom-color: transparent;   /* the RGB ::after IS the underline */
+  /* subtle glow underline — static (not motion), so it survives reduced-motion */
+  box-shadow: 0 16px 22px -16px hsla(var(--h-violet), 80%, 70%, 0.55);
+  text-shadow: 0 0 20px hsla(var(--h-violet), 80%, 75%, 0.35);
+}
+/* active tab: animated RGB gradient underline (static rainbow fallback).
+   background-size 100% = the FULL spectrum loop across the tab width */
+.tab-btn.is-active::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: var(--rgb-grad);
+  background-size: 100% 100%;
+}
+
+.tab-btn .tab-dot {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st-crit);
+  box-shadow: 0 0 6px var(--st-crit);
+  display: none;
+}
+.tab-btn.has-alert .tab-dot { display: block; }
+
+.tab-panel { display: none; animation: fadeIn .18s ease; }
+.tab-panel.is-active { display: block; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ── Layout grids ── */
+.hero-row {
+  /* auto-fit: Today has 5 tiles, System has 4 — both fill the full width */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+  margin-bottom: var(--sp-4);
+}
+
+.stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.grid-cards {
+  display: grid;
+  /* ≥300px so initiative/team names breathe (truncation policy) */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--sp-3);
+}
+
+.chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-3);
+}
+
+/* ═══════════════════════════════════════════
+   STAT TILE — the glanceable hero number
+   ═══════════════════════════════════════════ */
+.stat-tile {
+  display: block;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .15s, background .15s, transform .1s;
+}
+a.stat-tile:hover {
+  text-decoration: none;
+  border-color: var(--border-active);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.stat-value {
+  font-size: var(--fs-hero);
+  font-weight: 750;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.stat-sub {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 17px;
+}
+
+.stat--good     { }
+.stat--good .stat-value { color: var(--text-secondary); }
+.stat--good .stat-sub   { color: var(--st-good); }
+.stat--warn .stat-value    { color: var(--st-warn); }
+.stat--warn .stat-sub      { color: var(--st-warn); }
+.stat--serious .stat-value { color: var(--st-serious); }
+.stat--serious .stat-sub   { color: var(--st-serious); }
+.stat--serious { border-color: rgba(236, 131, 90, 0.3); background: linear-gradient(180deg, var(--st-serious-bg), var(--bg-card) 70%); }
+.stat--critical .stat-value { color: var(--st-crit); }
+.stat--critical .stat-sub   { color: var(--st-crit); }
+.stat--critical { border-color: rgba(208, 59, 59, 0.35); background: linear-gradient(180deg, var(--st-crit-bg), var(--bg-card) 70%); }
+
+/* ═══════════════════════════════════════════
+   CARD — collapsible domain card (<details class="card">)
+   ═══════════════════════════════════════════ */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  --wash: transparent;
+}
+
+.card > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-4);
+  background: linear-gradient(180deg, var(--wash), transparent);
+  user-select: none;
+}
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary:hover { background: linear-gradient(180deg, var(--wash), var(--bg-glass)); }
+
+.card-icon { font-size: var(--fs-md); line-height: 1; }
+
+/* TRUNCATION POLICY: titles/names wrap up to 2 lines, NEVER single-line
+   ellipsis — You must be able to read "ExampleCo …" / "Catal…" in full.
+   The title column shrinks (min-width:0) instead of pushing badges out. */
+.card-title {
+  font-size: var(--fs-md);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  flex: 0 1 auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.card-count {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.card-spacer { flex: 1; }
+
+/* EXPAND AFFORDANCE (v4): the chevron is a visible circled button-like
+   chip — You couldn't tell cards were clickable when it was a bare
+   faint glyph. ▸ rotates to ▾ (90°) when open, brightens on hover. */
+.card-chevron {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+  transition: transform .18s ease, color .15s, border-color .15s, background .15s;
+}
+.card > summary:hover .card-chevron {
+  color: var(--text-primary);
+  border-color: var(--border-active);
+  background: var(--bg-card-hover);
+}
+.card[open] > summary .card-chevron { transform: rotate(90deg); }
+
+.card-body { padding: 0 var(--sp-4) var(--sp-4); }
+
+/* soft hue wash per domain (0.07 alpha of the categorical hue) */
+.card[data-key="tracker"] > summary,
+.card[data-key="top-tickets"] > summary,
+.card[data-key="freshness"] > summary,
+.card[data-key="activity"] > summary        { --wash: rgba(57, 135, 229, 0.07); }
+.card[data-key="meetings"] > summary,
+.card[data-key="meetings-today"] > summary,
+.card[data-key="moms"] > summary,
+.card[data-key="routines"] > summary,
+.card[data-key="health"] > summary          { --wash: rgba(25, 158, 112, 0.07); }
+.card[data-key="commitments"] > summary,
+.card[data-key="cost"] > summary            { --wash: rgba(201, 133, 0, 0.07); }
+.card[data-key="portfolio"] > summary       { --wash: rgba(0, 131, 0, 0.07); }
+.card[data-key="decisions"] > summary,
+.card[data-key="harness"] > summary         { --wash: rgba(144, 133, 233, 0.07); }
+.card[data-key="people"] > summary          { --wash: rgba(213, 81, 129, 0.07); }
+.card[data-key="bots"] > summary            { --wash: rgba(217, 89, 38, 0.07); }
+
+/* ═══════════════════════════════════════════
+   LIST ROW — one item inside a card
+   ═══════════════════════════════════════════ */
+.rows { display: flex; flex-direction: column; }
+
+.row, details.row > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--radius-xs);
+  min-height: 36px;
+}
+.row + .row, .rows > * + * { border-top: 1px solid rgba(255,255,255,0.04); }
+
+details.row { display: block; padding: 0; }
+details.row > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+details.row > summary::-webkit-details-marker { display: none; }
+details.row > summary:hover, div.row:hover { background: var(--bg-glass); }
+details.row[open] > summary { background: var(--bg-glass); }
+
+/* EXPAND AFFORDANCE (v4): expandable rows get the same circled chevron
+   as cards — previously they had NO visual tell at all. Pure CSS, so
+   every listRow/taskRow with expandBody grows it automatically; plain
+   div.row never does (chevron === "click to expand", unmistakable). */
+details.row > summary::after {
+  content: "▸";
+  flex: none;
+  margin-left: var(--sp-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+  transition: transform .18s ease, color .15s, border-color .15s, background .15s;
+}
+/* rows without a .row-right: the chevron itself hugs the right edge */
+details.row > summary:not(:has(.row-right))::after { margin-left: auto; }
+details.row > summary:hover::after {
+  color: var(--text-primary);
+  border-color: var(--border-active);
+  background: var(--bg-card-hover);
+}
+details.row[open] > summary::after { transform: rotate(90deg); }
+
+/* anything that opens the Drawer is clickable — always show it */
+[data-drawer-path] { cursor: pointer; }
+
+.row-icon { flex: none; font-size: var(--fs-sm); width: 20px; text-align: center; }
+
+.row-title {
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.row-badges { display: inline-flex; gap: var(--sp-1); flex: none; flex-wrap: wrap; }
+
+.row-meta {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  /* shrinkable (v4): a badge-heavy row used to crush the title to 0px and
+     push the expand chevron outside the card — meta gives way first */
+  flex: 0 1 auto;
+  min-width: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 32%;
+}
+
+.row-right { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+.row-expand {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3) 34px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+.row-expand p + p { margin-top: var(--sp-2); }
+
+.row.is-dim, .row .is-dim { opacity: 0.55; }
+
+.row-note { color: var(--text-secondary); white-space: pre-wrap; }
+
+/* muted xs context line that WRAPS (never truncates) — belongs to the row
+   directly above it inside .rows (no divider between them), or sits inside
+   a .row-expand as a supplementary note */
+.row-subtext {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.rows > .row-subtext {
+  border-top: 0;                          /* .rows > * + * divider stays off */
+  padding: 0 var(--sp-2) var(--sp-2) 34px; /* aligns under the row title */
+  margin-top: -2px;
+}
+.row-expand .row-subtext { margin-top: var(--sp-2); }
+
+.comment-list { margin-top: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-1); }
+.comment-item { font-size: var(--fs-xs); color: var(--text-muted); }
+.comment-item b { color: var(--text-secondary); font-weight: 600; }
+
+/* ═══════════════════════════════════════════
+   BADGE — status (icon + label, never color alone),
+   priority, categorical, muted
+   ═══════════════════════════════════════════ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.badge--good     { color: var(--st-good);    background: var(--st-good-bg);    border-color: rgba(12,163,12,0.25); }
+.badge--warn     { color: var(--st-warn);    background: var(--st-warn-bg);    border-color: rgba(250,178,25,0.25); }
+.badge--serious  { color: var(--st-serious); background: var(--st-serious-bg); border-color: rgba(236,131,90,0.25); }
+.badge--critical { color: var(--st-crit);    background: var(--st-crit-bg);    border-color: rgba(208,59,59,0.3); }
+
+.badge--p0 { color: var(--p0); background: var(--p0-bg); border-color: var(--p0-border); }
+.badge--p1 { color: var(--p1); background: var(--p1-bg); border-color: var(--p1-border); }
+.badge--p2 { color: var(--p2); background: var(--p2-bg); border-color: var(--p2-border); }
+
+.badge--muted { color: var(--text-muted); background: var(--bg-glass); border-color: var(--border); }
+
+/* categorical badges: neutral text + colored identity dot (text never wears data color) */
+.badge--cat { color: var(--text-secondary); background: var(--bg-glass); border-color: var(--border); }
+.badge-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.badge--cat-1 .badge-dot { background: var(--cat-1); }
+.badge--cat-2 .badge-dot { background: var(--cat-2); }
+.badge--cat-3 .badge-dot { background: var(--cat-3); }
+.badge--cat-4 .badge-dot { background: var(--cat-4); }
+.badge--cat-5 .badge-dot { background: var(--cat-5); }
+.badge--cat-6 .badge-dot { background: var(--cat-6); }
+.badge--cat-7 .badge-dot { background: var(--cat-7); }
+.badge--cat-8 .badge-dot { background: var(--cat-8); }
+
+/* ═══════════════════════════════════════════
+   PROGRESS — bar + conic ring (fill % via --pct custom prop,
+   the ONLY allowed inline style form)
+   ═══════════════════════════════════════════ */
+.progress { display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+.progress-label { font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.progress-bar {
+  --pct: 0;
+  width: 120px;
+  max-width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(57, 135, 229, 0.18);   /* lighter step of the same ramp */
+  overflow: hidden;
+  position: relative;
+}
+.progress-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: calc(var(--pct) * 1%);
+  border-radius: 999px;
+  background: var(--cat-1);
+  transition: width .3s ease;
+}
+
+.progress-ring {
+  --pct: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: conic-gradient(var(--cat-1) calc(var(--pct) * 1%), rgba(57, 135, 229, 0.15) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 6px), #000 calc(100% - 5px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 6px), #000 calc(100% - 5px));
+  flex: none;
+}
+
+/* ═══════════════════════════════════════════
+   PERSON CHIP
+   ═══════════════════════════════════════════ */
+.person-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  text-align: left;
+  width: 100%;
+}
+.person-chip:hover { border-color: var(--border-active); background: var(--bg-card-hover); }
+
+.person-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: hsla(var(--h-violet), 50%, 55%, 0.25);
+}
+
+.person-name { font-size: var(--fs-base); font-weight: 600; line-height: 1.25; }
+.person-role {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.person-main { min-width: 0; flex: 1; }
+.person-counts {
+  flex: none;
+  display: inline-flex;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.person-counts span { display: inline-flex; align-items: center; gap: 3px; }
+
+/* ═══════════════════════════════════════════
+   EMPTY STATE — calm, single line
+   ═══════════════════════════════════════════ */
+.empty-state {
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-icon { font-size: 22px; margin-bottom: var(--sp-2); opacity: 0.7; }
+.empty-title { font-size: var(--fs-base); color: var(--text-secondary); font-weight: 550; }
+.empty-hint { font-size: var(--fs-xs); margin-top: var(--sp-1); }
+
+/* ═══════════════════════════════════════════
+   STALENESS — badge + dim, content never hidden
+   ═══════════════════════════════════════════ */
+.is-dim { opacity: 0.55; }
+
+.stale-wrap { position: relative; }
+.stale-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: var(--sp-2);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--st-warn);
+  background: var(--st-warn-bg);
+  border: 1px solid rgba(250,178,25,0.25);
+}
+.stale-note--dead {
+  color: var(--st-serious);
+  background: var(--st-serious-bg);
+  border-color: rgba(236,131,90,0.25);
+}
+
+/* ═══════════════════════════════════════════
+   SPARKLINE — recessive inline SVG
+   ═══════════════════════════════════════════ */
+.spark { display: inline-block; vertical-align: middle; }
+.spark polyline {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ═══════════════════════════════════════════
+   ESCALATION STRIP (Today) — absent when empty
+   ═══════════════════════════════════════════ */
+.escalation-strip {
+  border: 1px solid rgba(236, 131, 90, 0.3);
+  background: linear-gradient(180deg, var(--st-serious-bg), var(--bg-card));
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.escalation-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--st-serious);
+  margin-bottom: var(--sp-2);
+}
+
+/* Meetings health strip reuses the strip layout but must stay neutral —
+   an alarm-colored frame around healthy status chips would lie */
+.escalation-strip[data-key="meetings-health"] {
+  border-color: var(--border);
+  background: var(--bg-card);
+}
+.escalation-strip[data-key="meetings-health"] .escalation-title { color: var(--text-muted); }
+.escalation-strip[data-key="meetings-health"] .chips { margin-bottom: 0; }
+
+/* ═══════════════════════════════════════════
+   ACTION BAR — inline ticket edit (status/priority/comment/save)
+   ═══════════════════════════════════════════ */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.action-bar select, .action-bar input[type="text"] {
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 5px 8px;
+  outline: none;
+}
+.action-bar select:focus, .action-bar input:focus { border-color: var(--border-active); }
+.action-bar select option { background: var(--surface-opaque); color: var(--text-primary); }
+.action-bar input[type="text"] { flex: 1; min-width: 140px; }
+
+.action-save {
+  padding: 5px 14px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--bg-primary);
+  background: var(--text-accent);
+  transition: opacity .15s;
+}
+.action-save:hover { opacity: 0.85; }
+.action-save:disabled { opacity: 0.4; cursor: default; }
+
+/* ═══════════════════════════════════════════
+   FILTER CHIPS (Work tab)
+   ═══════════════════════════════════════════ */
+.chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+
+.chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition: all .15s;
+}
+.chip:hover { border-color: var(--border-active); color: var(--text-primary); }
+.chip.is-active {
+  color: var(--bg-primary);
+  background: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+/* ═══════════════════════════════════════════
+   DRAWER — right-side file viewer
+   ═══════════════════════════════════════════ */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(680px, 92vw);
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-active);
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  z-index: 41;
+  transform: translateX(102%);
+  transition: transform .22s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-root.is-open .drawer-overlay { opacity: 1; pointer-events: auto; }
+.drawer-root.is-open .drawer { transform: none; }
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.drawer-title {
+  font-size: var(--fs-md);
+  font-weight: 650;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.drawer-close {
+  margin-left: auto;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  line-height: 1;
+  background: var(--bg-glass);
+}
+.drawer-close:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+
+.drawer-body { padding: var(--sp-5); overflow-y: auto; flex: 1; }
+
+/* ── escalation draft (drawer body): editable plain-prose textarea ── */
+.draft-area {
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-3);
+  resize: vertical;
+  outline: none;
+}
+.draft-area:focus { border-color: var(--border-active); }
+
+/* ── rendered markdown (drawer + expanded notes) ── */
+.md { font-size: var(--fs-base); color: var(--text-secondary); line-height: 1.65; }
+.md h1, .md h2, .md h3 { color: var(--text-primary); margin: var(--sp-4) 0 var(--sp-2); line-height: 1.3; }
+.md h1 { font-size: var(--fs-lg); }
+.md h2 { font-size: var(--fs-md); }
+.md h3 { font-size: var(--fs-base); }
+.md h1:first-child, .md h2:first-child, .md h3:first-child { margin-top: 0; }
+.md p { margin: 0 0 var(--sp-2); }
+.md ul { margin: 0 0 var(--sp-2); padding-left: 22px; }
+.md li { margin-bottom: 3px; }
+.md strong { color: var(--text-primary); }
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ═══════════════════════════════════════════
+   TOAST
+   ═══════════════════════════════════════════ */
+.toast-root {
+  position: fixed;
+  bottom: var(--sp-5);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface-opaque);
+  border: 1px solid var(--border-active);
+  box-shadow: var(--shadow-card);
+  animation: toastIn .18s ease;
+}
+.toast--ok  { border-color: rgba(12,163,12,0.4); }
+.toast--err { border-color: rgba(208,59,59,0.5); }
+.toast.is-leaving { opacity: 0; transition: opacity .25s; }
+
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ═══════════════════════════════════════════
+   SKELETON — calendar / slow-endpoint loading
+   ═══════════════════════════════════════════ */
+.skeleton { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) 0; }
+.skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.05) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* ── inline error (one endpoint failed; siblings keep rendering) ── */
+.load-error {
+  padding: var(--sp-3);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
+  color: var(--st-serious);
+  background: var(--st-serious-bg);
+  border: 1px solid rgba(236,131,90,0.25);
+}
+
+/* ═══════════════════════════════════════════
+   MISC — meeting rows, activity, section label
+   ═══════════════════════════════════════════ */
+.section-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+
+.time-pill {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 3px 8px;
+  min-width: 52px;
+  text-align: center;
+}
+
+.prep-link {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-accent);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-glass);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.prep-link:hover { border-color: var(--border-active); }
+
+/* ═══════════════════════════════════════════
+   V2 COMPONENTS — breadcrumb, jira chip, task hierarchy,
+   chase button, ring stat, duo bars, action items, log panel
+   ═══════════════════════════════════════════ */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-3);
+}
+.breadcrumb .crumb { color: var(--text-secondary); }
+.breadcrumb a.crumb:hover { color: var(--text-accent); text-decoration: none; }
+.breadcrumb .crumb-current { color: var(--text-primary); font-weight: 600; }
+.breadcrumb .crumb-sep { opacity: 0.55; user-select: none; }
+
+/* jira chip — deliberately NOT a badge: mono font, squared corners */
+.jira-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+a.jira-chip:hover { border-color: var(--border-active); color: var(--text-accent); text-decoration: none; }
+
+/* task hierarchy — depth-1 subtasks sit in a muted left rail, lighter type */
+.task-children {
+  margin-left: 26px;
+  padding-left: var(--sp-2);
+  border-left: 2px solid rgba(255, 255, 255, 0.07);
+}
+.task-row--sub { min-height: 30px; }
+.task-row--sub .row-title { font-size: var(--fs-sm); color: var(--text-secondary); }
+
+/* chase button — files an item into the waiting-on watchdog */
+.chase-btn {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--st-warn);
+  background: var(--st-warn-bg);
+  border: 1px solid rgba(250, 178, 25, 0.3);
+  white-space: nowrap;
+  transition: border-color .15s;
+}
+.chase-btn:hover { border-color: rgba(250, 178, 25, 0.55); }
+.chase-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* ring stat — big conic ring, % in the middle (savings/completion) */
+.ring-stat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  text-align: center;
+}
+.ring-stat-ring {
+  --pct: 0;
+  position: relative;
+  width: 104px;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ring-stat-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--cat-2) calc(var(--pct) * 1%), rgba(25, 158, 112, 0.14) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 11px), #000 calc(100% - 10px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 11px), #000 calc(100% - 10px));
+}
+.ring-stat-pct {
+  font-size: var(--fs-xl);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ring-stat-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ring-stat-sub { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* duo bars — paired daily bars, categorical colors (a=spent, b=saved) */
+.duo-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 64px;
+  padding: var(--sp-1) 0;
+}
+.duo-day {
+  flex: 1 1 0;
+  min-width: 6px;
+  max-width: 26px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+.duo-bar {
+  --pct: 0;
+  width: 5px;
+  min-height: 2px;
+  height: calc(var(--pct) * 1%);
+  border-radius: 2px 2px 0 0;
+}
+.duo-bar--a { background: var(--cat-1); }
+.duo-bar--b { background: var(--cat-2); }
+
+/* action item row — "→ Jadiin ticket" */
+.make-ticket-btn {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-accent);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  transition: border-color .15s;
+}
+.make-ticket-btn:hover { border-color: var(--border-active); }
+.make-ticket-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* log panel — monospace tail + heartbeat header */
+.log-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.log-job { font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary); }
+.log-hb { margin-left: auto; font-variant-numeric: tabular-nums; }
+.log-tail {
+  margin: 0;
+  padding: var(--sp-3);
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ═══════════════════════════════════════════
+   V3 COMPONENTS — link chips, donut, distribution bar, mini bars,
+   back button, shared chart-legend chips, wide drawer
+   ═══════════════════════════════════════════ */
+
+/* ── link chips (Comp.linkChips) — labeled source refs on rows/cards ── */
+.link-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+a.link-chip:hover, button.link-chip:hover {
+  border-color: var(--border-active);
+  color: var(--text-accent);
+  text-decoration: none;
+}
+.link-chip-ic { font-size: var(--fs-xs); line-height: 1; }
+.link-chip--more { cursor: default; color: var(--text-muted); }
+
+/* ── shared chart-kind color utility (data marks + legend dots).
+   cat-* = categorical identity, p* = priority. NO status colors as
+   series (dataviz rule) — there are deliberately no .k-good/.k-crit. ── */
+.k-cat-1 { background: var(--cat-1); }
+.k-cat-2 { background: var(--cat-2); }
+.k-cat-3 { background: var(--cat-3); }
+.k-cat-4 { background: var(--cat-4); }
+.k-cat-5 { background: var(--cat-5); }
+.k-cat-6 { background: var(--cat-6); }
+.k-cat-7 { background: var(--cat-7); }
+.k-cat-8 { background: var(--cat-8); }
+.k-p0 { background: var(--p0); }
+.k-p1 { background: var(--p1); }
+.k-p2 { background: var(--p2); }
+
+/* ── chart legend (donut + distBar) — text in text tokens, color only
+   on the swatch, count muted ── */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.legend-dot { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.legend-n { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── donut (Comp.donut) — thin 10px ring, 2px surface gaps, center total ── */
+.donut-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.donut-total {
+  fill: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.donut-sublabel { fill: var(--text-muted); }
+
+/* ── distribution bar (Comp.distBar) — one 100%-stacked thin row ── */
+.dist-wrap { display: block; }
+.dist-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.dist-bar {
+  display: flex;
+  gap: 2px;                    /* the dataviz surface gap */
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.dist-seg {
+  --pct: 0;
+  flex: var(--pct) 1 0px;
+  min-width: 3px;              /* tiny slices stay visible + hoverable */
+}
+
+/* ── mini bars (Comp.miniBars) — recessive tiny vertical series ── */
+.mini-bars { display: inline-block; vertical-align: middle; }
+
+/* ── back button (Comp.backButton) — drill-view escape hatch ── */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+a.back-btn:hover, button.back-btn:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* ── wide drawer variant (Drawer.openWide) — initiative slide-over ── */
+.drawer.drawer--wide { width: min(max(680px, 72vw), 96vw); }
+
+/* ═══════════════════════════════════════════
+   V4 COMPONENTS (E2 visual foundation) — AI run button/pills,
+   ticket chip, Harness Map v2, trend (momentum) card, momentum band,
+   labeled spark. All animation lives in this section's own
+   no-preference guard at the bottom.
+   ═══════════════════════════════════════════ */
+
+/* ── 🤖 AI button (Comp.aiButton) — violet accent, distinct from
+   chase (amber) and make-ticket (neutral) ── */
+.ai-btn {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-accent);
+  background: hsla(var(--h-violet), 60%, 60%, 0.10);
+  border: 1px solid hsla(var(--h-violet), 70%, 70%, 0.35);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ai-btn:hover {
+  border-color: hsla(var(--h-violet), 80%, 75%, 0.6);
+  box-shadow: 0 0 12px -2px hsla(var(--h-violet), 80%, 65%, 0.4);
+}
+.ai-btn:disabled { opacity: 0.55; cursor: default; box-shadow: none; }
+
+/* ── AI status pills (running = inert span, done/err = buttons) ── */
+.ai-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  transition: border-color .15s;
+}
+.ai-pill--running {
+  color: var(--st-warn);
+  background: var(--st-warn-bg);
+  border-color: rgba(250, 178, 25, 0.3);
+  cursor: default;
+}
+.ai-pill--done {
+  color: var(--st-good);
+  background: var(--st-good-bg);
+  border-color: rgba(12, 163, 12, 0.3);
+  cursor: pointer;
+}
+.ai-pill--done:hover { border-color: rgba(12, 163, 12, 0.55); }
+.ai-pill--err {
+  color: var(--st-serious);
+  background: var(--st-serious-bg);
+  border-color: rgba(236, 131, 90, 0.3);
+  cursor: pointer;
+}
+.ai-pill--err:hover { border-color: rgba(236, 131, 90, 0.55); }
+
+/* ── 🎫 ticket chip (Comp.ticketChip) — internal twin of .jira-chip ── */
+.ticket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+a.ticket-chip:hover { border-color: var(--border-active); color: var(--text-accent); text-decoration: none; }
+
+/* ── 🗺 Harness Map v2 (Comp.harnessMap) — node-card columns joined by
+   animated RGB bezier lanes. Dark + glowy: this is the centerpiece. ── */
+.hmap {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+.hmap-col {
+  --hcol: var(--cat-5);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.hmap-col--1 { --hcol: var(--cat-1); }   /* Indra   — blue    */
+.hmap-col--2 { --hcol: var(--cat-2); }   /* Refleks — emerald */
+.hmap-col--3 { --hcol: var(--cat-5); }   /* Otak    — violet  */
+.hmap-col--4 { --hcol: var(--cat-3); }   /* Memori  — amber   */
+.hmap-col--5 { --hcol: var(--cat-7); }   /* Tangan  — rose    */
+
+.hmap-col-head {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--hcol);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--hcol) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--hcol) 30%, transparent);
+  padding-bottom: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+
+.hmap-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.hmap-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, transform .1s, box-shadow .15s;
+}
+.hmap-node:hover {
+  border-color: var(--border-active);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.hmap-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+  background: var(--text-muted);
+}
+.hmap-node-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.hmap-node-top { display: flex; align-items: baseline; gap: 6px; }
+.hmap-node-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hmap-node-st {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hmap-node-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* status glow — dot + status word carry the state (never color alone:
+   the word ok/warn/fail/idle/🔒 gated always renders next to it) */
+.hmap-node--ok .hmap-dot { background: var(--st-good); box-shadow: 0 0 8px var(--st-good); }
+.hmap-node--ok .hmap-node-st { color: var(--st-good); }
+.hmap-node--warn { border-color: rgba(250, 178, 25, 0.35); }
+.hmap-node--warn .hmap-dot { background: var(--st-warn); box-shadow: 0 0 8px var(--st-warn); }
+.hmap-node--warn .hmap-node-st { color: var(--st-warn); }
+.hmap-node--fail {
+  border-color: rgba(208, 59, 59, 0.45);
+  background: linear-gradient(180deg, var(--st-crit-bg), var(--bg-card) 70%);
+  box-shadow: 0 0 18px -6px rgba(208, 59, 59, 0.55);
+}
+.hmap-node--fail .hmap-dot { background: var(--st-crit); box-shadow: 0 0 10px var(--st-crit); }
+.hmap-node--fail .hmap-node-st { color: var(--st-crit); }
+.hmap-node--idle { opacity: 0.75; }
+.hmap-node--gated { border-color: rgba(144, 133, 233, 0.35); }
+.hmap-node--gated .hmap-dot { background: var(--cat-5); box-shadow: 0 0 8px rgba(144, 133, 233, 0.7); }
+.hmap-node--gated .hmap-node-st { color: var(--cat-5); }
+
+/* connector lanes — RGB gradient beziers with a soft glow underlay;
+   dash flow (animated below) shows the direction of data */
+.hmap-lane {
+  flex: 0 0 38px;
+  align-self: stretch;
+  display: flex;
+}
+.hmap-lane svg { width: 100%; height: 100%; min-height: 160px; display: block; }
+.hmap-flow-glow { fill: none; stroke-width: 5; opacity: 0.16; }
+.hmap-flow {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 4 7;     /* pathLength=100 units — uniform along the curve */
+  opacity: 0.9;
+}
+.hmap-g1 { stop-color: #00e5ff; }
+.hmap-g2 { stop-color: #6a8bff; }
+.hmap-g3 { stop-color: #c86bff; }
+
+/* ── 📈 trend card (Comp.trendCard) — the "bikin seneng" momentum card.
+   --tc (categorical color) arrives inline from the builder. ── */
+.trend-card {
+  --tc: var(--cat-1);
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  overflow: hidden;
+  transition: border-color .15s, transform .12s, box-shadow .2s;
+}
+.trend-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--tc) 45%, rgba(255, 255, 255, 0.07));
+  box-shadow: 0 6px 28px -10px color-mix(in srgb, var(--tc) 55%, transparent);
+}
+.trend-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.trend-total { display: flex; align-items: baseline; gap: 6px; }
+.trend-num {
+  font-size: var(--fs-xl);
+  font-weight: 750;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.trend-unit { font-size: var(--fs-xs); color: var(--text-muted); }
+.trend-delta { margin-top: 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); }
+.trend-delta--good { color: var(--st-good); }
+.trend-delta--warn { color: var(--st-warn); }
+.trend-chart { display: block; width: 100%; height: auto; margin-top: var(--sp-2); }
+.trend-line { fill: none; stroke: var(--tc); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.trend-area-top { stop-color: var(--tc); stop-opacity: 0.38; }
+.trend-area-bot { stop-color: var(--tc); stop-opacity: 0; }
+.trend-dot { fill: var(--tc); }
+.trend-dot-halo { fill: var(--tc); opacity: 0.22; }
+
+/* ── momentum band — 4 trendCards on Today, 4 → 2 → 1 ── */
+.momentum-band {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+@media (max-width: 1100px) {
+  .momentum-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .momentum-band { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── labeled spark (Comp.spark v2) ── */
+.spark-wrap { display: inline-flex; flex-direction: column; gap: 3px; min-width: 0; }
+.spark-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.spark-label { font-weight: 600; letter-spacing: 0.04em; min-width: 0; overflow-wrap: anywhere; }
+.spark-lastval { margin-left: auto; flex: none; color: var(--text-secondary); font-weight: 700; }
+.spark--labeled polyline { stroke: var(--cat-1); }
+.spark-axis { stroke: rgba(255, 255, 255, 0.09); stroke-width: 1; }
+.spark-dot { fill: var(--cat-1); }
+
+/* ── v4 responsive: map columns stack as rows under 900px, lanes hide,
+   nodes re-wrap into a grid so a stacked column stays compact ── */
+@media (max-width: 900px) {
+  .hmap { flex-direction: column; gap: var(--sp-4); }
+  .hmap-lane { display: none; }
+  .hmap-nodes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+/* ── v4 motion (all guarded; global reduce kill-switch also applies).
+   Flow dashes + lane hue-cycle = decoration; the fail-dot pulse and the
+   running-pill breathe are SIGNALS (motion = signal). ── */
+@media (prefers-reduced-motion: no-preference) {
+  .hmap-flow { animation: hmap-flow-anim 1.3s linear infinite; }
+  @keyframes hmap-flow-anim { to { stroke-dashoffset: -11; } }
+  .hmap-lane svg { animation: rgb-hue 12s linear infinite; }
+  .hmap-node--fail .hmap-dot { animation: pulse-dot 2s ease-in-out infinite; }
+  .ai-pill--running { animation: ai-breathe 1.6s ease-in-out infinite; }
+  @keyframes ai-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+}
+
+/* ═══════════════════════════════════════════
+   MOTION — motion = signal. Urgent things glow/move;
+   healthy things stay calm. EVERY animation here sits inside
+   prefers-reduced-motion: no-preference (plus the global reduce
+   kill-switch at the bottom of this file). Transform/opacity only.
+   ═══════════════════════════════════════════ */
+
+/* registered so the conic sweep angle interpolates smoothly */
+@property --sweep-ang {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* .border-sweep — rotating alarm border for critical/breach surfaces.
+   Red→orange→red only (an alarm, not a party). Static fallback under
+   reduced motion = a fixed red/orange ring. Applied automatically to
+   .stat--critical; tab modules add .border-sweep to breach cards. */
+.border-sweep,
+.stat--critical {
+  position: relative;
+  box-shadow: 0 0 26px -8px rgba(208, 59, 59, 0.45);
+}
+.border-sweep::after,
+.stat--critical::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(from var(--sweep-ang, 0deg),
+    var(--st-crit), #E8722E 12%, var(--st-serious) 22%, var(--st-crit) 38%,
+    rgba(208, 59, 59, 0.15) 52%, rgba(208, 59, 59, 0.15) 86%, var(--st-crit));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+/* escalation strip auto-alarms when it contains a breach (⛔ badge).
+   Kept as a SEPARATE rule: a browser without :has() must not drop the
+   .border-sweep rule above with it. */
+.escalation-strip:not([data-key="meetings-health"]):has(.badge--critical) {
+  position: relative;
+  box-shadow: 0 0 26px -8px rgba(208, 59, 59, 0.45);
+}
+.escalation-strip:not([data-key="meetings-health"]):has(.badge--critical)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(from var(--sweep-ang, 0deg),
+    var(--st-crit), #E8722E 12%, var(--st-serious) 22%, var(--st-crit) 38%,
+    rgba(208, 59, 59, 0.15) 52%, rgba(208, 59, 59, 0.15) 86%, var(--st-crit));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* .pulse-dot base — standalone live/health dot (inherits currentColor;
+   more specific rules like .badge--cat-N .badge-dot keep their color) */
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 1. alarm border rotation (slow, 6s) */
+  .border-sweep::after,
+  .stat--critical::after {
+    animation: border-sweep-rot 6s linear infinite;
+  }
+  .escalation-strip:not([data-key="meetings-health"]):has(.badge--critical)::after {
+    animation: border-sweep-rot 6s linear infinite;
+  }
+  @keyframes border-sweep-rot {
+    to { --sweep-ang: 360deg; }
+  }
+
+  /* 2. soft pulse — health dots + the tab alert dot */
+  .pulse-dot,
+  .tab-btn.has-alert .tab-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.3); opacity: 0.6; }
+  }
+
+  /* 5. sheen — one diagonal light sweep per hover, cards + stat tiles */
+  .card, a.stat-tile, .sheen { position: relative; overflow: hidden; }
+  .card::before, a.stat-tile::before, .sheen::before {
+    content: "";
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    left: 0;
+    width: 45%;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, 0.055) 50%, transparent 100%);
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  .card:hover::before, a.stat-tile:hover::before, .sheen:hover::before {
+    animation: sheen-slide .6s ease forwards;
+  }
+  @keyframes sheen-slide {
+    0%   { transform: translateX(-130%) skewX(-18deg); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translateX(330%) skewX(-18deg); opacity: 0; }
+  }
+}
+
+/* ═══════════════════════════════════════════
+   RGB AMBIENT (v3) — "RGB gaming rig meets command center".
+   Always-on spectrum chrome, distinct from the red .border-sweep alarm
+   (which stays reserved for critical/breach). All animation is
+   filter: hue-rotate on static rainbow gradients (compositor-cheap) and
+   lives inside the no-preference guard; the static rainbow itself is the
+   reduced-motion fallback. RGB is DECORATION — it never encodes data.
+
+   Ring anatomy (shared): a masked ::after paints a conic rainbow in the
+   1px border band of the element (padding = ring width, xor mask).
+   .border-sweep / .stat--critical keep their red ::after — every RGB ring
+   selector excludes them so an alarm can never be repainted rainbow.
+   ═══════════════════════════════════════════ */
+.card, .stat-tile { position: relative; }   /* ring anchor even under reduced motion */
+
+/* .rgb-ring — permanent conic RGB border, any consumer may add it
+   (e.g. the savings ring frame). Don't combine with .border-sweep. */
+.rgb-ring:not(.border-sweep)::after,
+.card:not(.border-sweep):hover::after,
+.stat-tile:not(.stat--serious):not(.stat--critical):not(.border-sweep)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: var(--rgb-conic);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+/* hero tiles idle: soft always-on shimmer (status tiles serious/critical
+   keep their status border treatment instead) */
+.stat-tile:not(.stat--serious):not(.stat--critical):not(.border-sweep)::after { opacity: 0.55; }
+/* card hover + permanent ring: full-strength */
+.card:not(.border-sweep):hover::after { opacity: 0.9; }
+.rgb-ring:not(.border-sweep)::after { opacity: 0.95; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* one shared hue cycle — different speeds per surface */
+  @keyframes rgb-hue {
+    from { filter: hue-rotate(0deg); }
+    to   { filter: hue-rotate(360deg); }
+  }
+  @keyframes rgb-hue-blur {
+    from { filter: blur(8px) hue-rotate(0deg); }
+    to   { filter: blur(8px) hue-rotate(360deg); }
+  }
+
+  .app-header::after { animation: rgb-hue 10s linear infinite; }
+  .app-header::before { animation: rgb-hue-blur 10s linear infinite; }
+  .tab-btn.is-active::after { animation: rgb-hue 7s linear infinite; }
+  .stat-tile:not(.stat--serious):not(.stat--critical):not(.border-sweep)::after {
+    animation: rgb-hue 14s linear infinite;
+  }
+  .card:not(.border-sweep):hover::after { animation: rgb-hue 4s linear infinite; }
+  .rgb-ring:not(.border-sweep)::after { animation: rgb-hue 6s linear infinite; }
+
+  /* brand glow — 🧠 + title breathe through the spectrum */
+  .app-title { animation: brand-glow 12s linear infinite; }
+  @keyframes brand-glow {
+    0%, 100% { filter: drop-shadow(0 0 14px rgba(255, 59, 107, 0.55)); }
+    20%      { filter: drop-shadow(0 0 15px rgba(255, 224, 0, 0.5)); }
+    40%      { filter: drop-shadow(0 0 15px rgba(59, 255, 111, 0.5)); }
+    60%      { filter: drop-shadow(0 0 15px rgba(0, 229, 255, 0.55)); }
+    80%      { filter: drop-shadow(0 0 15px rgba(200, 107, 255, 0.6)); }
+  }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — single column under 900px
+   ═══════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .shell { padding: var(--sp-4) var(--sp-3) 60px; }
+  /* minmax(0,…) everywhere: bare 1fr lets min-width:auto grid items blow
+     the track out past the viewport when a nowrap row title is long */
+  .hero-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-row > :first-child { grid-column: 1 / -1; }
+  .two-col { grid-template-columns: minmax(0, 1fr); }
+  .grid-cards, .chip-grid { grid-template-columns: minmax(0, 1fr); }
+  .stat-value { font-size: var(--fs-xl); }
+  .tab-nav { overflow-x: auto; }
+  .row-meta { display: none; }
+  /* badge-heavy rows wrap instead of clipping at the viewport edge */
+  .row, details.row > summary { flex-wrap: wrap; row-gap: 2px; }
+  /* .row-right must wrap internally too: an escalation row's button chain
+     (SLA badge + owner + draft + beres + nudge) is wider than a phone
+     viewport, and as a single flex:none unit it was THE driver pushing
+     document scrollWidth past the viewport (558px on a 390px phone) */
+  .row-right { flex-wrap: wrap; max-width: 100%; row-gap: 2px; justify-content: flex-end; }
+  /* titles now wrap to 2 lines (clamp) so the count only truncates last */
+  .card-count { overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

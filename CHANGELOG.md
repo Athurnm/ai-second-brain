@@ -8,6 +8,17 @@ snapshot with all credentials, tokens, real client names, and personal data remo
 ## 2026-07-12
 
 ### Added
+- **Meeting recorder** (`meeting-recorder/`): record and transcribe meetings locally on
+  your own machine, with an automatic minutes draft. Cross-platform capture (macOS
+  avfoundation, Windows WASAPI, Linux PulseAudio), local GPU transcription via whisper.cpp
+  with a Gemini API fallback, and an optional advanced Vexa auto-join bot. A private
+  alternative or complement to a cloud recorder. Guide: `docs/MEETING_RECORDER.md`.
+  Ships with `config.example.json`; runtime state and API keys stay local.
+- **Visual dashboard** (`dashboard/`): a local, stdlib-only web cockpit at
+  `http://localhost:3737` over your notes, calendar, projects, to-do tracker, meeting
+  health, routines, and token usage. Start with `python3 dashboard/server.py`. Guide:
+  `docs/DASHBOARD.md`. Panels fill in as you use the brain; a fresh clone shows an empty
+  shell by design.
 - **`/setup` guided onboarding command.** Type `/setup` after cloning and the AI interviews
   you about who you are, your work contexts, your track record, and your rules, then requests
   access to your tools and assembles your `CLAUDE.md` for you. Phase-based, resumable

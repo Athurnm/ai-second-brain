@@ -1,0 +1,33 @@
+{
+  "_comment": "Local meeting note-taker config. Copy this to config.json and fill in the paths for your machine. Per-machine sections are keyed by platform (wsl | macos | windows, per .agent/scripts/detect_platform.sh). Engine chain: auto = whispercpp (local GPU, skipped if the probe fails) -> cli (Gemini API, audio-in, speaker labels). It never falls back to CPU whisper; engine=cpu only when you set it explicitly.",
+  "engine": "auto",
+  "language": "auto",
+  "gemini_model": "gemini-2.5-flash",
+  "auto_draft": true,
+  "draft_model": "",
+  "draft_backend": "agy",
+  "_draft_note": "MOM draft model, routed through the agy-bridge draft chain. Leave draft_model empty to use the default chain, or name a specific model your agy-bridge is configured for.",
+  "calendar_match": true,
+  "require_gpu": true,
+  "machines": {
+    "wsl": {
+      "recordings_dir": "/mnt/<drive>/MeetingRecordings",
+      "ffmpeg": "ffmpeg",
+      "whispercpp_bin": "",
+      "whispercpp_model": "",
+      "_note": "WSL is the pipeline host when capture runs on the Windows side (recorder.py under Windows Python). If whisper.cpp runs Windows-side, point whispercpp_bin at the .exe via a /mnt/c path; otherwise leave both empty and the engine chain falls through to cli (Gemini)."
+    },
+    "macos": {
+      "recordings_dir": "~/MeetingRecordings",
+      "ffmpeg": "ffmpeg",
+      "whispercpp_bin": "whisper-cli",
+      "whispercpp_model": "~/.cache/whisper-cpp/ggml-large-v3-turbo.bin",
+      "avfoundation_audio_device": ":0",
+      "_note": "Apple Silicon: `brew install whisper-cpp` (Metal GPU is automatic). For system audio, install a loopback device such as BlackHole and set avfoundation_audio_device to its index from `recorder.py --list-devices`."
+    },
+    "windows": {
+      "recordings_dir": "C:\\MeetingRecordings",
+      "_note": "Capture only (recorder.py with Windows Python + pyaudiowpatch). The processing pipeline runs in WSL or on macOS/Linux."
+    }
+  }
+}

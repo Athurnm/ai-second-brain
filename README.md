@@ -325,6 +325,8 @@ Deeper references:
 
 - **`docs/SETUP.md`** for the full install and authentication guide.
 - **`docs/CUSTOMIZING.md`** for how to write a strong `CLAUDE.md`.
+- **`docs/MEETING_RECORDER.md`** to record and transcribe meetings locally on your own machine (macOS, Windows, Linux).
+- **`docs/DASHBOARD.md`** to run the local visual dashboard at `http://localhost:3737`.
 - **`docs/ARCHITECTURE.md`** for how the pieces fit together.
 - **`docs/INSTALL_ID.md`** untuk panduan instalasi langkah demi langkah dalam Bahasa Indonesia (workshop companion).
 
@@ -339,6 +341,8 @@ Deeper references:
 .claude/commands/   Saved workflows you can invoke by name or in plain language
 .claude/agents/     Subagent definitions (harvester, reviewer)
 .claude/hooks/      Automatic guardrails (send confirmation, formatting checks)
+meeting-recorder/   Record + transcribe meetings locally (macOS, Windows, Linux)
+dashboard/          Local visual dashboard web app (http://localhost:3737)
 docs/               Setup, customizing, and architecture guides
 CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 ```
