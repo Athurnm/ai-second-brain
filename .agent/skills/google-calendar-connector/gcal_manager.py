@@ -144,6 +144,14 @@ def list_events(days_back=7, days_forward=7, profile='default', as_json=False):
             'description': event.get('description', ''),
             'hangoutLink': event.get('hangoutLink', ''),
             'location': event.get('location', ''),
+            'attendees': [
+                {
+                    'email': a.get('email', ''),
+                    'displayName': a.get('displayName', ''),
+                    'responseStatus': a.get('responseStatus', ''),
+                }
+                for a in event.get('attendees', [])
+            ],
         })
         if not as_json:
             print(f"{start} - {summary}")

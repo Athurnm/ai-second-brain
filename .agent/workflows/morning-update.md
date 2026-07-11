@@ -33,12 +33,24 @@ You acts off email too, so sweep it every morning.
 3. For each, state clearly whether it **needs and can be followed up by email** vs FYI, and tie it to the relevant meeting-prep item or todo.
 4. Never auto-send email; surface the follow-up, draft only on request (approval-gated like Slack).
 
-## DM Sweep & Prior-Day Backfill (mandatory)
+## Mention Ledger, DM Sweep & Prior-Day Backfill (mandatory)
 
-The channel skim (5 msgs/channel) misses DM threads, where the highest-signal asks land. Every morning:
+The channel skim (5 msgs/channel) misses DM threads and old-thread replies. The **Mention Ledger** (`.agent/skills/slack-tracker/scripts/mention_ledger.py`, cron `*/30`) is the mechanical safety net for both. Every morning:
 
+0. **Run the ledger first**: `python3 .agent/skills/slack-tracker/scripts/mention_ledger.py report` → embed the "🔴 Waiting on your reply" list in the briefing verbatim (priority/YourManager items on top, with age + permalink). Then `... classify` to GLM-triage the channel digest and fold `needs_reply`/`action_item` results into the day's signal. The ledger is the source of truth for unanswered mentions — do NOT re-derive them from raw channel dumps.
 1. Deep-read open DMs, especially **YourManager** (`<SLACK_ID>`) and other leadership. **ANY message from YourManager is high priority by default** and must surface in the day's signal.
 2. If **NO evening update ran the prior day**, also pull yesterday's **Fathom** meeting outcomes (registry + MCP) so closed-meeting decisions are not lost, since Fathom is otherwise an evening-only harvest step.
+3. If **NO evening update ran the prior day**, also run the **tracker reconcile** from `.agent/workflows/evening-update.md` step 5b (verify long-overdue tickets against sent DMs/MOMs/email, update status with evidence) so the dashboard Today tab does not accumulate stale items.
+
+## New Ledgers & Cards (mandatory)
+
+Each ledger below is the **SOURCE OF TRUTH** for its domain — embed its `report` output verbatim and do NOT re-derive its items from raw Slack/Fathom/calendar dumps.
+
+1. **Pre-meeting cards**: `python3 .agent/skills/premeeting-cards/scripts/premeeting_cards.py generate` (idempotent; cron `45 7 * * 1-5` usually already ran — rerun is safe), then `... report` → embed the index verbatim. Cards live in `journal/premeeting/<date>/`; link each card next to its meeting in the briefing.
+2. **Commitments (You owes others)**: `python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py report` → embed verbatim (overdue first). If the last `sweep` printed `FALLBACK_TO_CLAUDE` or `pending_candidates` remain in `journal/state/commitments.json`, Claude extracts those candidates itself (read each candidate's text, decide if it is a real commitment, identify recipient + due) and registers the results via `commitment_ledger.py add ...` — do not leave candidates to rot.
+3. **Waiting-on watchdog (others owe You)**: `python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py sweep --check-slack` (the Slack-thread close check is SOP-only, never cron'd), then `... report` → embed verbatim. Every 🚨 BREACHED line becomes an **explicit escalation action in today's Top-5** (who to ping, on which channel, per the item's `escalate_to`/`escalation_path`).
+4. **Decision log**: `python3 .agent/skills/decision-log/scripts/decision_log.py report` → embed verbatim (overdue-open decisions on top). Surface any decision whose deadline is today/past as a today-action.
+5. **Reply queue (drafts only)**: `python3 .agent/skills/reply-queue/scripts/reply_queue.py draft --limit 15`, then `... report` → embed, and link today's draft file `journal/reply_drafts_<date>.md` in the briefing. If the file contains a `## FALLBACK_TO_CLAUDE` section, Claude drafts those replies itself in You's voice: plain flowing prose, no emoji, no numbered-bold lists. Drafts are never sent from here — sending stays approval-gated via `/slack-draft`.
 
 ## Priority Setting & Summary
 
@@ -73,17 +85,6 @@ Rules:
 - Always hyperlink cited docs/threads (per [[feedback_always_link_cited_docs]]); never leave a source as plain text.
 - Resolve every Slack ID to a name before writing it (per [[feedback_no_guessing_names]]).
 - `gcal_manager.py` has **no `update`** action and MCP Calendar points at Secondary — so the rich `--desc` must be set at **create** time. For an existing block that can't be edited, surface the enriched brief in the Dashboard `(Pagi)` section instead and flag that the calendar copy is terse.
-
-## Standing Watch — AI Circle Launch Sprint (until 12 Jul 2026)
-
-Until the AI Circle workshop launches (Sun 12 Jul 2026), every morning update MUST surface the launch sprint as its own block.
-
-**SOT = "You Weekly Report & To-Do"** — GDoc `<YOUR_DRIVE_ID>` (personal, you@example.com), local mirror `~/antigravity-projects/You/AI_Circle_WEEKLY_TODO.md`. NOT `AI_Circle_EXECUTION.md`.
-
-1. Read the SOT mirror. Per-owner: Teammate (A1–A12), Teammate (R1–R4), Tim (T1–T3), You (B1–B2).
-2. Flag any item due **today or earlier** still `⬜` as AT RISK — owner + deadline + what it gates. Hardest blocker: **Teammate's marketing course (R1), hard deadline 6 Jul** (gates the launch ad campaign).
-3. Pull today-due Teammate/Teammate items + You's own gate items into the day's view so they don't slip behind Work work.
-4. One-line health verdict: `AI Circle launch: ON TRACK / AT RISK (reason)`.
 
 ## Quality Rubric (Morning Subset)
 

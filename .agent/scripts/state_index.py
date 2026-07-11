@@ -2,12 +2,16 @@
 """state_index.py - generate lean indexes from large journal/state JSON files.
 
 Reads:
-  journal/state/tickets.json    (~80 KB, 97 tickets with notes/comments/links)
-  journal/state/portfolio.json  (~55 KB, teams -> initiatives -> workstreams)
+  journal/state/tickets.json      (~80 KB, 97 tickets with notes/comments/links)
+  journal/state/portfolio.json    (~55 KB, teams -> initiatives -> workstreams)
+  journal/state/decisions.json    (decision-log ledger, DEC-*)
+  journal/state/commitments.json  (commitment-ledger, COM-*)
 
 Writes (with --write):
   journal/state/tickets.index.json
   journal/state/portfolio.index.json
+  journal/state/decisions.index.json
+  journal/state/commitments.index.json
 
 Each index keeps ONLY the key fields per item (id, title, status, owner,
 project, due, ...) so harvest/briefing agents can read the small index first
@@ -28,8 +32,12 @@ STATE_DIR = os.path.join(BASE_DIR, 'journal', 'state')
 
 TICKETS_SRC = os.path.join(STATE_DIR, 'tickets.json')
 PORTFOLIO_SRC = os.path.join(STATE_DIR, 'portfolio.json')
+DECISIONS_SRC = os.path.join(STATE_DIR, 'decisions.json')
+COMMITMENTS_SRC = os.path.join(STATE_DIR, 'commitments.json')
 TICKETS_IDX = os.path.join(STATE_DIR, 'tickets.index.json')
 PORTFOLIO_IDX = os.path.join(STATE_DIR, 'portfolio.index.json')
+DECISIONS_IDX = os.path.join(STATE_DIR, 'decisions.index.json')
+COMMITMENTS_IDX = os.path.join(STATE_DIR, 'commitments.index.json')
 
 def build_tickets_index(src_path):
     """tickets.json: {updated_wib, source, tickets: [{id, title, priority,
@@ -88,6 +96,50 @@ def build_portfolio_index(src_path):
         'initiatives': items,
     }
 
+def build_decisions_index(src_path):
+    """decisions.json: {next_seq, items: {DEC-NNNN: {id, title, status, decider,
+    deadline, ...}}, last_sweep} - keep id/title/status/decider/deadline only."""
+    with open(src_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    items = []
+    for it in (data.get('items') or {}).values():
+        items.append({
+            'id': it.get('id'),
+            'title': it.get('title'),
+            'status': it.get('status'),
+            'decider': it.get('decider'),
+            'deadline': it.get('deadline'),
+        })
+    items.sort(key=lambda x: x.get('id') or '')
+    return {
+        'generated_from': os.path.relpath(src_path, BASE_DIR),
+        'note': 'Lean index. Full body (decision/sources/stakeholders) lives in decisions.json; look up by id.',
+        'count': len(items),
+        'decisions': items,
+    }
+
+def build_commitments_index(src_path):
+    """commitments.json: {next_seq, items: {COM-NNNN: {id, text, to, due,
+    status, ...}}, ...} - keep id/title(text)/status/owner(to)/due only."""
+    with open(src_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    items = []
+    for it in (data.get('items') or {}).values():
+        items.append({
+            'id': it.get('id'),
+            'title': it.get('text'),
+            'status': it.get('status'),
+            'to': it.get('to'),
+            'due': it.get('due'),
+        })
+    items.sort(key=lambda x: x.get('id') or '')
+    return {
+        'generated_from': os.path.relpath(src_path, BASE_DIR),
+        'note': 'Lean index. Full body (permalink/source/confidence/notes) lives in commitments.json; look up by id.',
+        'count': len(items),
+        'commitments': items,
+    }
+
 def summarize(label, src_path, idx_payload, idx_path):
     src_size = os.path.getsize(src_path)
     idx_json = json.dumps(idx_payload, ensure_ascii=False, indent=1)
@@ -107,6 +159,8 @@ def main():
     jobs = [
         ('tickets', TICKETS_SRC, build_tickets_index, TICKETS_IDX),
         ('portfolio', PORTFOLIO_SRC, build_portfolio_index, PORTFOLIO_IDX),
+        ('decisions', DECISIONS_SRC, build_decisions_index, DECISIONS_IDX),
+        ('commitments', COMMITMENTS_SRC, build_commitments_index, COMMITMENTS_IDX),
     ]
     exit_code = 0
     for label, src, builder, idx_path in jobs:

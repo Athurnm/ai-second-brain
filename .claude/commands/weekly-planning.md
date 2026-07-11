@@ -13,6 +13,8 @@ Hard rules:
 - Execute the phases in order with user gates - NEVER jump from gathering straight to a finished plan.
 - Delegate bulk reading (transcripts, MOMs, Slack history) to the `harvester` subagent; synthesis stays with you.
 - Cross-reference `journal/todo.md` P0/P1 and `journal/master_followup_tracker.md` before proposing next week's priorities.
+- Include the post-launch outcomes picture: run `python3 .agent/skills/outcomes-loop/scripts/outcomes_loop.py report` and embed it in the review (shipped features vs their success metrics; flag any `needs_reauth` metric to You for a Metabase cookie refresh).
+- Skim the latest harness health snapshot: `python3 .agent/skills/harness-health/scripts/harness_health.py report` (monthly cron `0 9 1 * *`). If it flags failing/silent cron jobs or stale ledgers, add a fix to next week's plan.
 - Wait for You's alignment before rewriting todo.md.
 - No em-dashes in any output.
 

@@ -349,6 +349,10 @@ CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 
 **Ready to start?**
 
-Read `docs/SETUP.md`, fill in your `CLAUDE.md`, and let your second brain get to work.
+Open the folder in your editor and run **`/setup`**. The AI interviews you, requests access to
+your tools, and writes your `CLAUDE.md` for you. Prefer to do it by hand? Read `docs/SETUP.md`,
+fill in your `CLAUDE.md`, and let your second brain get to work.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
 
 </div>

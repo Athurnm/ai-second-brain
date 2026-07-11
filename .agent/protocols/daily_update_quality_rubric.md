@@ -37,7 +37,7 @@ To ensure absolute accuracy, strategic focus, and zero information gaps in all d
 ### 8. Direct Mention & Project Keyword Sweeper
 - **Criteria**: Run a dedicated regex filter across all fetched Slack/Calendar messages to find:
   - Direct @mentions of Your Name.
-  - Strategic keywords (AI Circle, You's Book, You's Podcast).
+  - Strategic keywords (You's Book, You's Podcast).
 - **Failure Condition**: Any direct mention or core project keyword must be extracted and surfaced, even if the source channel is not on the primary high-priority list.
 
 ### 9. Rule & Technical Constraint Guard

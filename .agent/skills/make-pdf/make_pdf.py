@@ -89,8 +89,9 @@ def main() -> int:
     else:
         css = CSS(string=DEFAULT_CSS.format(accent=args.accent, footer=args.footer))
 
-    HTML(string=html_doc).write_pdf(args.out, stylesheets=[css])
     import os
+    # base_url makes relative image paths resolve against the CWD (as documented in SKILL.md)
+    HTML(string=html_doc, base_url=os.getcwd() + os.sep).write_pdf(args.out, stylesheets=[css])
     size = os.path.getsize(args.out)
     print(f"OK - PDF written: {args.out} ({size} bytes)")
     return 0

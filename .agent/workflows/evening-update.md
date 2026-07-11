@@ -27,6 +27,7 @@ You acts off email too, so sweep it every evening (the runner does NOT pull emai
 
 ## Closing Recap & Completion Tracking
 
+0. **Mention Ledger pass (mandatory)**: `python3 .agent/skills/slack-tracker/scripts/mention_ledger.py report` → embed "🔴 Waiting on your reply" in the recap (anything still open at end of day is a carryover candidate for tomorrow's plan); run `... classify` to GLM-triage the day's channel digest. The ledger is the source of truth for unanswered mentions/DMs/threads — never re-derive from raw dumps.
 1. The script writes two outputs: `daily_update_evening.md` (human-readable) and `_temp/harvest_evening_[date].json` (structured sidecar).
 2. **For synthesis, read `_temp/harvest_evening_[date].json` first** -- it is a compact structured JSON (sections: slack, jira, calendar, files_modified, files_created, backlogs, fathom, morning_plan, portfolio) and avoids re-reading the full 150-180 KB markdown dump. Fall back to `daily_update_evening.md` only if the JSON is missing or a section is empty. The markdown remains the user-facing deliverable and is NOT deleted.
 3. Cross-reference the morning's proposed priorities from `_temp/daily_plan_[date].md`:
@@ -40,6 +41,18 @@ You acts off email too, so sweep it every evening (the runner does NOT pull emai
 5. Update `journal/todo.md`:
    - Mark completed items as `[x]`.
    - Flag stale items with no activity in 7+ days.
+5a. **New Ledgers pass (mandatory — each ledger is the SOURCE OF TRUTH for its domain; embed `report` output verbatim, never re-derive from raw dumps):**
+   - **Decision log**: `python3 .agent/skills/decision-log/scripts/decision_log.py report` → embed. Then capture today's decided items: for every decision that actually landed today (in a meeting, Slack thread, or doc), run `decision_log.py decide <DEC-id> --decision "<what was decided>"`; brand-new decisions surfaced today get an `add` first (with `--source` + `--source-type`).
+   - **Commitments**: `python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py sweep` then `... report` → embed. Where the mechanical auto-close missed something You verifiably delivered today (sent DM, shared doc, MOM evidence), close it manually: `commitment_ledger.py close <COM-id> --note "<evidence>"`.
+   - **Waiting-on watchdog**: `python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py report` → embed. Any 🚨 BREACHED item carries into tomorrow's plan as an explicit escalation action.
+   - **Stakeholder pages**: `python3 .agent/skills/stakeholders/scripts/stakeholders.py render --all` (regenerates the AUTO blocks on every `Clients/Work/People/` page from today's ledger state; idempotent).
+   - **Monday only — outcomes loop**: `python3 .agent/skills/outcomes-loop/scripts/outcomes_loop.py report` → embed (the weekly `check` cron ran Monday 08:20 WIB; if a metric shows `needs_reauth`, surface the Metabase re-auth need to You).
+5b. **Tracker reconcile (mandatory — keeps the dashboard Today tab honest):**
+   - Sweep `journal/state/tickets.json` for open tickets with `due` >= 3 days in the past.
+   - For each, verify reality before touching it: You's SENT Slack DMs (`from:@brian`), today's MOMs, email threads, Jira. Evidence it happened -> set `status: done` + a comment with the evidence link. Still real but slipped -> move `due` forward or downgrade priority, with a comment saying why. Riding another workstream -> `status: waiting` / `monitor` and name the vehicle.
+   - Never mark done on guesswork; if unverifiable, leave open and note "unverified as of [date]".
+   - Refresh `journal/state/portfolio.json` `updated_wib` + any initiative whose health/workstream status changed today, then regenerate the mirror via `python3 .agent/scripts/portfolio_render.py`.
+   - Target end-state: zero tickets showing "stale ≥3d" on the dashboard Today tab without an explanatory comment.
 6. Sync Fathom meeting notes and Work Document Index.
 7. Run GitHub sync to push all changes.
 8. Present to You:
@@ -47,18 +60,6 @@ You acts off email too, so sweep it every evening (the runner does NOT pull emai
    - Key Slack signals and decisions from today.
    - Open items carrying to tomorrow.
    - Sprint progress delta since morning.
-
-## Standing Watch — AI Circle Launch Sprint (until 12 Jul 2026)
-
-Until the AI Circle workshop launches (Sun 12 Jul 2026), every daily update MUST surface the launch sprint as its own block.
-
-**SOT (single source of truth) = the "You Weekly Report & To-Do" doc** — GDoc `<YOUR_DRIVE_ID>` (personal account, owner you@example.com), local mirror `~/antigravity-projects/You/AI_Circle_WEEKLY_TODO.md`. NOT `AI_Circle_EXECUTION.md` (that is now strategy/blitz-calendar only).
-
-1. Read the SOT (local mirror first; if You says it changed, re-pull the GDoc via MCP `read_file_content` and refresh the mirror). Per-owner tables: Teammate (A1–A12), Teammate (R1–R4), Tim (T1–T3), You (B1–B2).
-2. For each item due **today or earlier** still `⬜`, flag it explicitly as AT RISK / SLIPPING — name owner, deadline, what it gates. Watch hardest: **Teammate's marketing course (R1), hard deadline 6 Jul** — gates the launch ad campaign.
-3. Cross-check the AI Circle Google Calendar reminders (personal profile, 1–12 Jul) so no deadline passes silently.
-4. If You confirms an item done/changed, update the local mirror row, then push to the SOT GDoc (`gdrive_manager.py update --id 1Aw57... --file ...WEEKLY_TODO.md --convert --account personal`) and confirm the link.
-5. Output a one-line health verdict: `AI Circle launch: ON TRACK / AT RISK (reason)`.
 
 ## Quality Rubric (Full)
 

@@ -376,8 +376,8 @@
       <div class="card"><span class="tag">Model flagship</span><h3>Mikir beratnya di atas</h3><p>Menimbang, memutuskan, menulis deliverable: dikerjakan model paling pintar. Murah untuk kerja kasar, mahal hanya untuk yang perlu.</p></div>
     </div>
     <div class="offer" style="margin-top:1.3rem">
-      <span class="tag" style="font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber)">Contoh hidup · barusan, sambil kita ngobrol</span>
-      <p class="lead" style="margin-top:.5rem; color:var(--text)">Deck ini butuh harga asli 20-an tools plus daftar kemampuan dari repo. Gw sebar <strong>5 agent paralel</strong>: satu ngecek harga AI Circle, tiga riset harga tools, satu ngumpulin 33 workflow dari kode. Kelar dalam <strong>2,5 menit</strong>, sementara gw tetap ngobrol sama kalian.</p>
+      <span class="tag" style="font-family:var(--mono); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber)">Contoh nyata · Senin pagi, weekly report</span>
+      <p class="lead" style="margin-top:.5rem; color:var(--text)">Satu perintah: "siapin weekly report gw". <strong>4 agent nyebar paralel</strong>: satu baca kalender + notulen meeting seminggu, satu nyapu Slack, satu narik progres sprint dari Jira, satu ngecek email. Model flagship tinggal <strong>nimbang mana yang penting dan nulis laporannya</strong>. Yang biasanya makan 1-2 jam nyalin-nyalin, jadi ±10 menit review doang.</p>
     </div>
   </div>
 </section>
@@ -410,6 +410,200 @@
       <div class="bar after"></div>
     </div>
     <p class="lead" style="margin-top:1.1rem">Ambil beban administratifnya. Kembalikan waktu buat mikirnya.</p>
+  </div>
+</section>
+
+<!-- F1 ─ Fondasi: apa itu AI -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 1/8 · biar gak cuma ikut-ikutan</div>
+    <h2>Apa itu AI yang kamu pakai sehari-hari?</h2>
+    <div class="cols" style="margin-top:.4rem">
+      <div>
+        <ul class="points">
+          <li><strong>LLM (Large Language Model):</strong> program hasil melatih komputer membaca triliunan kata: buku, artikel, kode, percakapan.</li>
+          <li>Dari latihan itu dia jago satu hal: <strong>menebak kata berikutnya</strong>. "Nasi goreng pakai te..." dan dia tahu lanjutannya.</li>
+          <li>Kemampuan nebak-kata dalam skala raksasa itulah yang muncul sebagai skill bahasa: nulis, merangkum, menerjemahkan, ngoding.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Analogi</span>
+        <h3>Karyawan baru yang sudah baca seisi internet</h3>
+        <p>Pinter banget soal dunia. Tapi nol besar soal kamu: gak tahu proyekmu, bosmu, istilah internal kantormu, gaya nulismu. Hari ini kita benerin justru bagian itu.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- F1b ─ Fondasi: token -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 2/8</div>
+    <h2>Token: satuan kerja (dan tarif) AI</h2>
+    <div class="cols" style="margin-top:.4rem">
+      <div>
+        <ul class="points">
+          <li><strong>Token = potongan kata.</strong> AI gak baca per kata, tapi per potongan: "produktivitas" bisa jadi 3-4 token. Kasarnya, 1.000 token ± 700 kata.</li>
+          <li>Hampir semua hal di dunia AI diukur pakai token: <strong>harga</strong> (bayar per juta token), <strong>kapasitas meja</strong> (context window), sampai kecepatan jawab.</li>
+          <li>Konsekuensi buat kamu: lampiran panjang = token banyak = <strong>lebih mahal dan mejanya cepat penuh</strong> (AI mulai "lupa" bagian awal).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Analogi</span>
+        <h3>Meteran listrik-nya AI</h3>
+        <p>Ngobrol sama AI itu kayak nyalain listrik: kepakai per token seperti kWh. Makin panjang obrolan dan lampirannya, makin gede "tagihan" dan makin penuh kapasitasnya. Ringkas dan relevan itu strategi, bukan pelit.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- F2 ─ Fondasi: cara kerja -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 3/8</div>
+    <h2>Cara kerjanya pas kamu pakai</h2>
+    <div class="grid3" style="margin-top:.8rem">
+      <div class="card"><span class="tag">1 · Kamu kirim</span><h3>Prompt + konteks</h3><p>Pertanyaan atau perintahmu, plus semua bahan yang ikut kamu kasih.</p></div>
+      <div class="card"><span class="tag">2 · Dia baca</span><h3>Context window</h3><p>Meja kerjanya AI. Semua yang mau dia pertimbangkan harus ada di atas meja ini.</p></div>
+      <div class="card"><span class="tag">3 · Dia jawab</span><h3>Kata demi kata</h3><p>Jawaban dibangun token demi token dari isi meja + hasil latihannya.</p></div>
+    </div>
+    <ul class="points" style="margin-top:1.1rem">
+      <li>Dia cuma tahu <strong>yang ada di mejanya</strong>. Konteks bagus, jawaban bagus.</li>
+      <li>Chat baru = meja dikosongkan. Makanya ChatGPT "lupa" kamu terus.</li>
+      <li>Ditanya hal yang dia gak tahu, dia bisa ngarang dengan pede: <strong>halusinasi</strong>. Obatnya: kasih sumber, jangan cuma pertanyaan.</li>
+    </ul>
+    <p class="lead" style="margin-top:1rem">Second brain intinya satu hal: <strong>sistem yang otomatis naruh konteks yang tepat ke meja AI</strong>, setiap saat.</p>
+  </div>
+</section>
+
+<!-- F3 ─ Fondasi: model-model AI -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 4/8</div>
+    <h2>Kenal pemainnya: model-model AI</h2>
+    <div class="grid3" style="margin-top:.8rem">
+      <div class="card"><span class="tag">Anthropic</span><h3>Claude</h3><p>Opus, Sonnet, Haiku. Yang kita pakai hari ini lewat Claude Code.</p></div>
+      <div class="card"><span class="tag">OpenAI</span><h3>GPT</h3><p>Keluarga model di balik ChatGPT.</p></div>
+      <div class="card"><span class="tag">Google</span><h3>Gemini</h3><p>Pro, Flash. Nempel di ekosistem Google.</p></div>
+    </div>
+    <ul class="points" style="margin-top:1.1rem">
+      <li>Ada juga <strong>open-source</strong>: Llama, GLM, Qwen. Murah, bisa dipakai buat kerjaan kasar massal.</li>
+      <li>Tiap keluarga punya tier: <strong>flagship</strong> (paling pinter, paling mahal) dan <strong>model kecil</strong> (cepat, murah). Bayarnya per token, kasarnya per kata.</li>
+      <li>Di sistem gw: flagship buat mikir dan nulis final, model murah buat baca-baca massal. Hemat, hasil tetap.</li>
+    </ul>
+    <p class="lead" style="margin-top:1rem">Semua orang bisa langganan model yang persis sama. <strong>Jadi pembedanya bukan modelnya.</strong> Lalu apa?</p>
+  </div>
+</section>
+
+<!-- F3b ─ Fondasi: RAG -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 5/8</div>
+    <h2>RAG: AI yang buka contekan dulu sebelum jawab</h2>
+    <p class="lead">Masalah dari tadi: AI gak tahu data kantormu. Solusi pertama: <strong>RAG</strong> (Retrieval-Augmented Generation).</p>
+    <div class="grid3" style="margin-top:.8rem">
+      <div class="card"><span class="tag">1 · Cari</span><h3>Ambil contekan</h3><p>Sistem nyari potongan paling relevan dari gudang dokumenmu: kebijakan, PRD, notulen.</p></div>
+      <div class="card"><span class="tag">2 · Taruh di meja</span><h3>Masuk context window</h3><p>Potongan itu ditaruh di meja kerja AI, bareng pertanyaanmu.</p></div>
+      <div class="card"><span class="tag">3 · Jawab</span><h3>Grounded</h3><p>AI jawab berdasar potongan tadi, bisa sambil nunjuk sumbernya. Minim ngarang.</p></div>
+    </div>
+    <ul class="points" style="margin-top:1.1rem">
+      <li>Contoh kantoran: tanya "aturan sisa cuti gimana?" dan dia jawab <strong>dari PDF kebijakan HR-mu</strong>, bukan dari ingatan latihan.</li>
+      <li>Batasnya: RAG tetap cuma <strong>menjawab</strong>. Dia gak bisa bales email-nya, gak bisa update sheet-nya, gak bisa bikinin dokumennya.</li>
+    </ul>
+    <p class="lead" style="margin-top:1rem">Buat "menjawab dari datamu", RAG juara. Buat "mengerjakan", butuh konsep berikutnya.</p>
+  </div>
+</section>
+
+<!-- F3c ─ Fondasi: agentic -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 6/8</div>
+    <h2>Agentic: AI yang mengerjakan, bukan cuma menjawab</h2>
+    <p class="lead">Definisi paling sederhana (dari Anthropic): <strong>model yang memakai tools, dalam sebuah loop.</strong></p>
+    <div class="cols" style="margin-top:.8rem">
+      <div>
+        <ul class="points">
+          <li><strong>1. Tujuan.</strong> Kamu kasih hasil akhir ("buatkan weekly report"), bukan instruksi mikro.</li>
+          <li><strong>2. Rencana + aksi.</strong> Dia pecah sendiri langkahnya, lalu pakai tools: buka kalender, baca notulen, tulis dokumen.</li>
+          <li><strong>3. Cek hasil nyata.</strong> Tiap langkah dia lihat hasil beneran (file kebuka? datanya ada?), bukan nebak-nebak.</li>
+          <li><strong>4. Koreksi, ulangi, lapor.</strong> Muter terus sampai tugas beres, baru balik ke kamu.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Bedanya dalam satu kalimat</span>
+        <h3>Resep vs masakan</h3>
+        <p>Chatbot ngasih resep. RAG ngasih resep dari buku resep dapurmu. Agent: masak, nyicip, benerin bumbu, dan lapor makanannya sudah di meja.</p>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Second brain kita = <strong>agentic + gudang konteks lokal</strong> (file di laptopmu yang dia baca langsung). Dua-duanya sekaligus.</p>
+  </div>
+</section>
+
+<!-- F4 ─ Fondasi: harness -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 7/8 · istilah kunci hari ini</div>
+    <h2>Harness: sistem di sekeliling model</h2>
+    <p class="lead">Model itu mesinnya. <strong>Harness itu mobil lengkapnya</strong>: tools yang boleh dia pakai, file yang boleh dibaca-tulis, memory yang dia bawa, aturan dan guardrail yang dia patuhi. Loop agentic tadi hidupnya di sini.</p>
+    <div class="cols" style="margin-top:1.1rem">
+      <div class="card">
+        <span class="tag" style="color:var(--red)">Harness chat</span>
+        <h3>ChatGPT web</h3>
+        <p>Kotak ketik, kotak jawab. Gak punya tangan: gak bisa buka file-mu, gak ingat aturanmu. Konteks harus kamu suapin manual tiap sesi.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--teal)">Harness agentic</span>
+        <h3>Claude Code</h3>
+        <p>Jalan di laptopmu: baca-tulis file, jalanin perintah, panggil konektor (Drive, Slack, Jira), patuh sama CLAUDE.md. Bisa bertindak, gak cuma jawab.</p>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:1.2rem">Second brain yang kita bangun hari ini = <strong>model flagship + harness yang kamu rakit sendiri</strong>.</p>
+  </div>
+</section>
+
+<!-- F5 ─ Fondasi: prinsip -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Fondasi · 8/8 · cara mainnya</div>
+    <h2>Lima prinsip kerja bareng AI</h2>
+    <ul class="points" style="margin-top:.8rem">
+      <li><strong>1. Selalu ajak AI ke meja.</strong> Kemampuannya "jagged": jago banget di satu tugas, jeblok di tugas sebelahnya. Satu-satunya cara tahu petanya: coba di tiap tugas.</li>
+      <li><strong>2. Kamu human in the loop.</strong> AI bikin draft, kamu pegang keputusan. Verifikasi sebelum kirim, selalu.</li>
+      <li><strong>3. Perlakukan kayak orang, dan kasih dia peran.</strong> "Kamu PM senior, review PRD ini dari sisi risiko" ngalahin prompt generik.</li>
+      <li><strong>4. Konteks menentukan kualitas.</strong> Spesifik soal tujuan, format, dan contoh. Sampah masuk, sampah keluar.</li>
+      <li><strong>5. Anggap ini AI terburuk yang akan pernah kamu pakai.</strong> Modelnya terus membaik; skill dan sistem yang kamu bangun sekarang yang jadi keunggulan compounding.</li>
+    </ul>
+    <p class="lead" style="margin-top:1.1rem; color:var(--muted); font-size:.92rem">Disarikan dari Google AI Essentials, Generative AI for Everyone (Andrew Ng), Co-Intelligence (Ethan Mollick), dan Building Effective Agents (Anthropic).</p>
+  </div>
+</section>
+
+<!-- K1 ─ Kamus 1/2 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Kamus kecil · 1/2 · istilah yang bakal sering kamu dengar</div>
+    <h2>Ngobrol sama AI: prompt, tools, MCP</h2>
+    <ul class="points" style="margin-top:.8rem">
+      <li><strong>Prompt</strong>: brief yang kamu kasih ke AI. Kayak nge-brief desainer: makin jelas tujuan, format, dan contohnya, makin bagus hasilnya.</li>
+      <li><strong>Tools</strong>: "tangan"-nya AI. Daftar kemampuan aksi yang kamu izinkan: buka file, cari di web, baca kalender, nyiapin draft email.</li>
+      <li><strong>Tool call</strong>: satu kali AI mencet salah satu tombol itu. Kalau di layar kelihatan "calling tool...", dia lagi pakai alatnya, bukan lagi ngetik jawaban.</li>
+      <li><strong>MCP</strong> (Model Context Protocol): colokan standar, kayak USB-C. Dulu tiap aplikasi butuh "kabel" khusus; sekarang Slack, Drive, Jira, Figma tinggal dicolok ke AI pakai satu jenis colokan yang sama.</li>
+      <li><strong>Subagent</strong>: anak buah yang dipanggil buat satu tugas spesifik (misal: baca 60 channel Slack), kerja di ruangan terpisah, balik cuma bawa hasilnya. Mejanya bos tetap bersih.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- K2 ─ Kamus 2/2 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Kamus kecil · 2/2</div>
+    <h2>Yang bikin dia ingat dan boleh: skill, memory, kunci</h2>
+    <ul class="points" style="margin-top:.8rem">
+      <li><strong>Skill</strong>: SOP siap pakai yang di-install ke asistenmu: "cara bikin MOM", "cara nyusun weekly report". Ditulis sekali, dipanggil kapan aja. Di repo: folder <span class="keys">.agent/skills/</span>.</li>
+      <li><strong>Slash command</strong>: speed dial buat SOP itu: ketik <span class="keys">/mom</span> atau <span class="keys">/weekly-report</span>, dia langsung jalanin resepnya.</li>
+      <li><strong>Memory</strong>: laci catatan permanen. Beda sama context window (meja, dikosongin tiap sesi), memory kebawa terus: "jangan pakai em-dash", "format laporan gw begini". Koreksi sekali, inget selamanya.</li>
+      <li><strong>API key</strong>: kartu akses gedung buat satu layanan. Siapa pun yang megang bisa masuk atas namamu, makanya disimpan di file lokal yang gak pernah ikut ke-upload.</li>
+      <li><strong>OAuth</strong>: surat kuasa resmi. Kamu login sekali di layar resmi Google, ngasih izin spesifik (baca Drive, baca kalender), dan bisa dicabut kapan aja. Ini yang kamu lakuin pas nyambungin Google nanti.</li>
+    </ul>
   </div>
 </section>
 
@@ -462,7 +656,32 @@
   </div>
 </section>
 
-<!-- 18 ─ Install Level 0 -->
+<!-- 17b ─ IDE vs CLI -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Sebelum ketik apa-apa · kenalan sama alatnya</div>
+    <h2>IDE dan CLI: dua istilah yang bakal sering muncul</h2>
+    <div class="cols" style="margin-top:.8rem">
+      <div class="card">
+        <span class="tag">IDE = kantornya</span>
+        <h3>VS Code</h3>
+        <p>Satu jendela isi semuanya: daftar file di kiri, editor di tengah, terminal di bawah. Semua file second brain-mu kelihatan dan bisa diklik di sini.</p>
+      </div>
+      <div class="card">
+        <span class="tag">CLI = garis perintah</span>
+        <h3>Terminal</h3>
+        <p>Layar ketik-perintah: satu baris, satu aksi. Kelihatan jadul, tapi paling cepat, dan paling gampang di-copy-paste.</p>
+      </div>
+    </div>
+    <ul class="points" style="margin-top:1.1rem">
+      <li><strong>Claude Code itu aplikasi CLI</strong>: hidupnya di terminal.</li>
+      <li>Kita jalankan terminalnya <strong>di dalam VS Code</strong>: file kelihatan, AI di sampingnya. Dapat dua-duanya dalam satu jendela.</li>
+      <li>Gak perlu jago koding: hari ini total <strong>±5 perintah</strong>, semuanya tinggal copy-paste.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 18 ─ Install Level 0 (peta) -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Sekarang giliran kalian · Level 0</div>
@@ -488,7 +707,163 @@ $ <span class="p">claude</span>
 <span class="c">&gt; Baca CLAUDE.md dan perkenalkan
   dirimu sebagai second brain saya.</span></div>
     </div>
-    <p class="lead" style="margin-top:1.2rem">Panduan tertulisnya di dalam repo: <span class="keys">docs/INSTALL_ID.md</span>. Macet? Tempel error-nya ke Claude, biar dia yang benerin.</p>
+    <p class="lead" style="margin-top:1.2rem">Enam langkah ini kita jalanin <strong>bareng-bareng sekarang</strong>: satu slide, satu langkah. Panduan tertulisnya: <span class="keys">docs/INSTALL_ID.md</span> di dalam repo.</p>
+  </div>
+</section>
+
+<!-- I1 ─ Step 1/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 1/6</div>
+    <h2>Install VS Code + Node.js</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li><strong>1.</strong> Download <strong>VS Code</strong>: <span class="keys">code.visualstudio.com</span>. Install seperti aplikasi biasa.</li>
+          <li><strong>2.</strong> Download <strong>Node.js</strong>: <span class="keys">nodejs.org</span>. Pilih versi <strong>LTS</strong>, install.</li>
+          <li><strong>3.</strong> Windows: tutup dan buka lagi VS Code setelah install Node.</li>
+          <li><strong>4.</strong> Buka terminal: menu <strong>Terminal → New Terminal</strong>.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">node</span> --version
+<span class="ok">v22.x.x</span>  <span class="c">← keluar angka versi = beres</span>
+
+$ <span class="p">npm</span> --version
+<span class="ok">10.x.x</span></div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Sukses kalau: <span class="keys">node --version</span> mengeluarkan angka versi, bukan "not found".</p>
+  </div>
+</section>
+
+<!-- I2 ─ Step 2/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 2/6</div>
+    <h2>Install Claude Code</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li>Satu perintah di terminal, tunggu sampai selesai.</li>
+          <li>Butuh akun Claude: daftar di <span class="keys">claude.ai</span> kalau belum (login-nya nanti di Step 6).</li>
+          <li>Kalau muncul <strong>"npm not found"</strong>: Node belum ke-install, atau VS Code belum di-restart setelah install Node. Balik ke Step 1.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">npm</span> install -g @anthropic-ai/claude-code
+
+$ <span class="p">claude</span> --version
+<span class="ok">2.x.x (Claude Code)</span>  <span class="c">← beres</span></div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Sukses kalau: <span class="keys">claude --version</span> mengeluarkan angka versi.</p>
+  </div>
+</section>
+
+<!-- I3 ─ Step 3/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 3/6</div>
+    <h2>Ambil repo template-nya</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li>Repo = folder kerja second brain-mu: template CLAUDE.md, skill, struktur folder.</li>
+          <li>Gak punya <strong>git</strong>? Windows: install dari <span class="keys">git-scm.com</span>. macOS: <span class="keys">xcode-select --install</span>.</li>
+          <li><strong>Atau tanpa git:</strong> buka <span class="keys">github.com/BrianArfi/ai-second-brain</span>, klik <strong>Code → Download ZIP</strong>, extract, lalu di VS Code: <strong>File → Open Folder</strong>.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">git clone</span> https://github.com/BrianArfi/\
+  ai-second-brain.git
+$ <span class="p">cd</span> ai-second-brain</div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Sukses kalau: terminal kamu sekarang berdiri di folder <span class="keys">ai-second-brain</span>.</p>
+  </div>
+</section>
+
+<!-- I4 ─ Step 4/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 4/6</div>
+    <h2>Jalankan installer</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li>Installer ngecek tools-mu, bikin <span class="keys">CLAUDE.md</span> dari template, dan nyiapin <span class="keys">.env</span>.</li>
+          <li>Aman dijalankan berulang kali.</li>
+          <li>Ada error? Jangan panik: copy error-nya, kita pakai di Step 6 sebagai latihan pertama nanya ke Claude.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">bash</span> install.sh
+<span class="ok">  ✔ CLAUDE.md created from template</span>
+<span class="ok">  ✔ .env created</span></div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Sukses kalau: dua centang di atas muncul.</p>
+  </div>
+</section>
+
+<!-- I5 ─ Step 5/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 5/6 · paling penting</div>
+    <h2>Isi CLAUDE.md: otaknya</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li>Buka file <span class="keys">CLAUDE.md</span> dari panel kiri VS Code.</li>
+          <li><strong>1. Siapa kamu:</strong> nama, role, perusahaan/klien, bahasa kerja.</li>
+          <li><strong>2. Konteks kerja:</strong> proyek yang lagi jalan, siapa stakeholder-nya.</li>
+          <li><strong>3. Aturan main:</strong> format favorit, bahasa per klien, hal yang gak boleh.</li>
+        </ul>
+      </div>
+      <div class="cmd"><span class="c"># Siapa kamu</span>
+Dina · PM Growth di TokoX
+Bahasa: ID internal, EN buat klien
+
+<span class="c"># Aturan main</span>
+Jangan kirim apa pun tanpa approval gw
+Draft dokumen: heading pendek + bullet</div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Makin jujur dan spesifik isinya, makin berguna. <strong>Ini yang membedakan AI generik dari partner yang kenal kamu.</strong> Ambil waktu 10 menit di sini.</p>
+  </div>
+</section>
+
+<!-- I6 ─ Step 6/6 -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · Step 6/6</div>
+    <h2>Nyalakan, login, ngobrol pertama</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li>Ketik <span class="keys">claude</span> di terminal, login dengan akun Claude-mu saat diminta.</li>
+          <li>Prompt pertama: minta dia baca CLAUDE.md dan memperkenalkan diri.</li>
+          <li>Lalu tes dengan kerjaan beneran, bukan toy example.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">claude</span>
+<span class="c">&gt; Baca CLAUDE.md dan perkenalkan
+  dirimu sebagai second brain saya.</span>
+
+<span class="c">&gt; Buatkan draft email ke atasan saya
+  soal progress proyek X,
+  pakai gaya bahasa saya.</span></div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Sukses kalau: jawabannya <strong>nyebut detail yang kamu tulis di CLAUDE.md</strong>. Itu tanda konteksmu kebaca. Selamat, kamu resmi punya second brain.</p>
+  </div>
+</section>
+
+<!-- I7 ─ Pit stop -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Install bareng · pit stop</div>
+    <h2>Kalau macet, ini urutannya</h2>
+    <ul class="points" style="margin-top:.8rem">
+      <li><strong>1. Tempel error-nya ke Claude.</strong> Copy pesan error, paste ke <span class="keys">claude</span>, minta dia diagnosa dan perbaiki. Ini momen AI-Native pertamamu: AI yang ikut membereskan setup-nya sendiri.</li>
+      <li><strong>2. Buka panduan tertulis:</strong> <span class="keys">docs/INSTALL_ID.md</span> di dalam repo, langkah demi langkah.</li>
+      <li><strong>3. Angkat tangan.</strong> Gw samperin.</li>
+    </ul>
+    <div class="card" style="margin-top:1.2rem">
+      <span class="tag">Error paling umum</span>
+      <p style="margin-top:.4rem"><span class="keys">npm not found</span> → Node belum ke-install / VS Code belum restart · <span class="keys">git not found</span> → pakai jalur ZIP aja · login gagal → cek akunmu di <span class="keys">claude.ai</span> dulu.</p>
+    </div>
   </div>
 </section>
 
@@ -503,6 +878,82 @@ $ <span class="p">claude</span>
       <div class="card"><span class="tag">Level 2 · sesuai kebutuhan</span><h3>Skill lanjutan</h3><p>Slack, recorder, Jira, image, video, analytics. Pasang hanya yang kamu pakai.</p></div>
     </div>
     <p class="lead" style="margin-top:1.4rem">Mindset-nya: kamu gak lagi nunggu ada tools jadi. Kamu <strong>merakit tools-mu sendiri</strong>, satu skill kecil setiap kali butuh.</p>
+    <p class="lead" style="margin-top:.7rem; color:var(--muted); font-size:.92rem">Level 1 &amp; 2 ada panduan visualnya: <strong>Panduan Koneksi AI Second Brain</strong>: setup Google, Email, Slack, Jira, langkah demi langkah dengan diagram. Kami kirim ke kamu yang isi feedback workshop. Tiga slide berikut: gambaran besarnya, biar kebayang.</p>
+  </div>
+</section>
+
+<!-- C1 ─ Koneksi: Google Drive -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Sambungkan tools · 1/3 · Level 1</div>
+    <h2>Google Drive, Docs &amp; Calendar</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li><strong>1.</strong> Buka <span class="keys">console.cloud.google.com</span>, bikin proyek baru: <span class="keys">ai-second-brain</span>.</li>
+          <li><strong>2.</strong> Nyalakan API-nya: Drive, Docs, Sheets, Calendar (plus Gmail buat slide berikutnya).</li>
+          <li><strong>3.</strong> OAuth consent (External + emailmu sebagai test user), lalu bikin credential tipe <strong>Desktop app</strong>, Download JSON, rename jadi <span class="keys">credentials.json</span>.</li>
+          <li><strong>4.</strong> Taruh di folder connector, jalankan perintah pertama, login sekali. Layar "Google hasn't verified this app" itu normal: Advanced → lanjutkan.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">cp</span> ~/Downloads/credentials.json \
+  .agent/skills/work-drive-connector/
+$ <span class="p">python3</span> .agent/skills/\
+work-drive-connector/gdrive_manager.py \
+  search --query "test"
+<span class="ok">✔ daftar file Drive-mu muncul</span></div>
+    </div>
+    <p class="lead" style="margin-top:1rem">Di rumah, 20-40 menit, sekali seumur setup. Langkah visualnya lengkap di <strong>Panduan Koneksi Bagian 1</strong>.</p>
+  </div>
+</section>
+
+<!-- C2 ─ Koneksi: Email -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Sambungkan tools · 2/3 · Level 2</div>
+    <h2>Email (Gmail)</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li><strong>Numpang OAuth Google yang sama.</strong> Gak bikin proyek baru, gak bikin kunci baru.</li>
+          <li><strong>1.</strong> Pastikan Gmail API sudah nyala di proyek tadi.</li>
+          <li><strong>2.</strong> Copy <span class="keys">credentials.json</span> yang sama ke folder gmail-connector.</li>
+          <li><strong>3.</strong> Login sekali lagi khusus izin Gmail (baca + kirim).</li>
+          <li>Guardrail tetap jalan: AI <strong>gak akan kirim email tanpa approval-mu</strong>. Dia nyiapin draft, kamu yang bilang kirim.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">cp</span> ~/Downloads/credentials.json \
+  .agent/skills/gmail-connector/
+$ <span class="p">python3</span> .agent/skills/\
+gmail-connector/gmail_manager.py profile
+<span class="ok">✔ alamat Gmail-mu tampil</span></div>
+    </div>
+    <p class="lead" style="margin-top:1rem">5-10 menit kalau Level 1 sudah beres. Detail: <strong>Panduan Koneksi Bagian 2</strong>.</p>
+  </div>
+</section>
+
+<!-- C3 ─ Koneksi: Slack -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Sambungkan tools · 3/3 · Level 2</div>
+    <h2>Slack (dan sekilas Jira)</h2>
+    <div class="cols" style="margin-top:.3rem">
+      <div>
+        <ul class="points">
+          <li><strong>1.</strong> Buka <span class="keys">api.slack.com/apps</span> → Create New App → From scratch.</li>
+          <li><strong>2.</strong> Tambahkan izin (12 scope siap-salin ada di Panduan) di <strong>User Token Scopes</strong>: AI bertindak sebagai kamu, bukan bot.</li>
+          <li><strong>3.</strong> Install to Workspace → Allow → salin token <span class="keys">xoxp-...</span></li>
+          <li><strong>4.</strong> Simpan ke <span class="keys">token.env</span>, tes daftar channel.</li>
+          <li><strong>Jira mirip dan lebih cepat:</strong> bikin Atlassian API token, simpan, minta Claude arahkan ke board sprint-mu. Bagian 4 di Panduan.</li>
+        </ul>
+      </div>
+      <div class="cmd">$ <span class="p">echo</span> "SLACK_USER_TOKEN=xoxp-..." \
+  &gt; .agent/skills/slack-connector/token.env
+$ <span class="p">python3</span> .agent/skills/slack-connector/\
+scripts/slack_client.py --action list_channels
+<span class="ok">✔ daftar channel Slack-mu muncul</span></div>
+    </div>
+    <p class="lead" style="margin-top:1rem">10-15 menit. Balas Slack tetap approval-gated: draft dulu, kamu setujui, baru terkirim. Detail: <strong>Panduan Koneksi Bagian 3 &amp; 4</strong>.</p>
   </div>
 </section>
 
@@ -572,7 +1023,30 @@ $ <span class="p">claude</span>
   </div>
 </section>
 
-<!-- 22 ─ Closing -->
+<!-- 22 ─ Feedback -> Panduan Koneksi -->
+<section class="slide">
+  <div class="slide-inner">
+    <div class="eyebrow">Sebelum pulang · 2 menit</div>
+    <h2>Isi feedback, dapat Panduan Koneksi lengkap</h2>
+    <div class="cols" style="margin-top:.4rem">
+      <div>
+        <ul class="points">
+          <li><strong>1.</strong> Pastikan Level 0 jalan: <span class="keys">claude</span> kebuka, CLAUDE.md keisi minimal "siapa kamu"</li>
+          <li><strong>2.</strong> Isi feedback workshop di <strong>Goakal</strong> (link gw share di grup Telegram AI Circle)</li>
+          <li><strong>3.</strong> Yang udah isi, gw kirimin <strong>Panduan Koneksi</strong>: setup Google Drive, Email, Slack, Jira, visual step-by-step plus slot screenshot</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Bonus buat yang isi feedback</span>
+        <h3>Panduan Koneksi AI Second Brain</h3>
+        <p>Sambungkan 4 tools utamamu satu per satu, dengan diagram tiap langkah. Plus dokumen "Mulai Dari Sini" biar gak ada yang ketinggalan waktu lanjut di rumah.</p>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:1.1rem">Feedback kamu yang bikin sesi ini makin bagus buat batch berikutnya. Fair trade: 2 menit feedback, panduan lengkap buat lanjut sendiri.</p>
+  </div>
+</section>
+
+<!-- 23 ─ Closing -->
 <section class="slide">
   <div class="slide-inner">
     <div class="eyebrow">Penutup</div>
@@ -584,7 +1058,7 @@ $ <span class="p">claude</span>
 
 </div>
 <div class="navhint">← → navigasi · klik kanan layar buat maju</div>
-<div class="hud" id="hud">1 / 24</div>
+<div class="hud" id="hud">1 / 46</div>
 <script>
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));

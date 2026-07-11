@@ -128,7 +128,7 @@ def update_file(file_id, file_path, convert_to_docs=False):
             header = f"# {existing_name}\n\n**Author:** Your Name\n\n**Date:** {today}\n\n"
             md_content = header + md_content
 
-            html_body = markdown.markdown(md_content, extensions=['tables'])
+            html_body = markdown.markdown(md_content, extensions=['tables', 'nl2br'])
             styled_html = f"""
             <html>
             <head>
@@ -266,7 +266,7 @@ def upload_file(file_path, folder_id=None, convert_to_docs=False, share=False):
             header = f"# {clean_title}\n\n**Author:** Your Name\n\n**Date:** {today}\n\n"
             md_content = header + md_content
 
-            html_body = markdown.markdown(md_content, extensions=['tables'])
+            html_body = markdown.markdown(md_content, extensions=['tables', 'nl2br'])
 
             # Added extra large page size for pageless feel, and auto-sizing table columns without forcing 100% width
             styled_html = f"""
