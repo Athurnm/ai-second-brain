@@ -8,6 +8,26 @@ snapshot with all credentials, tokens, real client names, and personal data remo
 ## 2026-07-12
 
 ### Added
+- **PM ledger suite + trackers** (completeness pass): `commitment-ledger` (things you owe
+  others), `decision-log`, `waiting-watchdog` (things others owe you), `outcomes-loop`,
+  `premeeting-cards`, `reply-queue`, `token-tracker` (usage + cost), `harness-health`
+  (cron-job truthfulness checks), and `slack-tracker` (stateful mention ledger). These are
+  the state machines the dashboard visualizes; their data stays local under `journal/state/`.
+- **More skills**: `fathom-frame-grab`, `gemini-image`, `google-ads-connector`,
+  `proactive-assistant`, `interview-assistant` (hiring toolkit: CV parser, interview plan +
+  assessment templates), and `work-link-sync`.
+- **Document templates** (`templates/`): meeting-minutes and PRD skeletons used by the
+  meeting recorder and PRD pipeline.
+- **Integration wizard** (`setup/connect.py` + `integrations.json`): interactive CLI that
+  wires MCP servers into your Claude Code settings from a catalog.
+- **Curated helper scripts** (`scripts/`): registry sync, Google Docs image/table helpers,
+  collaborator sharing, audio transcription, weekly-report tabs, doc indexer, maintenance.
+
+### Fixed
+- `daily_update_runner.py` shipped with a syntax error (an over-eager scrub step cut a
+  generated-markdown f-string in half). The scrub is now markdown-scoped and every published
+  Python/JS file is syntax-checked.
+
 - **Meeting recorder** (`meeting-recorder/`): record and transcribe meetings locally on
   your own machine, with an automatic minutes draft. Cross-platform capture (macOS
   avfoundation, Windows WASAPI, Linux PulseAudio), local GPU transcription via whisper.cpp

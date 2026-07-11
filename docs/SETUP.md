@@ -549,7 +549,12 @@ Make sure `http://localhost:8080/` (with trailing slash) is in your OAuth client
 
 ## 14. Optional Local Tools
 
-Two extra tools ship with the template and are set up separately when you want them:
+Extra tools ship with the template and are set up separately when you want them:
+
+- **Integration wizard** (`setup/connect.py`): an interactive CLI that walks you through
+  connecting MCP servers (Atlassian, and more) into `~/.claude/settings.json` from a catalog
+  in `setup/integrations.json`. A complement to the manual steps above; `/setup` uses the same
+  ideas conversationally.
 
 - **Meeting recorder** (`meeting-recorder/`): record and transcribe meetings locally on your own machine (macOS, Windows, Linux), with an automatic minutes draft. A private alternative or complement to a cloud recorder. See **`docs/MEETING_RECORDER.md`**.
 - **Visual dashboard** (`dashboard/`): a local web cockpit at `http://localhost:3737` over your notes, calendar, projects, tracker, and system health. Start it with `python3 dashboard/server.py`. See **`docs/DASHBOARD.md`**.

@@ -1,0 +1,161 @@
+{
+  "integrations": [
+    {
+      "name": "Atlassian (Jira + Confluence)",
+      "server_key": "atlassian",
+      "description": "Read/write Jira issues, Confluence pages",
+      "tier": "cloud-oauth",
+      "setup_notes": "1. Claude Code will open a browser to authorize with your Atlassian account\n2. No token needed — OAuth is handled automatically",
+      "credentials": [],
+      "config_template": {
+        "type": "http",
+        "url": "https://mcp.atlassian.com/v1/mcp"
+      }
+    },
+    {
+      "name": "Linear",
+      "server_key": "linear",
+      "description": "Manage Linear issues, projects, and cycles",
+      "tier": "cloud-oauth",
+      "setup_notes": "1. Claude Code will open a browser to authorize with your Linear account\n2. No token needed — OAuth is handled automatically",
+      "credentials": [],
+      "config_template": {
+        "type": "http",
+        "url": "https://mcp.linear.app/mcp"
+      }
+    },
+    {
+      "name": "Fathom (Meeting Recordings)",
+      "server_key": "fathom",
+      "description": "Access meeting transcripts and AI summaries",
+      "tier": "cloud-api",
+      "setup_notes": "1. Go to https://app.fathom.video/settings/api\n2. Click 'Generate API Key'\n3. Copy the key and paste below",
+      "credentials": [
+        {
+          "key": "FATHOM_API_KEY",
+          "label": "Fathom API Key",
+          "secret": true,
+          "hint": "From app.fathom.video/settings/api"
+        }
+      ],
+      "config_template": {
+        "type": "http",
+        "url": "https://api.fathom.ai/mcp",
+        "headers": {
+          "Authorization": "Bearer {{FATHOM_API_KEY}}"
+        }
+      }
+    },
+    {
+      "name": "Slack",
+      "server_key": "slack",
+      "description": "Read channels, send messages, search workspace",
+      "tier": "npm",
+      "requires_npx": true,
+      "setup_notes": "1. Go to https://api.slack.com/apps → 'Create New App' → 'From Scratch'\n2. Name it (e.g. 'Claude Code') and select your workspace\n3. 'OAuth & Permissions' → Bot Token Scopes → Add:\n     channels:read  channels:history  chat:write  users:read\n4. 'Install to Workspace' → copy the Bot User OAuth Token (xoxb-...)\n5. Your Team ID is in the Slack URL: app.slack.com/client/TXXXXXXXX",
+      "credentials": [
+        {
+          "key": "SLACK_BOT_TOKEN",
+          "label": "Bot Token (xoxb-...)",
+          "secret": true,
+          "hint": "api.slack.com → your app → OAuth & Permissions"
+        },
+        {
+          "key": "SLACK_TEAM_ID",
+          "label": "Team ID (T...)",
+          "secret": false,
+          "hint": "In Slack URL: app.slack.com/client/TXXXXXXXX"
+        }
+      ],
+      "config_template": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-slack"],
+        "env": {
+          "SLACK_BOT_TOKEN": "{{SLACK_BOT_TOKEN}}",
+          "SLACK_TEAM_ID": "{{SLACK_TEAM_ID}}"
+        }
+      }
+    },
+    {
+      "name": "GitHub",
+      "server_key": "github",
+      "description": "Read repos, issues, PRs, and code search",
+      "tier": "npm",
+      "requires_npx": true,
+      "setup_notes": "1. Go to https://github.com/settings/tokens\n2. 'Generate new token (classic)'\n3. Select scopes: repo, read:org\n4. Copy the token (ghp_...)",
+      "credentials": [
+        {
+          "key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "label": "GitHub Personal Access Token (ghp_...)",
+          "secret": true,
+          "hint": "github.com/settings/tokens"
+        }
+      ],
+      "config_template": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "{{GITHUB_PERSONAL_ACCESS_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "Notion",
+      "server_key": "notion",
+      "description": "Read and write Notion pages and databases",
+      "tier": "npm",
+      "requires_npx": true,
+      "setup_notes": "1. Go to https://www.notion.so/profile/integrations\n2. 'New integration' → name it → copy the token (ntn_...)\n3. Share target pages/databases with your integration:\n     Open the page → Share → Invite → select your integration",
+      "credentials": [
+        {
+          "key": "NOTION_TOKEN",
+          "label": "Notion Integration Token (ntn_...)",
+          "secret": true,
+          "hint": "notion.so/profile/integrations",
+          "transform": "notion_headers"
+        }
+      ],
+      "config_template": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@notionhq/notion-mcp-server"],
+        "env": {
+          "OPENAPI_MCP_HEADERS": "{{NOTION_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "ClickUp",
+      "server_key": "clickup",
+      "description": "Manage tasks, lists, folders, docs, and time tracking",
+      "tier": "npm",
+      "requires_npx": true,
+      "setup_notes": "1. Go to https://app.clickup.com/settings/apps\n2. Under 'API Token', click 'Generate'\n3. Copy your personal API token (pk_...)",
+      "credentials": [
+        {
+          "key": "CLICKUP_API_TOKEN",
+          "label": "ClickUp API Token (pk_...)",
+          "secret": true,
+          "hint": "app.clickup.com/settings/apps → API Token"
+        }
+      ],
+      "config_template": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@taazkareem/clickup-mcp-server@latest"],
+        "env": {
+          "CLICKUP_API_KEY": "{{CLICKUP_API_TOKEN}}"
+        }
+      }
+    },
+    {
+      "name": "Google Workspace",
+      "server_key": "_google_workspace",
+      "description": "Drive, Docs, Sheets, Calendar — via Python skills",
+      "tier": "info",
+      "instructions": "  Google Workspace is handled via Python skills (better OAuth support).\n\n  Already configured in this repo:\n    Drive (Work):    .agent/skills/work-drive-connector/gdrive_manager.py\n    Drive (Personal): .agent/skills/google-drive-connector/gdrive_manager.py\n    Calendar:         .agent/skills/google-calendar-connector/gcal_manager.py\n    Docs creator:     .agent/skills/gdocs-create/gdocs_create.py\n\n  To re-authenticate: delete the token.json in the skill folder,\n  then run the skill — it will open a browser to re-authorize."
+    }
+  ]
+}

@@ -739,4 +739,69 @@ def _main_logic(mode, dry_run=False):
             write_output(sections, output_file)
 
         # LinkedIn Content Prompt
-        sections.append(f"
+        sections.append(f"## LinkedIn Content Check\n")
+        sections.append(f"> **Reminder**: Target 1 post/day di LinkedIn.\n")
+        sections.append(f"> Sudah posting hari ini? Jika belum, pertimbangkan angle dari aktivitas hari ini.\n")
+        sections.append(f"> Content Pillars: AI (priority), Career, Startup, Family.\n")
+        write_output(sections, output_file)
+
+    # ── Step 10.5: Portfolio Mirror (Evening only) ───────────────────
+    # Regenerate journal/portfolio.md from journal/state/portfolio.json so the
+    # top-down team→initiative→sub-item mirror stays fresh (committed by git_sync below).
+    if not is_morning:
+        print("[10.5] Rendering portfolio mirror...", flush=True)
+        portfolio_script = os.path.join(BASE_DIR, '.agent', 'scripts', 'portfolio_render.py')
+        out = _step("Portfolio Mirror", [sys.executable, portfolio_script], timeout=60)
+        harvest.set_portfolio(out)
+        sections.append(f"## Portfolio Mirror\n```\n{out}\n```\n")
+        write_output(sections, output_file)
+
+    # ── Step 11: GitHub Sync (Evening only) ──────────────────────────
+    if not is_morning:
+        if dry_run:
+            print("[11] GitHub Sync: SKIPPED (dry-run)", flush=True)
+            harvest.set_git_sync("skipped (dry-run)")
+        else:
+            git_sync(sections)
+            harvest.set_git_sync("completed")
+        write_output(sections, output_file)
+    else:
+        print("[10-11] Plan comparison/GitHub: SKIPPED (morning mode)", flush=True)
+
+    # ── Write morning plan file (Morning only) ───────────────────────
+    if is_morning:
+        # Extract a summary of priorities from the collected data for plan file
+        plan_items = []
+        plan_items.append("[Auto-generated from morning sweep data]")
+        plan_items.append("Review Calendar, Jira, and Slack signals to finalize top 5 priorities.")
+        write_morning_plan(plan_items, now.strftime('%Y-%m-%d'))
+
+    # ── Summary ──────────────────────────────────────────────────────
+    total_time = time.time() - script_start
+    harvest.set_duration(total_time)
+    sections.append(f"\n---\n*Runner ({mode_label}) completed in {total_time:.1f}s*\n")
+    write_output(sections, output_file)
+
+    # ── Write JSON sidecar ───────────────────────────────────────────
+    json_path = harvest.write_json()
+
+    print(f"\n{'='*60}", flush=True)
+    print(f"  Done in {total_time:.1f}s. Mode: {mode_label}.", flush=True)
+    print(f"  Markdown : {output_file}", flush=True)
+    if json_path:
+        print(f"  JSON     : {json_path}", flush=True)
+    print(f"{'='*60}", flush=True)
+
+    # Heartbeat so the dashboard "Routines" tab shows this routine's last run.
+    if not dry_run:
+        try:
+            import subprocess as _sp
+            _sp.run(['python3', os.path.join(BASE_DIR, '.agent', 'scripts', 'heartbeat.py'),
+                     '--job', 'morning-update' if is_morning else 'evening-update',
+                     '--status', 'ok', '--summary', f'{mode_label} done in {total_time:.0f}s'],
+                    cwd=BASE_DIR, capture_output=True, timeout=10)
+        except Exception:
+            pass
+
+if __name__ == '__main__':
+    main()

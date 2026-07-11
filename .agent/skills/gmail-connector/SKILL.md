@@ -32,7 +32,7 @@ Send a plain-text email from `brian.faridhi@workincentives.com` (appears in Sent
   ```bash
   python .agent/skills/gmail-connector/gmail_manager.py send \
     --to "faraz.saleem@workincentives.com" \
-    --cc "rajaa.khoder@workincentives.com,amr.abokhalil@workincentives.com" \
+    --cc "Teammate.khoder@workincentives.com,amr.abokhalil@workincentives.com" \
     --subject "Subject" \
     --body-file /tmp/body.txt
   ```
