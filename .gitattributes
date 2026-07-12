@@ -1,0 +1,30 @@
+# Enforce LF line endings for shell scripts and Python hooks
+# This prevents Windows CRLF from breaking bash scripts on every checkout.
+
+# Default: normalize all text files
+* text=auto
+
+# Shell scripts MUST be LF - Windows CRLF breaks bash
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Python scripts - LF preferred
+*.py text eol=lf
+
+# Markdown and text - normalize
+*.md text eol=lf
+*.txt text eol=lf
+
+# JSON - normalize
+*.json text eol=lf
+
+# Windows-specific files
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files - never touch
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
