@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # PostToolUse hook on Write|Edit: warn when an em-dash/en-dash lands in a repo .md/.txt file.
 # You's #1 style rule (no-emdash skill) - enforced deterministically, warning-only
 # (em-dashes are legitimate when quoting transcripts, so never block).

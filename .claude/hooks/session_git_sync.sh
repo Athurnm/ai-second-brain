@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # SessionStart hook: sync repo with GitHub (fetch + rebase pull when safe).
 # Portable: pure bash (no python/jq), runs on WSL/Linux, macOS, and Windows Git Bash.
 # Always exits 0 and emits hook JSON; never blocks the session.

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # SessionStart hook: inject current WIB date/time so the model never reasons from UTC.
 # Contract: always exit 0; never block a session.
 set -u

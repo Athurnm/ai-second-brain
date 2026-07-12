@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # PreToolUse hook on Slack send tools (matcher: mcp__.*[Ss]lack.*__.*(post|send|reply).*).
 # Forces a confirmation prompt for EVERY Slack send, even if the tool is allowlisted -
 # You's rule: nothing goes to Slack without explicit "kirim"/approval.

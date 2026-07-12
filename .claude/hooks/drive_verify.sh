@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # PostToolUse hook on Bash: deterministic Drive Operation Verification (CLAUDE.md rule).
 # If a gdocs_create/gdrive_manager create/upload/update ran but returned no file ID or
 # Drive link, block and tell the model to treat it as a FAILURE.

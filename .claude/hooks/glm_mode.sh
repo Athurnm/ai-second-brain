@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # SessionStart hook: surface the GLM offload-mode toggle so the Router knows whether to
 # offload heavy generation/research/draft to agy-bridge GLM 5.2 (local, zero Claude quota).
 FLAG="${CLAUDE_PROJECT_DIR:-.}/.agent/glm_mode.flag"

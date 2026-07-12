@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """SessionStart hook: inject a trimmed Dashboard.md instead of the full file.
 
 The full Dashboard.md is ~64KB (~16k tokens) and was injected on every session
