@@ -38,3 +38,6 @@ journal/todo_*.md
 # Editor
 .vscode/
 .idea/
+
+# Claude Code local settings (may contain API keys)
+.claude/settings.json
