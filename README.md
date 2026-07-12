@@ -328,6 +328,7 @@ Deeper references:
 - **`docs/MEETING_RECORDER.md`** to record and transcribe meetings locally on your own machine (macOS, Windows, Linux).
 - **`docs/DASHBOARD.md`** to run the local visual dashboard at `http://localhost:3737`.
 - **`docs/ARCHITECTURE.md`** for how the pieces fit together.
+- **`docs/UPDATING.md`** to pull the latest template updates into your fork (or just type `/update-harness`).
 - **`docs/INSTALL_ID.md`** untuk panduan instalasi langkah demi langkah dalam Bahasa Indonesia (workshop companion).
 
 ---
