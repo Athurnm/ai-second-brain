@@ -10,8 +10,7 @@
     "allow": [],
     "defaultMode": "bypassPermissions",
     "additionalDirectories": [
-      "~/You/You",
-      "~/antigravity-projects/You"
+      "~/Documents/Personal Project"
     ]
   },
   "hooks": {
