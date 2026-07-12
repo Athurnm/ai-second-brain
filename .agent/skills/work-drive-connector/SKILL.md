@@ -1,11 +1,11 @@
 ---
 name: Work Drive Connector
-description: Work Google Drive skill (brian.faridhi@workincentives.com). Upload, update, rename, delete, search, read, and list comments on Work Drive files. Uses token at work-drive-connector/token.json.
+description: Work Google Drive skill (you@yourcompany.com). Upload, update, rename, delete, search, read, and list comments on Work Drive files. Uses token at work-drive-connector/token.json.
 ---
 
 # Work Drive Connector
 
-For `brian.faridhi@workincentives.com` only. For personal docs use `google-drive-connector`.
+For `you@yourcompany.com` only. For personal docs use `personal-drive-connector`.
 
 > **Update Protocol:** See `CLAUDE.md § Update Protocol`. Always `read` before `update`.
 > **Permissions:** All uploads and updates automatically set sharing to "Anyone with the link can comment".

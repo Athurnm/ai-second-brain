@@ -225,7 +225,7 @@ def parse_meet(s):
 def cmd_setup(_):
     tok = admin_token()
     user = req("POST", "/admin/users",
-               {"email": "brian.local@workincentives.com", "name": "You (local)"},
+               {"email": "brian.local@yourcompany.com", "name": "You (local)"},
                {"X-Admin-API-Key": tok})
     uid = user.get("id", 1)
     t = req("POST", f"/admin/users/{uid}/tokens?scopes=bot,tx,browser", {},

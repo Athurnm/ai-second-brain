@@ -39,7 +39,7 @@ SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.join(SKILL_DIR, '..')
 ACCOUNTS = {
     'work':    os.path.join(REPO_ROOT, '.agent/skills/work-drive-connector'),
-    'personal': os.path.join(REPO_ROOT, '.agent/skills/google-drive-connector'),
+    'personal': os.path.join(REPO_ROOT, '.agent/skills/personal-drive-connector'),
     'secondary': os.path.join(REPO_ROOT, '.agent/skills/secondary-drive-connector'),
 }
 SCOPES = ['https://www.googleapis.com/auth/drive']

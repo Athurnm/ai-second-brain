@@ -130,7 +130,7 @@
      Comp.jiraChip('MSP-183')  -> compact mono ticket chip, opens the right
        Jira in a new tab. Prefix routing: MSP- / MBA- / STOR- ->
        examplevendor.atlassian.net; MP-, MPS- and every other prefix ->
-       work-incentives.atlassian.net. Visually distinct from badges.
+       yourcompany.atlassian.net. Visually distinct from badges.
      Comp.taskRow({ticket:{id:'T-9', title:'OTO webhook retries',
                    priority:'P1', jira_key:'MPS-1524', project:'Marketplace',
                    due:'2026-07-15', owner:'Teammate', status:'in_progress'},
@@ -636,7 +636,7 @@ const Comp = {
     if (!k) return '';
     const prefix = k.split('-')[0];
     const host = EXAMPLEVENDOR_PREFIXES.includes(prefix)
-      ? 'examplevendor.atlassian.net' : 'work-incentives.atlassian.net';
+      ? 'examplevendor.atlassian.net' : 'yourcompany.atlassian.net';
     return `<a class="jira-chip" href="https://${host}/browse/${encodeURIComponent(k)}"` +
       ` target="_blank" rel="noopener" title="Open ${U.esc(k)} in Jira">${U.esc(k)}</a>`;
   },

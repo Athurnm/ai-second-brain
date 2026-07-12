@@ -32,7 +32,7 @@ REPO_ROOT = SKILL_DIR.parents[2]
 
 ACCOUNT_TOKENS = {
     "work": REPO_ROOT / ".agent/skills/work-drive-connector/token.json",
-    "personal": REPO_ROOT / ".agent/skills/google-drive-connector/token.json",
+    "personal": REPO_ROOT / ".agent/skills/personal-drive-connector/token.json",
 }
 
 def profile_dir(account):

@@ -56,12 +56,12 @@ BOARDS = {
     },
     52: {
         "name": "Marketplace",
-        "domain": "work-incentives.atlassian.net",
+        "domain": "yourcompany.atlassian.net",
         "project_key": "MP"
     },
     76: {
         "name": "Platform Team",
-        "domain": "work-incentives.atlassian.net",
+        "domain": "yourcompany.atlassian.net",
         "project_key": "MPS"
     }
 }

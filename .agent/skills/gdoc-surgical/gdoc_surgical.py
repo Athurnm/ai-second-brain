@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""
+GDoc Surgical Editor - make targeted in-place edits to a Google Doc WITHOUT
+re-uploading/overwriting it (preserves hand edits, comments, sharing, images).
+
+Uses the same Drive-scoped OAuth token as the drive connectors: a token with
+https://www.googleapis.com/auth/drive is valid for the Docs API too.
+
+Commands:
+  read        Print the doc's text with paragraph indexes (find your target first)
+  replace     Replace ALL occurrences of exact text (Docs API replaceAllText)
+  append      Append markdown-ish text (headings/bullets/plain) to the end of the doc
+  insert-row  Insert a row into table N, filled with cell texts
+  list-tables Show every table with its index, size, and first-row preview
+
+Usage:
+  python3 gdoc_surgical.py read        --id DOC_ID --account work
+  python3 gdoc_surgical.py replace     --id DOC_ID --find "old text" --with "new text" [--match-case]
+  python3 gdoc_surgical.py append      --id DOC_ID --text "## New Section\nBody line"
+  python3 gdoc_surgical.py list-tables --id DOC_ID
+  python3 gdoc_surgical.py insert-row  --id DOC_ID --table 0 --cells "Col A|Col B|Col C" [--row -1]
+
+Rules of engagement (see SKILL.md):
+  - ALWAYS `read` first and verify the target text is unique enough.
+  - `replace` hits EVERY occurrence - if the find-string is short/common, widen it.
+  - Never use this to rewrite a whole doc; that's what the drive connector's
+    `update --convert` is for (and it wipes images - prefer surgical).
+"""
+
+import os
+import re
+import sys
+import time
+import signal
+import argparse
+
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SKILL_DIR, '..', '..', '..'))
+
+# Account name -> connector dir holding token.json (same map as gdocs-create)
+ACCOUNTS = {
+    'work':    os.path.join(REPO_ROOT, '.agent/skills/work-drive-connector'),
+    'personal': os.path.join(REPO_ROOT, '.agent/skills/personal-drive-connector'),
+    'secondary': os.path.join(REPO_ROOT, '.agent/skills/secondary-drive-connector'),
+}
+
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def timeout_handler(signum, frame):
+    print("[ERROR] Timed out after 180 seconds", file=sys.stderr)
+    sys.exit(1)
+
+if os.name != 'nt':
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(180)
+
+def authenticate(account: str):
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+
+    if account not in ACCOUNTS:
+        print(f"[ERROR] Unknown account '{account}'. Choose from: {list(ACCOUNTS.keys())}")
+        sys.exit(1)
+    token_path = os.path.join(ACCOUNTS[account], 'token.json')
+    if not os.path.exists(token_path):
+        print(f"[ERROR] Token not found: {token_path} - run that connector's auth flow first.")
+        sys.exit(1)
+    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(token_path, 'w') as f:
+                f.write(creds.to_json())
+        else:
+            print(f"[ERROR] Token invalid and cannot be refreshed for '{account}'. Re-auth needed.")
+            sys.exit(1)
+    return creds
+
+def docs_service(account: str):
+    from googleapiclient.discovery import build
+    return build('docs', 'v1', credentials=authenticate(account))
+
+def get_doc(docs, doc_id):
+    return docs.documents().get(documentId=doc_id).execute()
+
+def batch(docs, doc_id, requests):
+    if not requests:
+        print("[INFO] Nothing to do.")
+        return None
+    return docs.documents().batchUpdate(
+        documentId=doc_id, body={'requests': requests}).execute()
+
+# ── Structure walking ─────────────────────────────────────────────────────────
+
+def _para_text(element):
+    """Plain text of a paragraph element."""
+    out = []
+    for run in element.get('paragraph', {}).get('elements', []):
+        out.append(run.get('textRun', {}).get('content', ''))
+    return ''.join(out)
+
+def walk_body(doc):
+    """Yield (kind, element) for top-level body elements. kind: paragraph|table|other."""
+    for el in doc.get('body', {}).get('content', []):
+        if 'paragraph' in el:
+            yield 'paragraph', el
+        elif 'table' in el:
+            yield 'table', el
+        else:
+            yield 'other', el
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+def cmd_read(docs, args):
+    doc = get_doc(docs, args.id)
+    print(f"# {doc.get('title')}  (docId: {args.id})\n")
+    t_idx = 0
+    for kind, el in walk_body(doc):
+        if kind == 'paragraph':
+            text = _para_text(el).rstrip('\n')
+            if text.strip():
+                style = el['paragraph'].get('paragraphStyle', {}).get('namedStyleType', '')
+                prefix = {'HEADING_1': '# ', 'HEADING_2': '## ', 'HEADING_3': '### ',
+                          'HEADING_4': '#### ', 'TITLE': '=== '}.get(style, '')
+                print(f"[{el['startIndex']}-{el['endIndex']}] {prefix}{text}")
+        elif kind == 'table':
+            tbl = el['table']
+            print(f"[{el['startIndex']}-{el['endIndex']}] <TABLE #{t_idx}: "
+                  f"{tbl.get('rows')}x{tbl.get('columns')}>")
+            t_idx += 1
+
+def cmd_replace(docs, args):
+    # Safety: show occurrence count before writing
+    doc = get_doc(docs, args.id)
+    full_text = ''.join(_para_text(el) if kind == 'paragraph' else ''
+                        for kind, el in walk_body(doc))
+    flags = 0 if args.match_case else re.IGNORECASE
+    n = len(re.findall(re.escape(args.find), full_text, flags))
+    # Note: count above misses text inside tables; the API replace still hits it.
+    print(f"[INFO] '{args.find}' found {n}x in body paragraphs (table cells not counted; replace hits those too).")
+    result = batch(docs, args.id, [{
+        'replaceAllText': {
+            'containsText': {'text': args.find, 'matchCase': bool(args.match_case)},
+            'replaceText': getattr(args, 'with'),
+        }
+    }])
+    changed = result['replies'][0].get('replaceAllText', {}).get('occurrencesChanged', 0)
+    print(f"[OK] Replaced {changed} occurrence(s). Doc: https://docs.google.com/document/d/{args.id}/edit")
+    if changed == 0:
+        print("[WARN] Nothing replaced - check exact wording/case with `read` first.")
+        sys.exit(2)
+
+def cmd_append(docs, args):
+    doc = get_doc(docs, args.id)
+    end_index = doc['body']['content'][-1]['endIndex'] - 1  # before final newline
+    text = args.text.replace('\\n', '\n')
+    requests = []
+    cursor = end_index
+    for line in text.split('\n'):
+        m = re.match(r'^(#{1,4})\s+(.*)$', line)
+        bullet = re.match(r'^[-*]\s+(.*)$', line)
+        content = (m.group(2) if m else bullet.group(1) if bullet else line) + '\n'
+        requests.append({'insertText': {'location': {'index': cursor}, 'text': content}})
+        seg = {'startIndex': cursor, 'endIndex': cursor + len(content)}
+        if m:
+            style = f'HEADING_{len(m.group(1))}'
+            requests.append({'updateParagraphStyle': {
+                'range': seg, 'paragraphStyle': {'namedStyleType': style},
+                'fields': 'namedStyleType'}})
+        elif bullet:
+            requests.append({'createParagraphBullets': {
+                'range': seg, 'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'}})
+        else:
+            requests.append({'updateParagraphStyle': {
+                'range': seg, 'paragraphStyle': {'namedStyleType': 'NORMAL_TEXT'},
+                'fields': 'namedStyleType'}})
+        cursor += len(content)
+    batch(docs, args.id, requests)
+    print(f"[OK] Appended {len(text.splitlines())} line(s). Doc: https://docs.google.com/document/d/{args.id}/edit")
+
+def cmd_list_tables(docs, args):
+    doc = get_doc(docs, args.id)
+    t_idx = 0
+    for kind, el in walk_body(doc):
+        if kind != 'table':
+            continue
+        tbl = el['table']
+        first_row = tbl['tableRows'][0] if tbl.get('tableRows') else None
+        headers = []
+        if first_row:
+            for cell in first_row.get('tableCells', []):
+                cell_text = ''.join(
+                    _para_text(c) for c in cell.get('content', []) if 'paragraph' in c
+                ).strip()
+                headers.append(cell_text)
+        print(f"TABLE #{t_idx}: {tbl.get('rows')}x{tbl.get('columns')} "
+              f"@ startIndex {el['startIndex']} | header: {' | '.join(headers)}")
+        t_idx += 1
+    if t_idx == 0:
+        print("[INFO] No tables in this doc.")
+
+def cmd_insert_row(docs, args):
+    doc = get_doc(docs, args.id)
+    tables = [el for kind, el in walk_body(doc) if kind == 'table']
+    if args.table >= len(tables) or args.table < 0:
+        print(f"[ERROR] Table #{args.table} not found (doc has {len(tables)}). Use list-tables.")
+        sys.exit(1)
+    tbl_el = tables[args.table]
+    tbl = tbl_el['table']
+    n_rows, n_cols = tbl['rows'], tbl['columns']
+    row_idx = args.row if args.row >= 0 else n_rows - 1  # -1 = insert below last row
+
+    # Step 1: insert the empty row
+    batch(docs, args.id, [{
+        'insertTableRow': {
+            'tableCellLocation': {
+                'tableStartLocation': {'index': tbl_el['startIndex']},
+                'rowIndex': row_idx, 'columnIndex': 0,
+            },
+            'insertBelow': True,
+        }
+    }])
+
+    # Step 2: re-fetch (indexes shifted) and fill cells RIGHT-TO-LEFT so earlier
+    # insertions don't shift later targets.
+    cells = args.cells.split('|')
+    if len(cells) > n_cols:
+        print(f"[WARN] {len(cells)} cell values for {n_cols} columns - extra values dropped.")
+        cells = cells[:n_cols]
+    time.sleep(1)
+    doc = get_doc(docs, args.id)
+    tables = [el for kind, el in walk_body(doc) if kind == 'table']
+    new_row = tables[args.table]['table']['tableRows'][row_idx + 1]
+    requests = []
+    for cell, value in reversed(list(zip(new_row['tableCells'], cells))):
+        if value.strip():
+            # First paragraph of the cell starts right after the cell's startIndex
+            requests.append({'insertText': {
+                'location': {'index': cell['startIndex'] + 1},
+                'text': value.strip(),
+            }})
+    batch(docs, args.id, requests)
+    print(f"[OK] Row inserted into table #{args.table} at row {row_idx + 1} "
+          f"with {len(cells)} cell(s). Doc: https://docs.google.com/document/d/{args.id}/edit")
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    p = argparse.ArgumentParser(description='Surgical in-place Google Doc edits')
+    p.add_argument('command', choices=['read', 'replace', 'append', 'insert-row', 'list-tables'])
+    p.add_argument('--id', required=True, help='Google Doc ID')
+    p.add_argument('--account', default='work', choices=list(ACCOUNTS.keys()))
+    p.add_argument('--find', help='replace: exact text to find')
+    p.add_argument('--with', dest='with', help='replace: replacement text')
+    p.add_argument('--match-case', action='store_true', help='replace: case-sensitive')
+    p.add_argument('--text', help='append: text to append (\\n for newlines, #/## headings, - bullets)')
+    p.add_argument('--table', type=int, default=0, help='insert-row: table index (see list-tables)')
+    p.add_argument('--row', type=int, default=-1, help='insert-row: insert below this 0-based row (-1 = last)')
+    p.add_argument('--cells', help='insert-row: pipe-separated cell values "A|B|C"')
+    args = p.parse_args()
+
+    docs = docs_service(args.account)
+    if args.command == 'read':
+        cmd_read(docs, args)
+    elif args.command == 'replace':
+        if not args.find or getattr(args, 'with') is None:
+            p.error('replace requires --find and --with')
+        cmd_replace(docs, args)
+    elif args.command == 'append':
+        if not args.text:
+            p.error('append requires --text')
+        cmd_append(docs, args)
+    elif args.command == 'list-tables':
+        cmd_list_tables(docs, args)
+    elif args.command == 'insert-row':
+        if not args.cells:
+            p.error('insert-row requires --cells')
+        cmd_insert_row(docs, args)
+
+if __name__ == '__main__':
+    main()

@@ -20,7 +20,7 @@ python .agent/scripts/daily_update_runner.py --mode evening
 
 You acts off email too, so sweep it every evening (the runner does NOT pull email).
 
-1. `gmail-connector` (Work, `brian.faridhi@workincentives.com`): `gmail_manager.py list --query "newer_than:1d -category:promotions -category:social" --limit 30`.
+1. `gmail-connector` (Work, `you@yourcompany.com`): `gmail_manager.py list --query "newer_than:1d -category:promotions -category:social" --limit 30`.
 2. Surface, today-scoped: (a) **milestones / signals** an email confirms (e.g. an App Store submission accepted, a client approval), (b) threads still **waiting on a You reply / decision** to carry over, (c) **new meeting invites** not yet on the board, (d) doc-comment mentions owed.
 3. Tie each to the morning plan, a meeting-prep item, or a todo: did it get done, or does it carry over?
 4. Filter noise (order pings, newsletters, Otter/Read/Fireflies/Fathom auto-recaps). Never auto-send email; surface the follow-up, draft only on request (approval-gated like Slack).

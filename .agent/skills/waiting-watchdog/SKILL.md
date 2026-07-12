@@ -31,7 +31,7 @@ are waiting on You for), this is the mirror: things You is waiting on others for
 python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py add \
   --owner "Teammate" --what "ExampleRetailer contract redline sign-off" \
   --sla-hours 24 --escalate-to "YourManager" --escalation-path "Slack DM" \
-  --source "https://workincentives.slack.com/archives/C0XXXX/p1234567890123456"
+  --source "https://yourcompany.slack.com/archives/C0XXXX/p1234567890123456"
 
 # hourly cron sweep (local only, no network)
 python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py sweep

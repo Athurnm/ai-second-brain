@@ -31,7 +31,7 @@ from googleapiclient.discovery import build
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 ACCOUNTS = {
     'work':     os.path.join(REPO, '.agent/skills/work-drive-connector/token.json'),
-    'personal':  os.path.join(REPO, '.agent/skills/google-drive-connector/token.json'),
+    'personal':  os.path.join(REPO, '.agent/skills/personal-drive-connector/token.json'),
     'secondary': os.path.join(REPO, '.agent/skills/secondary-drive-connector/token.json'),
 }
 SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']

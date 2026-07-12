@@ -49,5 +49,5 @@ service.files().update(
 
 ## Scripts Protected by this Protocol
 - `.agent/skills/work-drive-connector/gdrive_manager.py`
-- `.agent/skills/google-drive-connector/gdrive_manager.py`
+- `.agent/skills/personal-drive-connector/gdrive_manager.py`
 - `.agent/skills/gdocs-create/gdocs_create.py` (ensure update mode preserves title)

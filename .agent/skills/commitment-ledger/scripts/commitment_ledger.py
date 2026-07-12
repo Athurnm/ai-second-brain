@@ -57,9 +57,14 @@ TRANSCRIPTS_DIR = os.path.join(BASE_DIR, 'Clients', 'Work', 'meetings', 'transcr
 MOM_DIR = os.path.join(BASE_DIR, 'Clients', 'Work', 'meetings')
 CLIENTS_MEETINGS_GLOB = os.path.join(BASE_DIR, 'Clients', '*', 'meetings', '*.md')
 
-BRIAN_ID_DEFAULT = '<SLACK_ID>'           # verified via auth.test 2026-07-09
-BRIAN_EMAIL = 'you@example.com'
-BRIAN_NAME_TOKENS = ('brian arfi', 'brian faridhi')   # substring match, case-insensitive
+# Owner identity: override via env for your own setup (comma-separated tokens).
+BRIAN_ID_DEFAULT = os.environ.get('OWNER_SLACK_ID', '<SLACK_ID>')   # verified via auth.test 2026-07-09
+BRIAN_EMAIL = os.environ.get('OWNER_EMAIL', 'you@example.com')
+BRIAN_NAME_TOKENS = tuple(
+    t.strip().lower() for t in
+    os.environ.get('OWNER_NAME_TOKENS', 'you,you').split(',')
+    if t.strip()
+)   # substring match, case-insensitive
 
 FIRST_RUN_SLACK_LOOKBACK_DAYS = 3          # per spec: bounded first-run lookback
 FIRST_RUN_FATHOM_LOOKBACK_DAYS = 3

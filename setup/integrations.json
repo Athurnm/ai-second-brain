@@ -155,7 +155,7 @@
       "server_key": "_google_workspace",
       "description": "Drive, Docs, Sheets, Calendar — via Python skills",
       "tier": "info",
-      "instructions": "  Google Workspace is handled via Python skills (better OAuth support).\n\n  Already configured in this repo:\n    Drive (Work):    .agent/skills/work-drive-connector/gdrive_manager.py\n    Drive (Personal): .agent/skills/google-drive-connector/gdrive_manager.py\n    Calendar:         .agent/skills/google-calendar-connector/gcal_manager.py\n    Docs creator:     .agent/skills/gdocs-create/gdocs_create.py\n\n  To re-authenticate: delete the token.json in the skill folder,\n  then run the skill — it will open a browser to re-authorize."
+      "instructions": "  Google Workspace is handled via Python skills (better OAuth support).\n\n  Already configured in this repo:\n    Drive (Work):    .agent/skills/work-drive-connector/gdrive_manager.py\n    Drive (Personal): .agent/skills/personal-drive-connector/gdrive_manager.py\n    Calendar:         .agent/skills/google-calendar-connector/gcal_manager.py\n    Docs creator:     .agent/skills/gdocs-create/gdocs_create.py\n\n  To re-authenticate: delete the token.json in the skill folder,\n  then run the skill — it will open a browser to re-authorize."
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Gmail Connector Skill
 
-Manage You's Gmail account (connected to `brian.faridhi@workincentives.com`) for reading, searching, and organizing emails.
+Manage You's Gmail account (connected to `you@yourcompany.com`) for reading, searching, and organizing emails.
 
 ## Overview
 This skill allows the assistant to interact with the Gmail API. It supports fetching recent emails, searching using standard Gmail queries, reading full content, and archiving messages.
@@ -27,12 +27,12 @@ Move an email from Inbox to Archive.
 - **Command**: `python .agent/skills/gmail-connector/gmail_manager.py archive <msg_id>`
 
 ### `send`
-Send a plain-text email from `brian.faridhi@workincentives.com` (appears in Sent). The `gmail.modify` scope already permits sending. Always confirm with You before sending.
+Send a plain-text email from `you@yourcompany.com` (appears in Sent). The `gmail.modify` scope already permits sending. Always confirm with You before sending.
 - **Command**:
   ```bash
   python .agent/skills/gmail-connector/gmail_manager.py send \
-    --to "faraz.saleem@workincentives.com" \
-    --cc "Teammate.khoder@workincentives.com,amr.abokhalil@workincentives.com" \
+    --to "faraz.saleem@yourcompany.com" \
+    --cc "Teammate.khoder@yourcompany.com,amr.abokhalil@yourcompany.com" \
     --subject "Subject" \
     --body-file /tmp/body.txt
   ```
@@ -48,7 +48,7 @@ The skill uses the Work project's `credentials.json` (located in `.agent/skills/
 **Interactive (WSL/terminal with stdin):** Run any command; it triggers an OAuth flow. Copy the `code` from the browser address bar and paste it when prompted.
 
 **Headless (two-step, for non-interactive shells):**
-1. `python .agent/skills/gmail-connector/gmail_manager.py auth-url` → open the printed URL signed in as `brian.faridhi@workincentives.com`, approve, copy the `code=` value from the (failed-to-load) `localhost:8080` redirect URL.
+1. `python .agent/skills/gmail-connector/gmail_manager.py auth-url` → open the printed URL signed in as `you@yourcompany.com`, approve, copy the `code=` value from the (failed-to-load) `localhost:8080` redirect URL.
 2. `python .agent/skills/gmail-connector/gmail_manager.py auth-save --code "PASTE_CODE_HERE"` → saves the token.
 
 If a send fails with "Gmail API has not been used in project ... or it is disabled," enable the Gmail API once in the Google Cloud project tied to the Work OAuth client, then retry.

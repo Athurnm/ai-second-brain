@@ -29,7 +29,7 @@ REPO_ROOT = os.path.join(SKILL_DIR, '..', '..', '..')
 
 ACCOUNTS = {
     'work':    os.path.join(REPO_ROOT, '.agent/skills/work-drive-connector'),
-    'personal': os.path.join(REPO_ROOT, '.agent/skills/google-drive-connector'),
+    'personal': os.path.join(REPO_ROOT, '.agent/skills/personal-drive-connector'),
     'secondary': os.path.join(REPO_ROOT, '.agent/skills/secondary-drive-connector'),
 }
 
@@ -273,6 +273,8 @@ def create_doc(args):
     ).execute()
 
     # Default permission: anyone can comment. Fallback: domain can comment.
+    # Set WORK_DOMAIN (env) to YOUR Google Workspace domain for the fallback.
+    work_domain = os.environ.get('WORK_DOMAIN', 'yourcompany.com')
     try:
         service.permissions().create(
             fileId=file['id'],
@@ -284,10 +286,10 @@ def create_doc(args):
         try:
             service.permissions().create(
                 fileId=file['id'],
-                body={'type': 'domain', 'role': 'commenter', 'domain': 'workincentives.com'},
+                body={'type': 'domain', 'role': 'commenter', 'domain': work_domain},
                 fields='id'
             ).execute()
-            print(f"[INFO] Permission set: workincentives.com domain can comment")
+            print(f"[INFO] Permission set: {work_domain} domain can comment")
         except Exception as e2:
             print(f"[WARN] Could not set sharing permissions: {e2}")
 

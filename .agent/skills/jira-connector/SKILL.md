@@ -19,7 +19,7 @@ This custom skill provides direct integration with Jira Software across multiple
 The credentials for Jira are stored in the active Atlassian credentials in the workspace (`credentials.json` or environment variables).
 
 - **Instance A**: `examplevendor.atlassian.net` (MSP, MBA, STOR)
-- **Instance B**: `work-incentives.atlassian.net` (MP, MPS)
+- **Instance B**: `yourcompany.atlassian.net` (MP, MPS)
 
 ## Usage
 

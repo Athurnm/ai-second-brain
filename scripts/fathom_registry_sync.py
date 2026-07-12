@@ -53,7 +53,7 @@ BRIAN_EMAILS = {"you@example.com"}   # excluded when scoring "shared attendee"
 
 # ---- client/project classification (ported from fathom_to_notes.py) ----
 CLIENT_MAPPINGS = [
-    {"domain": "workincentives.com", "client": "Work"},
+    {"domain": "yourcompany.com", "client": "Work"},
     {"domain": "secondary.id", "client": "Secondary"},
 ]
 PERSONAL_EMAIL = "you@example.com"

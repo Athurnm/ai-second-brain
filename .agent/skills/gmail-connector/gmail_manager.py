@@ -206,7 +206,8 @@ def auth_url():
         return
     flow = _new_flow()
     url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-    print("[Gmail] Step 1 - authorize in a browser signed in as brian.faridhi@workincentives.com:")
+    account_hint = os.environ.get('OWNER_WORK_EMAIL', 'you@yourcompany.com')
+    print(f"[Gmail] Step 1 - authorize in a browser signed in as {account_hint}:")
     print(url)
     print("\nThe page will try to load http://localhost:8080/ and fail - that is expected.")
     print("Copy the 'code=' value from the address bar, then run:")

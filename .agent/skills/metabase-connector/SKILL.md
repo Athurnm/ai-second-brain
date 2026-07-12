@@ -20,10 +20,10 @@ This skill allows the agent to interact with a Metabase instance using either Em
 
 - **Configuration**: Set up the following environment variables in your `.env` file:
   ```env
-  METABASE_BASE_URL=https://metabase.workincentives.me
+  METABASE_BASE_URL=https://metabase.yourcompany.me
   
   # Option A: Email/Password login
-  METABASE_USERNAME=your-email@workincentives.com
+  METABASE_USERNAME=your-email@yourcompany.com
   METABASE_PASSWORD=your-password
   
   # Option B: Direct Session Token (Mandatory for Google OAuth users)

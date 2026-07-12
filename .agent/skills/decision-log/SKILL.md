@@ -30,7 +30,7 @@ python3 .agent/skills/decision-log/scripts/decision_log.py supersede DEC-0001 --
 
 # patch fields / add a source or stakeholder after the fact
 python3 .agent/skills/decision-log/scripts/decision_log.py update DEC-0001 \
-  --add-source "https://workincentives.slack.com/archives/..." --source-type slack \
+  --add-source "https://yourcompany.slack.com/archives/..." --source-type slack \
   --add-stakeholders "Teammate Rasheed"
 
 # list (for quick scanning; use report for briefings)

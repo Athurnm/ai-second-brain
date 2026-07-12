@@ -26,7 +26,7 @@ except ImportError:
 
 # Mapping constants
 CLIENT_MAPPINGS = [
-    {"domain": "workincentives.com", "client": "Work"},
+    {"domain": "yourcompany.com", "client": "Work"},
     {"domain": "secondary.id", "client": "Secondary"},
 ]
 

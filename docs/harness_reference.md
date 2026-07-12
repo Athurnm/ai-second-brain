@@ -109,7 +109,7 @@ Do NOT use MCP `text/plain` (shows raw `#` symbols) or `text/html` (not an edita
 | Account | Skill | Key Path |
 | :--- | :--- | :--- |
 | Work | `work-drive-connector` | `.agent/skills/work-drive-connector/gdrive_manager.py` |
-| Personal | `google-drive-connector` | `.agent/skills/google-drive-connector/gdrive_manager.py` |
+| Personal | `personal-drive-connector` | `.agent/skills/personal-drive-connector/gdrive_manager.py` |
 
 Both support: `upload`, `update`, `delete`, `search`, `read`, `comments`.
 Work also has: `rename`.
@@ -117,7 +117,7 @@ Work also has: `rename`.
 
 ### Token Status
 - Work: `.agent/skills/work-drive-connector/token.json` - auto-refreshed ✅
-- Personal: `.agent/skills/google-drive-connector/token.json` - auto-refreshed ✅
+- Personal: `.agent/skills/personal-drive-connector/token.json` - auto-refreshed ✅
 - Secondary client: `.agent/skills/secondary-drive-connector/token.json` - generic slot for whatever non-Work/non-personal company is in use (`--account secondary` / `--profile secondary`). Currently holds the ex-Secondary token (revoked ❌); drop a new company's credentials here to reuse.
 
 ### Known Folder IDs (MCP)
@@ -174,11 +174,12 @@ Use `pdftotext`, not the `Read` tool. Use `Read` only when the user directly ask
 
 ### Google Drive / Docs
 - **Work Drive** -- [`.agent/skills/work-drive-connector/gdrive_manager.py`](../.agent/skills/work-drive-connector/gdrive_manager.py): upload/update/delete/search/read/rename/share/comments; `fetch_sheets.py` reads Sheets by tab.
-- **GDoc comment replies (as You)** -- [`.agent/skills/work-drive-connector/reply_helper.py`](../.agent/skills/work-drive-connector/reply_helper.py): reply to AND resolve Google Doc comment threads as You (reuses the Work Drive OAuth token; owner verified = brian.faridhi@workincentives.com). `whoami` confirms token owner; `list --id FILE_ID` prints comment IDs; `reply --id FILE_ID --comment COMMENT_ID --text "..." [--resolve]`. Base `gdrive_manager.py comments` only READS; this is the write path. **Caveat: `@email` mentions post as plain text via the API and usually do NOT notify the person**, so ping them separately (Slack DM). Approval-gated: confirm with You before posting, same as Slack.
-- **Personal Drive** -- [`.agent/skills/google-drive-connector/gdrive_manager.py`](../.agent/skills/google-drive-connector/gdrive_manager.py): same caps, you@example.com.
+- **GDoc comment replies (as You)** -- [`.agent/skills/work-drive-connector/reply_helper.py`](../.agent/skills/work-drive-connector/reply_helper.py): reply to AND resolve Google Doc comment threads as You (reuses the Work Drive OAuth token; owner verified = you@yourcompany.com). `whoami` confirms token owner; `list --id FILE_ID` prints comment IDs; `reply --id FILE_ID --comment COMMENT_ID --text "..." [--resolve]`. Base `gdrive_manager.py comments` only READS; this is the write path. **Caveat: `@email` mentions post as plain text via the API and usually do NOT notify the person**, so ping them separately (Slack DM). Approval-gated: confirm with You before posting, same as Slack.
+- **Personal Drive** -- [`.agent/skills/personal-drive-connector/gdrive_manager.py`](../.agent/skills/personal-drive-connector/gdrive_manager.py): same caps, you@example.com.
 - **Secondary-client Drive** -- [`.agent/skills/secondary-drive-connector/gdrive_manager.py`](../.agent/skills/secondary-drive-connector/gdrive_manager.py): generic non-Work/non-personal slot (`--account secondary`); drop creds+token in the dir.
-- **Drive Permissions** -- [`.agent/scripts/drive_permissions.py`](../.agent/scripts/drive_permissions.py): **LANDMINE -- every upload auto-publishes as `anyone with link`, so docs leak public by default.** After any new `gdocs-create`/upload that shouldn't be public, run `restrict --domain workincentives.com --apply` (`list <FILE_ID>` to audit; no `--apply` = dry run).
+- **Drive Permissions** -- [`.agent/scripts/drive_permissions.py`](../.agent/scripts/drive_permissions.py): **LANDMINE -- every upload auto-publishes as `anyone with link`, so docs leak public by default.** After any new `gdocs-create`/upload that shouldn't be public, run `restrict --domain yourcompany.com --apply` (`list <FILE_ID>` to audit; no `--apply` = dry run).
 - **Google Docs Creator (preferred)** -- [`.agent/skills/gdocs-create/gdocs_create.py`](../.agent/skills/gdocs-create/gdocs_create.py): markdown -> real editable Google Doc (not raw text). Accounts work|personal|secondary. NOT MCP text/plain (shows raw `#`).
+- **GDoc Surgical Editor** -- [`.agent/skills/gdoc-surgical/gdoc_surgical.py`](../.agent/skills/gdoc-surgical/gdoc_surgical.py): targeted in-place edits to an EXISTING doc (`read`, `replace`, `append`, `insert-row`, `list-tables`) via the Docs API; reuses the drive connector tokens. **Use this instead of `update --convert` whenever the doc already exists and only part of it changes** -- a full re-convert wipes images, resets sharing, and clobbers hand edits. Decision table + rules: [`.agent/skills/gdoc-surgical/SKILL.md`](../.agent/skills/gdoc-surgical/SKILL.md).
 - **Google Docs Writer (legacy)** -- [`.agent/skills/gdocs-writer/scripts/gdocs_writer.py`](../.agent/skills/gdocs-writer/scripts/gdocs_writer.py): markdown->.docx->upload. Prefer gdocs-create unless `.docx` needed.
 - **Table Width Balancer** -- [`scripts/set_gdoc_table_widths.py`](../scripts/set_gdoc_table_widths.py): proportional column widths + pageless so content-heavy tables read well. **Run after every `gdocs-create`/`update --convert` on a table-heavy doc; re-run if table text changes.** Flags: `--help` / module docstring.
 - **Mermaid Embedder** -- [`scripts/embed_mermaid_in_gdoc.py`](../scripts/embed_mermaid_in_gdoc.py): renders Mermaid -> PNG (kroki) into `[[PLACEHOLDER]]` slots (GDocs can't render Mermaid). **A re-push/re-convert WIPES inline images, so re-run after EVERY `update --convert`.** Sources live in the script's `DIAGRAMS` dict.

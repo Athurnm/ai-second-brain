@@ -33,7 +33,7 @@ SERVICES = [
     },
     {
         "name": "Default Drive",
-        "script": os.path.join(REPO_DIR, ".agent/skills/google-drive-connector/gdrive_manager.py"),
+        "script": os.path.join(REPO_DIR, ".agent/skills/personal-drive-connector/gdrive_manager.py"),
         "args": ["search", "--query", "dummy_check_auth"],
         "timeout": 180
     },

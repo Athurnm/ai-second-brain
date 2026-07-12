@@ -89,7 +89,7 @@ python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py report --al
   `list --full` (bounded `--limit`, default 20) and cross-references against
   `fathom_registry.json` to identify which fetched meetings are new, rather than fetching
   per-recording via `get`. You-assignee match: `assignee.email == you@example.com` OR
-  assignee name contains `"brian arfi"`/`"brian faridhi"` (case-insensitive - Fathom's
+  assignee name contains `"you"`/`"you"` (case-insensitive - Fathom's
   transcript speaker-matching produces inconsistent casing/fullname variants, e.g. "brian
   arfi" vs "Your Name").
 - Slack sent-message sweep: `search.messages from:<@<SLACK_ID>>` (You's verified Slack

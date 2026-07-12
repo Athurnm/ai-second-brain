@@ -226,6 +226,37 @@ cp .env.example .env
 
 Open `.env` and fill in the keys you have. You don't need all of them — only the services you plan to use. See section 10 for which ones are essential.
 
+### Set your identity (required, don't skip this)
+
+The `.env` file starts with an **Identity block**. Several skills use it to answer
+"who does this harness work for?". If you leave the defaults, docs get shared to
+a placeholder domain and action-item matching looks for someone else's name.
+
+```bash
+WORK_DOMAIN=yourcompany.com        # your Google Workspace domain
+OWNER_EMAIL=you@example.com        # your personal Google account
+OWNER_WORK_EMAIL=you@yourcompany.com
+OWNER_NAME_TOKENS=jane doe,jane m doe   # name variants meeting tools use for you
+OWNER_SLACK_ID=<SLACK_ID>           # Slack → Profile → ⋮ → Copy member ID
+```
+
+What each one drives:
+
+| Variable | Used by | What happens if wrong |
+| :--- | :--- | :--- |
+| `WORK_DOMAIN` | `gdocs-create`, `drive_permissions.py` | New docs get domain-shared to the wrong workspace |
+| `OWNER_WORK_EMAIL` | `gmail-connector` auth flow | The auth prompt suggests the wrong account |
+| `OWNER_NAME_TOKENS` | `commitment-ledger` | Action items assigned to YOU are never picked up |
+| `OWNER_SLACK_ID` | `commitment-ledger`, Slack sweeps | Mentions of you are missed |
+
+**Doc permissions gotcha:** `gdocs-create` publishes new docs as "anyone with the
+link can comment" by default. After creating anything non-public, restrict it to
+your own domain:
+
+```bash
+python3 .agent/scripts/drive_permissions.py restrict <DOC_ID> --domain $WORK_DOMAIN --apply
+```
+
 For each skill that needs its own token, create a `token.env` inside that skill's folder:
 
 ```bash

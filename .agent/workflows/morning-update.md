@@ -28,7 +28,7 @@ The day is built around meetings, so the calendar is a first-class source, not a
 
 You acts off email too, so sweep it every morning.
 
-1. `gmail-connector` (Work, `brian.faridhi@workincentives.com`): `gmail_manager.py list --query "newer_than:2d -category:promotions -category:social" --limit 25`.
+1. `gmail-connector` (Work, `you@yourcompany.com`): `gmail_manager.py list --query "newer_than:2d -category:promotions -category:social" --limit 25`.
 2. Surface: (a) anything that is an **input for a meeting today** (e.g. a shared sheet/BRD/doc the meeting depends on), (b) **new meeting invites** not yet on the board, (c) threads **waiting on a You reply / decision**, (d) doc-comment mentions.
 3. For each, state clearly whether it **needs and can be followed up by email** vs FYI, and tie it to the relevant meeting-prep item or todo.
 4. Never auto-send email; surface the follow-up, draft only on request (approval-gated like Slack).
