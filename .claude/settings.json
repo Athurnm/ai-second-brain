@@ -71,6 +71,16 @@
             "statusMessage": "Ensuring dashboard (localhost:3737)..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/upstream_check.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking for harness updates..."
+          }
+        ]
       }
     ],
     "PreToolUse": [

@@ -6,6 +6,18 @@ those updates into YOUR fork without losing your personal setup.
 **Your personal files are safe.** `CLAUDE.md`, `.env`, all `token*.json` files,
 `journal/`, and `Dashboard.md` are gitignored - an update never touches them.
 
+## You will be told when there is something to pull
+
+You do not have to remember to check. A SessionStart hook
+(`.claude/hooks/upstream_check.sh`) looks for new upstream commits and, when it
+finds some, prints one line: *"Harness update available upstream."* Then you
+decide whether to run `/update-harness`. It never updates anything on its own.
+
+The check is deliberately cheap: one ref lookup (no downloading of history), at
+most once per 24h, cached in between. If you are offline it stays silent and
+retries next session. It only runs in forks - the template repo itself, and any
+repo without an upstream, skip it entirely.
+
 ## Option A: Let your AI do it (recommended)
 
 Your fork IS an AI harness - so make the AI do the update.
