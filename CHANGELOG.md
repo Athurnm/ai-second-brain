@@ -2,9 +2,9 @@
 
 All notable changes to the AI Second Brain harness. Newest first.
 
-This is the private working repo. The public template (`ai-second-brain`) is a scrubbed
-mirror kept in sync from here, with all credentials, tokens, real client names, and
-personal data removed.
+Entries are written in the private working repo and carried to the public template
+(`ai-second-brain`) by the sync pipeline, which strips credentials, tokens, real client
+names, and personal data. This file is copied verbatim, so it reads the same in both.
 
 ## 2026-07-18
 
