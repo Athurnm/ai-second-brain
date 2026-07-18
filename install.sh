@@ -18,7 +18,7 @@ echo "==========================="
 
 # 1. Prerequisites -------------------------------------------------------------
 echo ""
-echo "[1/4] Checking prerequisites"
+echo "[1/5] Checking prerequisites"
 
 MISSING=0
 if command -v git >/dev/null 2>&1; then
@@ -48,9 +48,9 @@ if [ "$MISSING" -eq 1 ]; then
     exit 1
 fi
 
-# 1b. Runtime detection ----------------------------------------------------------
+# 2. Runtime detection ----------------------------------------------------------
 echo ""
-echo "[1b/4] Detecting your runtime"
+echo "[2/5] Detecting your runtime"
 
 if [ -f .agent/scripts/detect_runtime.sh ]; then
     RUNTIME_OUT="$(bash .agent/scripts/detect_runtime.sh 2>/dev/null || true)"
@@ -73,9 +73,9 @@ else
     warn "detect_runtime.sh not found, skipping runtime detection"
 fi
 
-# 2. Your brain file -----------------------------------------------------------
+# 3. Your brain file -----------------------------------------------------------
 echo ""
-echo "[2/4] Creating your brain file"
+echo "[3/5] Creating your brain file"
 
 if [ -f CLAUDE.md ]; then
     ok "CLAUDE.md already exists — keeping yours"
@@ -87,9 +87,9 @@ else
     exit 1
 fi
 
-# 3. Environment file ----------------------------------------------------------
+# 4. Environment file ----------------------------------------------------------
 echo ""
-echo "[3/4] Creating your .env"
+echo "[4/5] Creating your .env"
 
 if [ -f .env ]; then
     ok ".env already exists — keeping yours"
@@ -100,9 +100,9 @@ else
     warn ".env.example missing — skipped"
 fi
 
-# 4. Python dependencies (optional, for connectors) ----------------------------
+# 5. Python dependencies (optional, for connectors) ----------------------------
 echo ""
-echo "[4/4] Python dependencies (optional — connectors only)"
+echo "[5/5] Python dependencies (optional, connectors only)"
 
 if command -v python3 >/dev/null 2>&1 && [ -f requirements.txt ]; then
     if python3 -m pip install -r requirements.txt --quiet 2>/dev/null; then

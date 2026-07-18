@@ -8,7 +8,55 @@ personal data removed.
 
 ## 2026-07-18
 
+### Breaking
+- **`slack_client.py --action post/upload/invite` now refuses to send without
+  explicit approval.** Both the primary (`slack-connector`) and secondary
+  (`secondary-slack-connector`) connectors import a shared
+  `require_send_approval()` from `.agent/scripts/file_utils.py` and call it
+  before any network request for a send action. Pass `--approved` once the owner
+  has signed off on the specific draft. There is deliberately no environment
+  variable that unattended cron/automation can set to bypass it (an env flag
+  is process-wide and permanent, so exporting it once would silently un-gate
+  every later send in that process tree); a genuinely unattended caller must
+  pass `--approved` explicitly at its own call site. Any existing script,
+  cron entry, or operator habit that called `post`/`upload`/`invite` without
+  `--approved` now exits nonzero instead of sending. Update those call sites
+  before this ships.
+
+### Changed
+- **Drive write verification moved out of the `drive_verify.sh` PostToolUse
+  hook and into the writer scripts themselves.** The hook matched the raw
+  Bash command string for a writer script name plus `create-doc`/`upload`/
+  `update`, which meant any command whose text merely *mentioned* a writer
+  (a `grep` over this repo, a `cat` of documentation) could trip the same
+  block as a real invocation. `drive_verify.sh` is now a documented no-op
+  that stays registered only so the next person finds the explanation.
+  Enforcement lives in a new `assert_drive_result()` helper in
+  `.agent/scripts/file_utils.py`, called by all five Drive writers
+  (`gdocs_create.py`, `gdoc_surgical.py`, `gdocs_writer.py`,
+  `gdoc_comment.py`, `patch_doc_links.py`) right before they report success.
+  It checks the actual API response for a file/document id and exits
+  nonzero with a clear stderr message when one is missing, a stronger
+  guarantee than the hook ever gave since it covers all five writers instead
+  of two and reads the real response instead of guessing from text.
+
 ### Added
+- **Runtime detection**: `.agent/scripts/detect_runtime.sh` (sibling of the
+  existing `detect_platform.sh`) plus a `.agent/scripts/harness_config.py`
+  consumer that caches the result in a gitignored `.agent/harness.json`. The
+  point: the harness now branches on capability (can it spawn subagents,
+  does it have hooks, what model tier) instead of on vendor ("am I Claude"),
+  so it degrades correctly on a runtime that is not Claude Code.
+- **`.agent/scripts/ai_call.py`**, a backend-agnostic runner that replaces
+  three hardcoded `claude` binary call sites (`command_queue.py`,
+  `dashboard/server.py`, `evals/run_behavioral.py`) with one resolver: run
+  Claude if present, fall back to `agy-bridge` if not, and only fail if
+  neither is available, so automation no longer hard-fails on a machine
+  without Claude Code installed.
+- **`work-hours` now reads Antigravity conversation history** (from the
+  local SQLite conversation store) in addition to Claude Code transcripts,
+  so the Hours tab produces real numbers on a non-Claude runtime instead of
+  going empty.
 - **Claude-only mode is now first-class.** The optional model bridge (`agy-bridge`)
   detects instantly when no non-Claude backend is configured and emits its standard
   Claude-fallback signal, so the whole harness runs on Claude alone at full capability.
@@ -58,6 +106,19 @@ personal data removed.
   real message text) and retired code are now blocklisted from ever syncing here.
 
 ### Fixed
+- **The public mirror shipped `tab-hours.js` and `tab-inbox.js` while
+  omitting the `work-hours`, `inbox-hub`, and `command-queue` skills that
+  feed them**, so a fresh public clone rendered two permanently empty tabs.
+  The `sync-public` manifest now carries those skills and warns when a
+  dashboard tab ships without its data-producing skill behind it.
+- **Four rules in GEMINI.md contradicted CLAUDE.md.** A merged "PM +
+  Content Partner" domain scope and a duplicate "Content Partner Rules"
+  section both had the Antigravity runtime doing personal-brand work inside
+  this client repo instead of redirecting to the You repo; a missing
+  send-transport rule let a send silently fall back to the bot token and
+  post as the bot instead of as the owner; and a "Slack-to-ClickUp" protocol
+  reference proposed ClickUp, a task tracker CLAUDE.md says is not used for
+  Work or Secondary. GEMINI.md is now realigned with CLAUDE.md on all four.
 - Premeeting-card enrichment always goes through the dedicated bridge script (the
   headless cron path had silently grown a divergent inline re-implementation that could
   overwrite the card audit trail).

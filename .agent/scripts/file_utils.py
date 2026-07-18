@@ -47,6 +47,36 @@ def assert_drive_result(result, operation, id_keys=('id', 'documentId', 'fileId'
         sys.exit(1)
     return found
 
+def require_send_approval(action_label, approved):
+    """
+    Shared outbound-send gate (CLAUDE.md Slack rule): every action that posts a
+    message, uploads a file, or otherwise mutates outbound state must call this
+    BEFORE any network request is issued for that action. Import it rather than
+    copying it, so a connector cannot drift into shipping an ungated twin.
+
+    Approval is per invocation and explicit: the caller passes `approved=True`
+    only once the owner has signed off on that specific draft. There is deliberately
+    NO environment-variable escape hatch. An env flag is process-wide and
+    permanent, so exporting it once into a shell or cron environment would
+    silently un-gate every later send in that process tree, which is the
+    opposite of the per-message approval the rule requires. Genuinely unattended
+    callers pass approval explicitly at their own call site (see
+    dashboard/server.py, which passes --approved on the click path).
+
+    Refuses (message to stderr, exit nonzero) otherwise; never returns on
+    refusal, so callers do not need to branch on a return value.
+    """
+    if approved:
+        return
+    print(
+        f"Error: refusing to {action_label} without approval. This action sends "
+        "to Slack and needs the owner's explicit sign-off before it hits the network. "
+        "Pass --approved once the owner has approved this specific draft. Do not "
+        "retry with --approved on a guess.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 def get_creation_time(path):
     """
     Try to get the creation time. 

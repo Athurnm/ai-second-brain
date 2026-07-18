@@ -8,10 +8,12 @@ fetching Google Calendar events, and browsing project files.
 import json
 import os
 import re
+import secrets
 import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from datetime import datetime, timedelta, timezone
@@ -62,6 +64,137 @@ COMMAND_QUEUE_PATH = BASE_DIR / 'journal' / 'state' / 'command_queue.json'
 COMMITMENT_CLI = '.agent/skills/commitment-ledger/scripts/commitment_ledger.py'
 INBOX_PATH = BASE_DIR / 'journal' / 'state' / 'inbox.json'
 INBOX_CLI = '.agent/skills/inbox-hub/scripts/inbox_sweep.py'
+SLACK_CLI = '.agent/skills/slack-connector/scripts/slack_client.py'
+
+# ── /api/inbox-send human-approval gate ──
+# Sending Slack AS OWNER is the one dashboard action with an irreversible external
+# effect, so the route has to prove the caller is the dashboard UI in a browser and
+# not some other process on this box: ai-task workers run here with Bash and can
+# reach localhost:PORT just as easily as the browser can. Two conditions, both
+# required (see _ui_request_ok + the token helpers below):
+#   1. browser fetch metadata (Sec-Fetch-* + a same-origin Origin). Those are
+#      forbidden header names, so page script cannot set them; only the browser
+#      itself emits them, and a script calling the route has to forge all of them
+#      deliberately rather than stumble into a send.
+#   2. a one-shot token minted by POST /api/inbox-send-token for that exact item,
+#      valid for SEND_TOKEN_TTL seconds and consumed the first time it is used.
+# Tokens live in memory only (never on disk, so nothing to read off the filesystem)
+# and die with the process. Every refusal is logged to stderr.
+SEND_TOKEN_TTL = 180        # seconds a minted token stays usable
+SEND_TOKEN_MAX = 32         # cap the store; oldest evicted first
+_send_tokens = {}           # token -> {'item': <inbox id>, 'issued': <epoch>}
+_send_tokens_lock = threading.Lock()
+
+def _send_audit(event, detail):
+    """One line per gate decision into server_stderr.log. A refused or forged send
+    attempt must be visible after the fact, not silently dropped."""
+    try:
+        sys.stderr.write(f"[inbox-send] {event}: {detail}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass  # auditing must never break the request path
+
+def _read_proc_lines(path):
+    with open(path, 'r') as fh:
+        return fh.read().splitlines()
+
+def _peer_pid(local_port, peer_port):
+    """PID of the process on the other end of a loopback TCP connection, or None when
+    it cannot be resolved (peer is off-box, /proc unreadable, connection already gone).
+    Matches the socket inode from /proc/net/tcp against every /proc/<pid>/fd link.
+
+    The row we want is the CLIENT's half of the pair, so its local port is the
+    peer's and its remote port is ours. Matching the other way round selects the
+    server's own accepted socket, whose inode resolves back to this very process,
+    which makes every loopback caller look like our own descendant."""
+    try:
+        want_inode = None
+        for proc_net in ('/proc/net/tcp', '/proc/net/tcp6'):
+            try:
+                rows = _read_proc_lines(proc_net)
+            except Exception:
+                continue
+            for row in rows[1:]:
+                f = row.split()
+                if len(f) < 10:
+                    continue
+                if int(f[1].split(':')[1], 16) != peer_port:
+                    continue
+                if int(f[2].split(':')[1], 16) != local_port:
+                    continue
+                want_inode = f[9]
+                break
+            if want_inode:
+                break
+        if not want_inode:
+            return None
+        target = f'socket:[{want_inode}]'
+        for pid in os.listdir('/proc'):
+            if not pid.isdigit():
+                continue
+            fd_dir = f'/proc/{pid}/fd'
+            try:
+                for fd in os.listdir(fd_dir):
+                    try:
+                        if os.readlink(f'{fd_dir}/{fd}') == target:
+                            return int(pid)
+                    except OSError:
+                        continue
+            except OSError:
+                continue  # not ours to read, or the process just exited
+    except Exception:
+        return None
+    return None
+
+def _peer_is_our_descendant(local_port, peer_port):
+    """True when the calling process is a child/grandchild of this server. ai-task
+    workers are spawned by this process and several kinds hold unrestricted Bash, so
+    a request whose ancestry leads back here is a worker calling its own dashboard,
+    never the owner clicking. Unresolvable peers return False: the header + token gate
+    still applies, and a browser on the Windows host is never resolvable anyway."""
+    pid = _peer_pid(local_port, peer_port)
+    if not pid:
+        return False
+    me = os.getpid()
+    seen = set()
+    for _ in range(32):  # depth cap; also guards a malformed /proc loop
+        if pid in (0, 1) or pid in seen:
+            return False
+        if pid == me:
+            return True
+        seen.add(pid)
+        try:
+            fields = _read_proc_lines(f'/proc/{pid}/stat')[0].rsplit(') ', 1)[1].split()
+            pid = int(fields[1])  # PPID, after state
+        except Exception:
+            return False
+    return False
+
+def _mint_send_token(item_id):
+    """Issue a fresh single-use token bound to one inbox item, evicting expired and
+    then oldest entries so the store cannot grow from repeated minting."""
+    now = time.time()
+    tok = secrets.token_urlsafe(32)
+    with _send_tokens_lock:
+        for t in [t for t, r in _send_tokens.items()
+                  if now - r['issued'] > SEND_TOKEN_TTL]:
+            _send_tokens.pop(t, None)
+        while len(_send_tokens) >= SEND_TOKEN_MAX:
+            _send_tokens.pop(min(_send_tokens, key=lambda t: _send_tokens[t]['issued']), None)
+        _send_tokens[tok] = {'item': item_id, 'issued': now}
+    return tok
+
+def _consume_send_token(tok, item_id):
+    """True only when the token exists, is unexpired, and was minted for this item.
+    The pop happens first so a concurrent replay of the same token loses the race
+    instead of producing a second send."""
+    if not tok:
+        return False
+    with _send_tokens_lock:
+        rec = _send_tokens.pop(tok, None)
+    if not rec or time.time() - rec['issued'] > SEND_TOKEN_TTL:
+        return False
+    return rec['item'] == item_id
 # Model backend: resolved by ai_call.plan(), which prefers the WSL-native claude
 # binary (logged in via the claude.ai subscription), skips the Windows npm wrapper
 # on /mnt/c (it reads Windows-side config and shows loggedIn:false under headless
@@ -357,7 +490,16 @@ def _ai_task_spec(kind, ref, instruction=None):
             f"Do NOT send any Slack/email/external message, do NOT edit code, do NOT touch "
             f"crontab. Write findings + actions taken + current status to stdout."
         )
-        return prompt, 'Read,Grep,Glob,Bash', 'sonnet', None
+        # The prompt already says remediate ONLY via the owning skill's own CLI, so
+        # grant exactly that and nothing more. Diagnosis is reads: the cron log, the
+        # heartbeat file and the state files all come through Read/Grep. When the job
+        # has no known CLI this is diagnose-only, which is what the prompt asks for
+        # anyway. Blanket Bash here would let the worker curl this server's own
+        # /api/inbox-send and post as the owner.
+        tools = 'Read,Grep,Glob'
+        if run_entry:
+            tools += f",Bash(python3 {run_entry['argv'][1]}:*)"
+        return prompt, tools, 'sonnet', None
 
     if kind == 'verify-commitments':
         today = datetime.now(WIB).strftime('%Y-%m-%d')
@@ -376,7 +518,15 @@ def _ai_task_spec(kind, ref, instruction=None):
             f"Be conservative: only close on clear evidence. Do NOT send any Slack/email/"
             f"external message; the slack_client search action is read-only and allowed."
         )
-        return prompt, 'Read,Grep,Glob,Bash,Write', 'sonnet', draft_rel
+        # Scoped, not blanket Bash. This worker needs exactly two commands, both
+        # named in the prompt above: a read-only Slack search and the ledger CLI.
+        # Blanket Bash would let it curl this server's own /api/inbox-send, which
+        # no amount of gating on that route can reliably distinguish from a
+        # browser. slack_client.py's own --approved gate still stands behind this
+        # for the post action, so the two layers compose.
+        return prompt, ('Read,Grep,Glob,Write,'
+                        f'Bash(python3 {SLACK_CLI}:*),'
+                        f'Bash(python3 {COMMITMENT_CLI}:*)'), 'sonnet', draft_rel
 
     if kind == 'inbox':
         state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
@@ -481,6 +631,34 @@ def _ai_task_spec(kind, ref, instruction=None):
 
     raise ValueError(f'unknown kind {kind!r}; allowed: {", ".join(AI_TASK_KINDS)}')
 
+def _ai_finalize_status(meta, rc):
+    """Terminal status for a finished ai-task run. Returns (status, note_or_None).
+
+    Exit code alone is NOT evidence of work. `rc` comes from the `AI_TASK_DONE rc=`
+    sentinel the sh wrapper echoes, so it reports whether the BACKEND exited
+    cleanly, not whether the task produced anything. A kind that declares an
+    expected_result (see _ai_task_spec) has that file as its whole deliverable, and
+    a tool-less backend exits 0 having written nothing at all: status 'done',
+    result_path silently None, nobody alarmed.
+
+    This harness has already lost a day to exactly that shape (a reconciler
+    reporting 0 of 0 meetings unminuted while three had no minutes). The rule from
+    that incident: no capture artifact means alarm, never silence. Same convention
+    as command_queue._finalize, so both finalizers behave identically."""
+    if rc != 0:
+        return 'error', None
+    exp = meta.get('expected_result')
+    if not exp:
+        return 'done', None      # nothing was declared, nothing to verify
+    try:
+        size = (BASE_DIR / exp).stat().st_size
+    except OSError:
+        size = -1
+    if size <= 0:
+        return 'error', ('exited rc=0 but expected result %s is %s'
+                         % (exp, 'empty' if size == 0 else 'missing'))
+    return 'done', None
+
 def _ai_run_read(meta_path):
     """Load one run's meta + derive live status from its log sentinel / pid.
     Persists a derived terminal status back into the meta file (idempotent)."""
@@ -503,8 +681,11 @@ def _ai_run_read(meta_path):
                 rc = int(sentinel.split('rc=', 1)[1].strip())
             except (ValueError, IndexError):
                 rc = -1
-            meta['status'] = 'done' if rc == 0 else 'error'
+            status, note = _ai_finalize_status(meta, rc)
+            meta['status'] = status
             meta['rc'] = rc
+            if note:
+                meta['note'] = note
             finished = True
             # --output-format json runs: the last stdout line before the sentinel
             # is one JSON result object with usage + total_cost_usd. Extract into
@@ -1035,10 +1216,67 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self._send_json(403, json.dumps({'error': 'forbidden ip'}))
         return False
 
+    def _ui_request_ok(self, what):
+        """True only when the request carries the fetch metadata a browser attaches
+        to a same-origin fetch() from the dashboard page, AND the caller is not one of
+        our own spawned processes. The IP allowlist cannot tell the browser apart from
+        a script on the same box; these two checks raise the cost of pretending.
+
+        Be honest about the ceiling: this is a speed bump, not a boundary. Sec-Fetch-*
+        headers are trivially forged by curl, and the ancestry check is escaped by any
+        caller that detaches first (setsid, or any daemonized helper), because its
+        parent chain then no longer reaches this server. A local process holding a full
+        shell can always impersonate the browser. The real containment for that threat
+        is not granting unrestricted Bash to ai-task workers in the first place, see
+        _ai_task_spec. Treat what follows as defence in depth, and never as the reason
+        it is safe to hand a worker a shell. Refusals answer 403 and are audited."""
+        peer_ip, peer_port = self.client_address[0], self.client_address[1]
+        try:
+            local_port = self.connection.getsockname()[1]
+        except Exception:
+            local_port = PORT
+        if peer_ip in ('127.0.0.1', '::1') and _peer_is_our_descendant(local_port, peer_port):
+            _send_audit('refused', f'{what} from a process this server spawned '
+                                   f'(port {peer_port}): workers cannot send as the owner')
+            self._send_json(403, json.dumps({
+                'error': 'this route only accepts requests from the dashboard UI',
+                'hint': 'a dashboard-spawned worker cannot approve its own send'}))
+            return False
+        h = self.headers
+        site = (h.get('Sec-Fetch-Site') or '').lower()
+        mode = (h.get('Sec-Fetch-Mode') or '').lower()
+        dest = (h.get('Sec-Fetch-Dest') or '').lower()
+        origin = (h.get('Origin') or '').strip()
+        host = (h.get('Host') or '').strip()
+        origin_host = origin.split('://')[-1].rstrip('/') if origin else ''
+        ok = (site == 'same-origin'
+              and mode in ('cors', 'same-origin')
+              and dest == 'empty'
+              and origin_host and host and origin_host == host)
+        if not ok:
+            _send_audit('refused', f"{what} from {self.client_address[0]} "
+                                   f"site={site or '-'} mode={mode or '-'} "
+                                   f"dest={dest or '-'} origin={origin or '-'}")
+            self._send_json(403, json.dumps({
+                'error': 'this route only accepts requests from the dashboard UI',
+                'hint': 'a Slack send needs a human click in the browser; it is '
+                        'not callable from a script or a local process'}))
+        return ok
+
     def do_DELETE(self):
         if not self._check_client_ip():
             return
         self.send_error(404, 'Not Found')
+
+    def do_HEAD(self):
+        # SimpleHTTPRequestHandler ships its own do_HEAD. Without this override it
+        # serves static-file headers straight out of PUBLIC_DIR without ever
+        # reaching _check_client_ip, which is exactly what that method's docstring
+        # promises cannot happen. HEAD leaks which files exist plus their size and
+        # mtime, so gate it like every other verb before deferring to the parent.
+        if not self._check_client_ip():
+            return
+        super().do_HEAD()
 
     def do_GET(self):
         if not self._check_client_ip():
@@ -1197,6 +1435,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_post_inbox_sweep()
         elif self.path == '/api/inbox-action':
             self._handle_post_inbox_action()
+        elif self.path == '/api/inbox-send-token':
+            self._handle_post_inbox_send_token()
         elif self.path == '/api/inbox-send':
             self._handle_post_inbox_send()
         else:
@@ -1426,8 +1666,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             }))
 
     def _handle_get_command_queue(self):
-        """GET /api/command-queue — command-queue items, foregrounding the ones awaiting
-        the owner's approval (state 'review' = a worker finished and left a draft on disk).
+        """GET /api/command-queue: command-queue items, foregrounding the two states
+        that need the owner: 'review' (a worker finished and left a draft on disk) and
+        'error' (a worker finished and produced NOTHING, or no backend could run it).
+        The error list is served alongside review on purpose: rolling it into the
+        untitled counts dict is how a produced-nothing item stays invisible in the UI
+        the owner actually looks at, which is the silent-success failure mode itself.
         Read-only; the queue is owned by the command-queue skill."""
         try:
             q = json.loads(COMMAND_QUEUE_PATH.read_text(encoding='utf-8')) if COMMAND_QUEUE_PATH.exists() else {'items': {}}
@@ -1438,13 +1682,22 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         'category': i.get('category'), 'model': i.get('model'),
                         'draft_path': i.get('draft_path'), 'finished_wib': i.get('finished_wib'),
                         'ts_wib': i.get('ts_wib')}
+            def _slim_err(i):
+                d = _slim(i)
+                d['reason'] = i.get('reason') or 'unknown'
+                d['rc'] = i.get('rc')
+                d['log'] = i.get('log')
+                return d
             review = [_slim(i) for i in items if i.get('state') == 'review']
             review.sort(key=lambda x: x.get('finished_wib') or '', reverse=True)
+            errors = [_slim_err(i) for i in items if i.get('state') == 'error']
+            errors.sort(key=lambda x: x.get('finished_wib') or '', reverse=True)
             counts = {}
             for i in items:
                 counts[i.get('state', '?')] = counts.get(i.get('state', '?'), 0) + 1
             self._send_json(200, json.dumps({
-                'review': review, 'counts': counts, 'last_run': q.get('last_run')}))
+                'review': review, 'errors': errors, 'error_count': len(errors),
+                'counts': counts, 'last_run': q.get('last_run')}))
         except Exception as e:
             self._send_json(500, json.dumps({'error': 'command-queue read failed', 'details': str(e)}))
 
@@ -3151,8 +3404,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # (tokens_in/tokens_out/cost_usd). Old text runs simply lack the fields.
             # Under the agy-bridge backend stdout is plain text, so those fields are
             # simply absent, exactly like an old text run.
+            # require_tools when the kind declares an expected_result: that file IS
+            # the deliverable, so a sandboxed tool-less backend cannot satisfy the
+            # prompt and would exit 0 having produced nothing. Refuse at plan time
+            # (503 below) rather than finalize a run that can only fail silently.
             spec = ai_call.plan(prompt, model=model, output_format='json',
-                                allowed_tools=tools or None)
+                                allowed_tools=tools or None,
+                                require_tools=bool(expected_result))
             if spec['backend'] == 'none':
                 self._send_json(503, json.dumps({
                     'error': 'no AI backend available on this machine',
@@ -3471,32 +3729,80 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, json.dumps({'error': 'inbox-action failed', 'details': str(e)}))
 
-    def _handle_post_inbox_send(self):
-        """POST /api/inbox-send {id, text} — the owner APPROVED a reply draft in the
-        drawer: send it AS OWNER (slack_client.py post, user token — never the bot)
-        to the conversation's channel/thread, then mark the item done with the sent
-        permalink. The approve click on the shown draft IS the explicit approval the
-        Slack gate requires; only slack conversations are sendable (gmail = copy)."""
+    def _sendable_inbox_item(self, iid):
+        """Load one inbox item and check it is actually sendable (exists, slack with a
+        target channel, still open). Returns the item, or None after answering the
+        error itself — shared by the token mint route and the send route so both agree
+        on what 'sendable' means."""
+        state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
+        it = (state.get('items') or {}).get(iid)
+        if not it:
+            self._send_json(404, json.dumps({'error': f'item {iid} not found'}))
+            return None
+        if it.get('source') != 'slack' or not it.get('send_channel'):
+            self._send_json(400, json.dumps({
+                'error': 'only slack conversations are sendable from here '
+                         '(gmail: copy the draft into a reply)'}))
+            return None
+        if it.get('status') != 'open':
+            self._send_json(409, json.dumps({'error': f"item is {it.get('status')}, not open"}))
+            return None
+        return it
+
+    def _handle_post_inbox_send_token(self):
+        """POST /api/inbox-send-token {id} -> {token, ttl} — mint the one-shot approval
+        token that /api/inbox-send requires. The drawer calls this the moment the owner
+        confirms the send, so a usable token only exists for the few seconds around a
+        real click, is bound to that one item, and dies on first use."""
         try:
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+            if not self._ui_request_ok('token mint'):
+                return
+            iid = (body.get('id') or '').strip()
+            if not iid:
+                self._send_json(400, json.dumps({'error': 'need id'}))
+                return
+            if self._sendable_inbox_item(iid) is None:
+                return
+            _send_audit('minted', f'token for {iid} from {self.client_address[0]}')
+            self._send_json(200, json.dumps({'token': _mint_send_token(iid),
+                                             'ttl': SEND_TOKEN_TTL}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'inbox-send-token failed',
+                                             'details': str(e)}))
+
+    def _handle_post_inbox_send(self):
+        """POST /api/inbox-send {id, text} + X-PSB-Send-Token — the owner APPROVED a reply
+        draft in the drawer: send it AS OWNER (slack_client.py post, user token — never
+        the bot) to the conversation's channel/thread, then mark the item done with the
+        sent permalink. Only slack conversations are sendable (gmail = copy).
+
+        The approval this route passes to slack_client.py is the owner's click, so the
+        route must first establish that a click is what reached it: browser fetch
+        metadata plus a one-shot token minted seconds earlier for this same item. A
+        local process (an ai-task worker has Bash and this port) fails both."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+            if not self._ui_request_ok('send'):
+                return
             iid = (body.get('id') or '').strip()
             text = (body.get('text') or '').strip()
             if not iid or not text:
                 self._send_json(400, json.dumps({'error': 'need id + text'}))
                 return
-            state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
-            it = (state.get('items') or {}).get(iid)
-            if not it:
-                self._send_json(404, json.dumps({'error': f'item {iid} not found'}))
+            it = self._sendable_inbox_item(iid)
+            if it is None:
                 return
-            if it.get('source') != 'slack' or not it.get('send_channel'):
-                self._send_json(400, json.dumps({
-                    'error': 'only slack conversations are sendable from here '
-                             '(gmail: copy the draft into a reply)'}))
-                return
-            if it.get('status') != 'open':
-                self._send_json(409, json.dumps({'error': f"item is {it.get('status')}, not open"}))
+            # Burn the token BEFORE anything leaves the box: a replay of the same
+            # request can then only fail, never produce a duplicate message.
+            if not _consume_send_token(self.headers.get('X-PSB-Send-Token'), iid):
+                _send_audit('refused', f'missing/expired/mismatched send token for '
+                                       f'{iid} from {self.client_address[0]}')
+                self._send_json(403, json.dumps({
+                    'error': 'missing or expired send approval token',
+                    'hint': 'reopen the draft in the dashboard and approve again'}))
                 return
             slack_cli = str(BASE_DIR / '.agent' / 'skills' / 'slack-connector' /
                             'scripts' / 'slack_client.py')
@@ -3505,10 +3811,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 tf.write(text)
                 tmp = tf.name
             try:
-                # --approved: slack_client.py refuses to post without it. The click
-                # that reached this route IS the owner approving the draft he is looking
-                # at, which is exactly the human sign-off the gate asks for.
-                argv = ['python3', slack_cli, '--action', 'post', '--approved',
+                # --approved: slack_client.py refuses to post without it. It stands
+                # for the click that reached this route, which the fetch-metadata
+                # check plus the consumed one-shot token above have established was
+                # a human in the dashboard UI and not a process on this machine.
+                argv = [sys.executable, slack_cli, '--action', 'post', '--approved',
                         '--channel', it['send_channel'], '--text-file', tmp]
                 if it.get('send_thread_ts'):
                     argv += ['--thread-ts', str(it['send_thread_ts'])]
@@ -3523,7 +3830,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return
             m = re.search(r'https://\S*slack\.com/\S+', out)
             permalink = m.group(0).rstrip('>).,') if m else ''
-            subprocess.run(['python3', INBOX_CLI, 'mark-sent', iid,
+            subprocess.run([sys.executable, INBOX_CLI, 'mark-sent', iid,
                             '--permalink', permalink],
                            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15)
             self._send_json(200, json.dumps({'ok': True, 'id': iid,

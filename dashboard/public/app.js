@@ -213,7 +213,7 @@ function renderToday() {
     momentumBand(),
     briefingCard(),
     escalationStrip(ov),
-    `<div id="today-approvals">${approvalsCard()}</div>`,
+    `<div id="today-approvals">${approvalsCard()}${failuresCard()}</div>`,
     actionItemsCard(ov),
     `<div class="two-col">
        <div class="stack">
@@ -522,6 +522,39 @@ function approvalsCard() {
   return Comp.card({
     key: 'cmd-approvals', icon: '📋', title: 'Commands awaiting your approval',
     count: `${review.length}`, open: true,
+    body: `<div class="rows">${rows}</div>`,
+  });
+}
+
+/* 🚨 Commands that produced nothing — workers that exited cleanly without leaving
+   the deliverable they declared, or that found no usable backend at all. The server
+   marks these 'error', but until now the page only ever drew the 'review' list, so
+   they sat in the payload and never on the screen. An alarm nobody can see is the
+   same as no alarm. Deliberately not dismissible: these clear by being fixed. */
+function failuresCard() {
+  const errors = App.commandQueue?.errors || [];
+  if (!errors.length) return '';
+  const rows = errors.map(r => {
+    const rc = (r.rc === null || r.rc === undefined) ? '' : ` · rc=${U.esc(String(r.rc))}`;
+    const when = r.finished_wib ? ` · ${U.esc(r.finished_wib)}` : '';
+    const log = r.log
+      ? `<button class="prep-link" data-drawer-path="${U.esc(r.log)}"
+           data-drawer-title="${U.esc((r.ticket_id || 'job') + ' — log')}">📄 log</button>`
+      : '';
+    return `
+    <div class="row" data-cq-row="${U.esc(r.key)}">
+      <div class="row-main">
+        <span class="row-title" title="${U.esc(r.command || '')}">
+          <strong>${U.esc(r.ticket_id || '')}</strong> ${U.esc((r.command || '').slice(0, 90))}
+        </span>
+        <span class="row-meta">${U.esc(r.reason || 'unknown')}${rc}${when}</span>
+      </div>
+      <span class="row-right">${log}</span>
+    </div>`;
+  }).join('');
+  return Comp.card({
+    key: 'cmd-failures', icon: '🚨', title: 'Commands that produced nothing',
+    count: `${errors.length}`, open: true,
     body: `<div class="rows">${rows}</div>`,
   });
 }

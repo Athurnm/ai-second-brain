@@ -29,7 +29,7 @@ Read these before you start, they are your source of truth:
    - **Antigravity** — reads `AGENTS.md`; supports `SKILL.md`-based skills and MCP.
    - Any other agent — the `AGENTS.md` → `CLAUDE.md` pattern below still works.
    Only ask the human when the script is missing or its `RUNTIME` line comes back `unknown`: "Which
-   editor are you running me in — Cursor, Antigravity, or Claude Code?" It changes only steps 5 and
+   editor are you running me in: Cursor, Antigravity, or Claude Code?" It changes only steps 5 and
    9.
 2. **One topic at a time.** Ask a small batch of related questions, wait, confirm, move on. Never
    dump the whole questionnaire at once. Keep it conversational, like a patient guide, not a form.

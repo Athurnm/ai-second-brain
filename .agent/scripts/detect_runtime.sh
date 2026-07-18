@@ -81,6 +81,7 @@ if command -v python3 >/dev/null 2>&1; then
   _probe="$(RUNTIME="$RUNTIME" REPO_ROOT="$REPO_ROOT" python3 - <<'PY' 2>/dev/null
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -111,33 +112,65 @@ def tier_of(model):
             return "mid"
     return "unknown"
 
+def _fuzzy_project_dir(root, repo_root):
+    """Locate this repo's project dir when the naive "/"-only slug misses.
+
+    Build a pattern in which each "/", "." or "_" of the repo path is allowed
+    to appear as any of those characters or as "-" in the directory name, then
+    accept the result ONLY when exactly one directory matches. An ambiguous
+    match returns None on purpose: no model beats a model read from someone
+    else's checkout, which is the bug this whole function exists to prevent."""
+    pattern = "".join("[-./_]" if ch in "/._" else re.escape(ch)
+                      for ch in repo_root)
+    try:
+        rx = re.compile("^" + pattern + "$")
+        hits = [n for n in os.listdir(root) if rx.match(n)]
+    except (re.error, OSError):
+        return None
+    if len(hits) != 1:
+        return None
+    return os.path.join(root, hits[0])
+
 def claude_transcript():
-    """Newest transcript JSONL for THIS session.
+    """Newest transcript JSONL for THIS session, scoped to THIS repo's project dir.
+
+    Claude Code names a project's transcript directory after the absolute repo
+    path with "/" replaced by "-" (e.g. /home/u/foo -> -home-u-foo). Scoping to
+    that one directory keeps an unrelated project the owner has open elsewhere
+    on the machine from ever being read back as "the" session's model.
+
+    The slugifier also flattens punctuation other than "/", so a checkout at
+    /home/u/my_repo or /home/u/repo.v2 does not match a naive "/"-only
+    translation. Rather than guess the full rule, try the naive slug first and
+    then fall back to matching directory names against a pattern where "/", "."
+    and "_" may each have become "-". A miss returns None, so detection reports
+    MODEL=unknown instead of guessing, which is the failure mode we want.
 
     Prefer the session-scoped file: the newest file overall is often a subagent
     transcript (a haiku harvester), which would report the wrong main-loop tier.
     Subagent transcripts live under a `subagents/` subdir, so top-level files
     only is the correct fallback."""
     root = os.path.expanduser("~/.claude/projects")
-    if not os.path.isdir(root):
+    if not REPO_ROOT:
+        return None
+    pdir = os.path.join(root, REPO_ROOT.replace(os.sep, "-"))
+    if not os.path.isdir(pdir):
+        pdir = _fuzzy_project_dir(root, REPO_ROOT)
+    if not pdir or not os.path.isdir(pdir):
         return None
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or ""
+    if sid:
+        exact = os.path.join(pdir, sid + ".jsonl")
+        if os.path.isfile(exact):
+            return exact
     candidates = []
     try:
-        for proj in os.listdir(root):
-            pdir = os.path.join(root, proj)
-            if not os.path.isdir(pdir):
+        for name in os.listdir(pdir):
+            if not name.endswith(".jsonl"):
                 continue
-            if sid:
-                exact = os.path.join(pdir, sid + ".jsonl")
-                if os.path.isfile(exact):
-                    return exact
-            for name in os.listdir(pdir):
-                if not name.endswith(".jsonl"):
-                    continue
-                path = os.path.join(pdir, name)
-                if os.path.isfile(path):
-                    candidates.append(path)
+            path = os.path.join(pdir, name)
+            if os.path.isfile(path):
+                candidates.append(path)
     except OSError:
         return None
     if not candidates:

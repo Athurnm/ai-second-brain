@@ -22,7 +22,7 @@ Subcommands:
 State: journal/state/waiting_on.json
 Schema per item WAIT-NNNN: {id, owner, owner_slug, what, since, sla_hours, escalate_to,
   escalation_path, source{type, permalink}, status: open|breached|answered|dropped,
-  breached_at, last_nudge_at, first_seen, closed_at, notes}
+  breached_at, last_nudge_at, first_seen, closed_at, notes, needs_escalation}
 
 Clones conventions from .agent/skills/slack-tracker/scripts/mention_ledger.py:
 BASE_DIR from __file__, load_state/save_state atomic .tmp+os.replace, argparse

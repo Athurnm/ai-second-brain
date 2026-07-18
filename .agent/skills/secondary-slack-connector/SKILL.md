@@ -28,11 +28,21 @@ python .agent/skills/secondary-slack-connector/scripts/slack_client.py --action 
 python .agent/skills/secondary-slack-connector/scripts/slack_client.py --action history --channel <CHANNEL_ID>
 ```
 
-### Post to Thread
+### Send Approval Gate
+
+`post` and `upload` mutate outbound Slack state, so they are default-blocked by
+the shared gate in `.agent/scripts/file_utils.py` (the same one the Work
+`slack-connector` uses). The command refuses before touching the network unless
+`--approved` is passed, and approval is per message: pass it only once the owner has
+signed off on that specific draft. There is no environment override, and nothing
+in `token.env` can grant approval.
 
 ```bash
-python .agent/skills/secondary-slack-connector/scripts/slack_client.py --action post --channel <CHANNEL_ID> --text "Your message" --thread_ts <TIMESTAMP>
+python .agent/skills/secondary-slack-connector/scripts/slack_client.py --action post --channel <CHANNEL_ID> --text "Your message" --approved
 ```
+
+Without `--approved` the command exits nonzero. Never retry a refused send by
+adding `--approved` on a guess.
 
 ### User ID Caching
 

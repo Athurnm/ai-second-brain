@@ -161,9 +161,18 @@ _VERB_CANON = {
     'prds': 'prd', 'docs': 'doc', 'document': 'doc',
 }
 
+# Some ingest paths append a stringified owner dict to the commitment text
+# ("... - {'name': ..., 'email': ...} - Pending"); it is noise that drags
+# dedupe scores below DUP_AUTO, so strip it before tokenizing/diffing.
+_LEAKED_OWNER_SUFFIX_RE = re.compile(
+    r"\s*-\s*\{'name':.*?\}\s*(?:-\s*\w+\s*)?$")
+
+def _strip_leaked_suffix(text):
+    return _LEAKED_OWNER_SUFFIX_RE.sub('', text or '').strip()
+
 def _dup_tokens(text):
     """Normalized content-word set used for duplicate scoring."""
-    words = re.findall(r"[a-z0-9]+", (text or '').lower())
+    words = re.findall(r"[a-z0-9]+", _strip_leaked_suffix(text).lower())
     out = set()
     for w in words:
         w = _VERB_CANON.get(w, w)
@@ -187,7 +196,8 @@ def _dup_score(a_text, b_text):
         return 0.0
     containment = len(ta & tb) / min(len(ta), len(tb))
     seq = difflib.SequenceMatcher(
-        None, (a_text or '').lower(), (b_text or '').lower()).ratio()
+        None, _strip_leaked_suffix(a_text).lower(),
+        _strip_leaked_suffix(b_text).lower()).ratio()
     return max(containment, seq)
 
 def _compatible(a, b):
@@ -865,7 +875,12 @@ def cmd_extract(args):
         'restatement of what the owner committed to do, max 20 words>"}. '
         'is_commitment=true ONLY if the owner is promising a future action to someone '
         '(e.g. "I\'ll send you the PRD tomorrow"). Questions, acknowledgments, and '
-        'statements about the past are is_commitment=false. Output ONLY JSON lines, no prose.\n\n'
+        'statements about the past are is_commitment=false. '
+        'Resolve relative due words ("tomorrow", "next week") against the date the '
+        'message was SENT (derive it from that line\'s ts), never against today. '
+        'A due date must never fall in a past year or before the message date; '
+        'if it would, output null instead of guessing. '
+        'Output ONLY JSON lines, no prose.\n\n'
         + '\n'.join(json.dumps({'ts': c['ts'], 'channel': c['channel_name'],
                                 'text': c['text']}, ensure_ascii=False) for c in batch)
     )

@@ -66,7 +66,7 @@ Today, which lives in `app.js` alongside the shared router and utilities.
 - **📥 Inbox** (`tab-inbox.js`): one triage queue for every inbound thread: Slack mentions
   and DMs, Gmail, Google Doc comments, and Jira mentions. Each item gets reversible
   triage (done, ignore, reopen), a link into the ticket tracker, and an optional AI
-  copilot pass that can draft or send a reply for your approval.
+  copilot pass that can draft a reply for your approval.
 - **📋 Work** (`tab-work.js`): the ticket tracker (create, edit, comment on tickets right
   in the page), the project portfolio by team, a decisions log, commitments, and
   stakeholder rollups. Clicking an initiative drills into its own health summary,

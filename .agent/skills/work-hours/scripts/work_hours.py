@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""work_hours.py — reconstruct the owner's working hours per day from digital traces.
+"""work_hours.py: reconstruct the owner's working hours per day from digital traces.
 
 Sources (all local, no network except optional Google Calendar):
   - Claude Code session transcripts (~/.claude/projects/*/):
@@ -28,7 +28,7 @@ Model:
   - leverage    = effective / actual  -> the productivity multiplier
   - attention_h = union of human-typed message clusters + meetings -> hands-on floor
 
-Antigravity reader — what it gives us, and what it does NOT:
+Antigravity reader: what it gives us, and what it does NOT:
   MEASURED, same quality as the Claude reader:
     - per-step wall-clock timestamps (protobuf Timestamp, second precision), so
       activity minutes and block clustering are exact
@@ -43,8 +43,8 @@ Antigravity reader — what it gives us, and what it does NOT:
       We fall back to counting user turns: a conversation with a single user turn
       is a one-shot call (this is exactly the shape agy-bridge cron calls take)
       and is EXCLUDED as automation. Two or more turns means a human was in the
-      loop and it counts. This deliberately errs toward undercounting — an
-      inflated productivity number is worse than a missing one.
+      loop and it counts. This deliberately errs toward undercounting, because
+      an inflated productivity number is worse than a missing one.
     - Lane (work/you/other) comes from the optional summary db's workspace
       uri. That db lags reality by days, so unmatched conversations land in
       'other' rather than being guessed into a client lane.
@@ -89,7 +89,7 @@ CACHE_KEEP_DAYS = 21       # parse-cache entries pruned past this file mtime age
 # default (deep-research 16 Jul 2026, see ../research_ai_speed_factor.md):
 # blended x2-2.5 is conservative-defensible for the owner's PM mix, x3 is the
 # optimistic edge (drafting x2.5-3, research x2-3, coding x1-2). Still an
-# estimate, not a measurement — override with --ai-speed or WORK_HOURS_AI_SPEED.
+# estimate, not a measurement, so override it with --ai-speed or WORK_HOURS_AI_SPEED.
 AI_SPEED_DEFAULT = float(os.environ.get('WORK_HOURS_AI_SPEED', '2.5'))
 
 def _harness_extra(key, default=None):
@@ -114,7 +114,7 @@ def _path_list(env_var, extra_key, defaults):
     """Resolve a list of paths: env var wins, then harness.json, then defaults.
 
     Accepts os.pathsep- or comma-separated strings, or a JSON list in
-    harness.json. Entries are expanded (~ and $VARS) but NOT required to exist —
+    harness.json. Entries are expanded (~ and $VARS) but NOT required to exist;
     callers skip missing paths themselves."""
     raw = os.environ.get(env_var) or _harness_extra(extra_key)
     if not raw:
@@ -131,8 +131,8 @@ def _path_list(env_var, extra_key, defaults):
 # the owner's sibling repos, kept as defaults so this machine is unchanged, but
 # overridable for anyone else via WORK_HOURS_GIT_REPOS or harness.json.
 GIT_REPO_DEFAULTS = [
-    '~/antigravity-projects/You',
-    '~/antigravity-projects/owner-arfi-website',
+    str(Path.home() / 'antigravity-projects' / 'You'),
+    str(Path.home() / 'antigravity-projects' / 'owner-arfi-website'),
 ]
 GIT_REPOS = [BASE_DIR] + [p for p in _path_list(
     'WORK_HOURS_GIT_REPOS', 'work_hours_git_repos', GIT_REPO_DEFAULTS)
@@ -153,7 +153,13 @@ AGY_LEGACY_DIR = Path(os.environ.get(
 # once in every one-shot agy-bridge call.
 AGY_USER_STEP = 14
 # Fewer than this many user turns -> one-shot call -> automation, not desk work.
-AGY_MIN_USER_TURNS = 2
+# Overridable because it is a heuristic, not a recorded fact: a future
+# Antigravity build could number its step types differently, and a user who
+# genuinely works interactively should be able to correct us without a patch.
+try:
+    AGY_MIN_USER_TURNS = max(1, int(os.environ.get('WORK_HOURS_AGY_MIN_TURNS', '2')))
+except ValueError:
+    AGY_MIN_USER_TURNS = 2
 
 LANES = [
     ('meetings', 'Meetings'),
@@ -492,6 +498,9 @@ def collect_agy_sessions(window_start_min, cache, stats):
     `stats` is mutated with counts the Methodology card needs: how many
     conversations were read, skipped as one-shot automation, or unreadable."""
     sessions = {}
+    for k in ('seen', 'unreadable', 'legacy_pb', 'one_shot', 'multi_turn'):
+        stats.setdefault(k, 0)
+    stats.setdefault('dirs', [])
     summary = agy_summary_index()
     wstart_s = window_start_min * 60
     for conv_dir in AGY_CONV_DIRS:
@@ -511,6 +520,10 @@ def collect_agy_sessions(window_start_min, cache, stats):
                 continue
             cache[key] = cached
             stats['seen'] += 1
+            if (cached.get('turns') or 0) >= AGY_MIN_USER_TURNS:
+                stats['multi_turn'] += 1
+            else:
+                stats['one_shot'] += 1
             cid = f.stem
             meta = summary.get(cid) or {}
             # workspace uris are slash-separated; lane_for_slug expects the
@@ -664,7 +677,7 @@ def build_meetings(day, wstart_min, wend_min, gcal_events):
             shorter = min(emin - smin, r['emin'] - r['smin'])
             title_match = norm_title(ev.get('title')) == norm_title(r.get('title'))
             # a recording verifies THIS event only if it substantially overlaps it
-            # or carries the same title near the same start — a mere time brush
+            # or carries the same title near the same start, because a mere time brush
             # from an unrelated recording must not upgrade/extend the wrong event
             if (shorter > 0 and overlap >= 0.5 * shorter) or (title_match and abs(r['smin'] - smin) <= 45):
                 used_recs.add(i)
@@ -677,7 +690,7 @@ def build_meetings(day, wstart_min, wend_min, gcal_events):
             continue
         meetings.append({'smin': max(r['smin'], wstart_min), 'emin': min(r['emin'], wend_min),
                          'title': r['title'], 'source': 'recorded'})
-    # merge on TIME OVERLAP regardless of title: the owner is one person — two meeting
+    # merge on TIME OVERLAP regardless of title: the owner is one person, so two meeting
     # entries overlapping in wall-clock time can never contribute duration twice
     # (double-booked calendar, or one recording spanning back-to-back events).
     # Strictly adjacent meetings (emin == next smin) stay separate.
@@ -826,7 +839,7 @@ def assemble_day(day_str, sessions, gcal_events, with_commits=True, ai_speed=AI_
         'leverage': round(effective / actual, 2) if actual else 0,
         # human-equivalent output: meetings 1:1 + AI hours x speed factor. The
         # factor is an explicit assumption (AI works faster than manual), NOT a
-        # measurement — the UI labels it as such.
+        # measurement, and the UI labels it as such.
         'human_equiv_h': hours(lane_min['meetings']
                                + sum(v for k, v in lane_min.items() if k != 'meetings') * ai_speed),
         'output_x': (round((lane_min['meetings']
@@ -883,6 +896,17 @@ def describe_sources(agy_stats):
             agy_caveats.append(
                 'no conversation summary db, so every conversation lands in the '
                 '"other" lane and carries a generic label')
+        if not agy_stats.get('multi_turn'):
+            # The honest reading of "we saw work but counted none of it": either
+            # this machine really only runs headless one-shot calls (true on
+            # the owner's), or the user-turn heuristic does not fit this Antigravity
+            # build. Say so instead of rendering a confident zero.
+            agy_caveats.append(
+                'all %d conversation(s) looked like one-shot calls, so zero '
+                'Antigravity hours were counted. If you use Antigravity '
+                'interactively and expected hours here, the user-turn heuristic '
+                'may not match your build: set WORK_HOURS_AGY_MIN_TURNS=1 to '
+                'count every conversation' % agy_stats.get('seen', 0))
     if agy_stats.get('unreadable'):
         agy_caveats.append('%d conversation file(s) could not be opened read-only '
                            'and were skipped' % agy_stats['unreadable'])
@@ -893,6 +917,14 @@ def describe_sources(agy_stats):
     if not agy_dirs:
         agy_caveats.append('no Antigravity conversation store found; '
                            'no Antigravity hours counted')
+    elif not agy_stats.get('seen') and not agy_stats.get('unreadable'):
+        # dir exists but held zero .db files in this window: a silent zero here
+        # would look like a clean "no Antigravity work happened" reading rather
+        # than "we found nothing to read", so say so explicitly.
+        agy_caveats.append(
+            'Antigravity conversation store at %s exists but contains no '
+            'conversation database files; no Antigravity hours counted'
+            % ', '.join(agy_dirs))
 
     return {
         'claude-code': {
@@ -901,6 +933,7 @@ def describe_sources(agy_stats):
             'measured': ['activity timestamps', 'human-typed message timestamps',
                          'entrypoint (interactive vs sdk automation)'],
             'inferred': [],
+            'unavailable': [],
             'caveats': ([] if claude_present else
                         ['no %s on this machine; no Claude hours counted'
                          % CLAUDE_PROJECTS]),
@@ -909,6 +942,8 @@ def describe_sources(agy_stats):
             'present': agy_present,
             'paths': agy_dirs,
             'conversations_scanned': agy_stats.get('seen', 0),
+            'one_shot_excluded': agy_stats.get('one_shot', 0),
+            'interactive_counted': agy_stats.get('multi_turn', 0),
             'measured': ['activity timestamps', 'user-turn timestamps'],
             'inferred': ['interactive vs automation', 'lane / client attribution'],
             'unavailable': ['model attribution'],
@@ -945,7 +980,8 @@ def cmd_sweep(args):
 
     wstart_min, _, _ = day_window(days[0])
     sessions = collect_sessions(wstart_min, cache)
-    agy_stats = {'dirs': [], 'seen': 0, 'unreadable': 0, 'legacy_pb': 0}
+    agy_stats = {'dirs': [], 'seen': 0, 'unreadable': 0, 'legacy_pb': 0,
+                 'one_shot': 0, 'multi_turn': 0}
     if not args.no_antigravity:
         sessions.update(collect_agy_sessions(wstart_min, cache, agy_stats))
 
@@ -988,7 +1024,7 @@ def cmd_show(args):
     d = args.date or today_workday()
     day = (state.get('days') or {}).get(d)
     if not day:
-        print(f'no data for {d} — run: work_hours.py sweep --date {d}')
+        print(f'no data for {d}, run: work_hours.py sweep --date {d}')
         return
     print(f"== {d} ({day['weekday']}) ==")
     print(f"span {day['start']} - {day['end']} ({day['wall_h']}h wall)")

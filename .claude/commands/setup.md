@@ -134,9 +134,11 @@ follow `docs/SETUP.md` rather than duplicating its steps, and drive them through
      `.agent/skills/agy-bridge/SKILL.md` (`## Setup`) and `token.env.example`, walk them through
      `cp token.env.example token.env` plus pasting the token into the file (never into chat), and
      verify with `python3 .agent/skills/agy-bridge/run.py --doctor`.
-   - Either way, persist the answer so the routing layer can act on it instead of asking again
-     next session: `python3 .agent/scripts/harness_config.py --set non_claude_backends=<answer>`,
-     where `<answer>` is `none` or a comma separated list such as `zai,kimi,antigravity`.
+   - Either way, persist the answer so it's on record instead of asking again next session:
+     `python3 .agent/scripts/harness_config.py --set non_claude_backends=<answer>`, where
+     `<answer>` is `none` or a comma separated list such as `zai,kimi,antigravity`. Note: this
+     only records the value today, nothing reads it back yet, so treat it as saved for future
+     routing use rather than something that already changes behavior.
 
 ## Phase 7 - Assemble & write CLAUDE.md
 

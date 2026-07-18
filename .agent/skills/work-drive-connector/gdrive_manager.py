@@ -29,6 +29,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CREDENTIALS_FILE = os.path.join(SCRIPT_DIR, 'credentials.json')
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json')
 
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 # Full drive access for Work's shared drive
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
@@ -179,12 +183,13 @@ def update_file(file_id, file_path, convert_to_docs=False):
             media_body=media,
             fields='id, webViewLink'
         ).execute()
+        assert_drive_result(file, 'gdrive_manager (work) update')
         print(f"File ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
-        
+
         # Always set permissions to anyone can comment by default
         set_commenter_permission(service, file.get('id'))
-        
+
         return file.get('id')
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -316,12 +321,13 @@ def upload_file(file_path, folder_id=None, convert_to_docs=False, share=False):
 
     try:
         file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        assert_drive_result(file, 'gdrive_manager (work) upload')
         print(f"File ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
 
         # Always set permissions to anyone can comment by default
         set_commenter_permission(service, file.get('id'))
-        
+
         return file.get('id')
 
     except Exception as e:
@@ -484,6 +490,7 @@ def rename_file(file_id, new_name):
             body={'name': new_name},
             fields='id, name'
         ).execute()
+        assert_drive_result(file, 'gdrive_manager (work) rename')
         print(f"Renamed File ID: {file.get('id')}")
         print(f"New Name: {file.get('name')}")
         return file.get('id')

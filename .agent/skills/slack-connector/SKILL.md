@@ -49,19 +49,30 @@ python .agent/skills/slack-connector/scripts/slack_client.py --action list_chann
 ### Send Approval Gate
 
 `post`, `upload`, and `invite` mutate outbound Slack state (they post messages,
-files, or add channel members), so they are default-blocked. The command
-refuses before touching the network unless one of these is given:
+files, or add channel members), so they are default-blocked. The gate itself
+lives in `.agent/scripts/file_utils.py` as `require_send_approval()` and is
+imported by both this connector and `secondary-slack-connector`, so there is one
+implementation and no ungated twin.
 
-- `--approved`, once the owner has explicitly approved the draft. This is the
-  form to use when an agent is sending on the owner's behalf.
-- `SLACK_SEND_UNATTENDED=1` in the environment, for cron and automation that
-  legitimately runs with no human present.
+The command refuses before touching the network unless `--approved` is passed,
+and approval is per message: pass it only once the owner has explicitly signed off on
+that specific draft.
 
 ```bash
 python3 .agent/skills/slack-connector/scripts/slack_client.py --action post \
   --channel <CHANNEL_ID> --text "Your message" --approved
 ```
 
-Without either, the command exits nonzero and prints both ways to proceed.
-Never retry a refused send by adding `--approved` on a guess; only pass it
-once the owner has actually approved the message.
+There is deliberately no environment escape hatch. An env flag would be
+process-wide and permanent, so exporting it once into a shell or cron
+environment would un-gate every later send in that process tree, which is the
+opposite of the per-message approval the rule requires. Unattended callers pass
+approval explicitly at their own call site; `dashboard/server.py` does this on
+the click path.
+
+`token.env` supplies credentials only. The loader refuses any key that would
+relax the gate, so a credentials file can never grant send authorization.
+
+Without `--approved`, the command exits nonzero. Never retry a refused send by
+adding `--approved` on a guess; only pass it once the owner has actually approved
+the message.

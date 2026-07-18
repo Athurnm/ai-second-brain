@@ -30,6 +30,10 @@ BASE_DIR = SCRIPT_DIR
 CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 TOKEN_FILE = os.path.join(BASE_DIR, 'token.json')
 
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 # Scopes - drive.file only accesses files created by this app
 # Change to 'https://www.googleapis.com/auth/drive' for full access (requires re-auth)
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -104,12 +108,13 @@ def update_file(file_id, file_path, convert_to_docs=False):
             media_body=media,
             fields='id, webViewLink'
         ).execute()
+        assert_drive_result(file, 'gdrive_manager (personal) update')
         print(f"File ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
-        
+
         # Always set permissions to anyone can comment by default
         set_commenter_permission(service, file.get('id'))
-        
+
         return file.get('id')
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -142,12 +147,13 @@ def upload_file(file_path, folder_id=None, convert_to_docs=False, share=False, r
 
     try:
         file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        assert_drive_result(file, 'gdrive_manager (personal) upload')
         print(f"File ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
 
         # Always set permissions to anyone can comment by default
         set_commenter_permission(service, file.get('id'))
-        
+
         return file.get('id')
 
     except Exception as e:

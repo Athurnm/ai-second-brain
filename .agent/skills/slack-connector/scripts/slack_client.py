@@ -8,6 +8,12 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SKILL_DIR, '..', '..', '..', '..'))
+
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import require_send_approval  # Outbound send gate (CLAUDE.md)
+
 # Ensure terminal outputs are always encoded in UTF-8 to prevent Windows UnicodeEncodeError
 try:
     if sys.stdout.encoding != 'utf-8':
@@ -479,28 +485,6 @@ def lookup_user_by_name(token, name, channel_id=None):
             
     return None
 
-def _require_send_approval(action_label, approved):
-    """Default-block gate for every action that sends a message or otherwise
-    mutates outbound Slack state. Must be called BEFORE any network request
-    is issued for that action. Two ways to proceed:
-      1. --approved, once the owner has explicitly signed off on the draft.
-      2. SLACK_SEND_UNATTENDED=1 in the environment, for cron/automation that
-         legitimately runs with no human present.
-    Refuses (exit nonzero, stderr) otherwise. See CLAUDE.md's Slack rule."""
-    if os.environ.get("SLACK_SEND_UNATTENDED") == "1":
-        return
-    if approved:
-        return
-    print(
-        f"Error: refusing to {action_label} without approval. This action sends "
-        "to Slack and needs the owner's explicit sign-off before it hits the network. "
-        "Proceed one of two ways: (1) pass --approved once the owner has approved the "
-        "draft, or (2) set SLACK_SEND_UNATTENDED=1 in the environment for "
-        "unattended cron/automation that legitimately runs with no human present.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
 def post_message(token, channel_id, text, thread_ts=None, unfurl=False):
     """
     Posts a message to a channel (or as a thread reply when thread_ts is set),
@@ -605,7 +589,7 @@ def main():
     parser.add_argument("--thread-ts", dest="thread_ts", help="Parent message ts to reply in-thread (post action).")
     parser.add_argument("--text-file", dest="text_file", help="Read post text from a file instead of --text (avoids shell escaping).")
     parser.add_argument("--unfurl", action="store_true", help="Enable link/media unfurling on post (default: off).")
-    parser.add_argument("--approved", action="store_true", help="Confirm the owner has explicitly approved this send before it goes out. Required for post/upload/invite unless SLACK_SEND_UNATTENDED=1 is set (cron/automation with no human present).")
+    parser.add_argument("--approved", action="store_true", help="Confirm the owner has explicitly approved this specific send before it goes out. Required for post/upload/invite; there is no environment override.")
     parser.add_argument("--full", action="store_true", help="Disable the 100-char truncation in history/search output (print full message text).")
 
     args = parser.parse_args()
@@ -615,6 +599,13 @@ def main():
 
     # Auto-load token.env from the connector directory so SLACK_USER_TOKEN /
     # SLACK_BOT_TOKEN are available without a manual export.
+    #
+    # token.env carries credentials only. It must never be able to grant
+    # authorization, so keys that would relax the send gate are refused here
+    # even though the gate itself no longer consults the environment. This
+    # keeps a future re-introduction of an env flag from silently becoming
+    # writable by a credentials file.
+    _TOKEN_ENV_DENYLIST = {"SLACK_SEND_UNATTENDED"}
     _token_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "token.env")
     if os.path.exists(_token_env):
         with open(_token_env) as _f:
@@ -622,7 +613,15 @@ def main():
                 _line = _line.strip()
                 if _line and not _line.startswith("#") and "=" in _line:
                     _k, _v = _line.split("=", 1)
-                    os.environ.setdefault(_k.strip(), _v.strip())
+                    _k = _k.strip()
+                    if _k in _TOKEN_ENV_DENYLIST:
+                        print(
+                            f"[WARN] Ignoring '{_k}' in token.env: that file supplies "
+                            "credentials only and cannot grant send authorization.",
+                            file=sys.stderr,
+                        )
+                        continue
+                    os.environ.setdefault(_k, _v.strip())
 
     # Token selection. Default to the owner's user token (xoxp) for EVERY action:
     # it is a member of every channel the owner is in and is the only token type
@@ -696,7 +695,7 @@ def main():
         if not args.channel or not args.path:
             print("Error: --channel and --path are required for upload action.", file=sys.stderr)
             sys.exit(1)
-        _require_send_approval("upload a file to Slack", args.approved)
+        require_send_approval("upload a file to Slack", args.approved)
         upload_file(token, args.channel, args.path, args.comment)
     elif args.action == "post":
         text = args.text
@@ -706,13 +705,13 @@ def main():
         if not args.channel or not text:
             print("Error: --channel and (--text or --text-file) are required for post action.", file=sys.stderr)
             sys.exit(1)
-        _require_send_approval("post a Slack message", args.approved)
+        require_send_approval("post a Slack message", args.approved)
         post_message(token, args.channel, text, thread_ts=args.thread_ts, unfurl=args.unfurl)
     elif args.action == "invite":
         if not args.channel or not args.users:
             print("Error: --channel and --users are required for invite action.", file=sys.stderr)
             sys.exit(1)
-        _require_send_approval("invite users to a Slack channel", args.approved)
+        require_send_approval("invite users to a Slack channel", args.approved)
         invite_user(token, args.channel, args.users)
     elif args.action == "join":
         if not args.channel:

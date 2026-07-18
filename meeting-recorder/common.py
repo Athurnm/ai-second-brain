@@ -41,10 +41,16 @@ def detect_platform():
 
     Asks harness_config first so there is one platform table in the repo. The
     inline table stays as a fallback only: the recorder runs under cron and must
-    not fail to pick a machine profile because a helper module moved."""
+    not fail to pick a machine profile because a helper module moved.
+
+    Must stay on harness_config's platform-only path (platform_facts, which
+    platform() also wraps) and never on load(): load() resolves the RUNTIME too, and
+    outside claude-code that shells into `agy models` behind an 8s timeout,
+    measured at 6.9s. This function only ever needed the OS name, and the
+    recorder calls it on every cron tick."""
     if harness_config is not None:
         try:
-            plat = harness_config.platform()
+            plat = harness_config.platform_facts().get("platform")
             if plat in ("macos", "wsl", "windows"):
                 return plat
         except Exception:

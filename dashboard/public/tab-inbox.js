@@ -329,8 +329,17 @@ window.Tabs = window.Tabs || {};
       approve.disabled = true;
       approve.textContent = '⏳ Mengirim…';
       try {
-        const r = await U.fetchJSON('/api/inbox-send', {
+        /* one-shot approval token, minted for THIS item right after the confirm and
+           consumed by the send. Server-side the send route also demands the browser
+           fetch-metadata headers, so an AI worker with a shell on this box can't
+           curl localhost and push a message out as the owner. */
+        const t = await U.fetchJSON('/api/inbox-send-token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        const r = await U.fetchJSON('/api/inbox-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-PSB-Send-Token': t.token },
           body: JSON.stringify({ id, text }), timeoutMs: 60000,
         });
         Comp.toast(`Terkirim ke ${chan} ✓`, true);

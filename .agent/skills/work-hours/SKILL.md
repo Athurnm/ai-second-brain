@@ -1,6 +1,6 @@
 ---
 name: work-hours
-description: Reconstruct the owner's working hours per day from digital traces (Claude Code transcripts, meetings, git) — parallel streams, actual vs effective hours, leverage multiplier. Feeds the ⏱ Hours tab on the visual dashboard.
+description: Reconstruct the owner's working hours per day from digital traces (Claude Code transcripts, Antigravity conversations, meetings, git), parallel streams, actual vs effective hours, leverage multiplier. Feeds the ⏱ Hours tab on the visual dashboard.
 ---
 
 # work-hours
@@ -39,6 +39,30 @@ dan berapa leverage-nya (output paralel ÷ jam aktual).
   strictly back-to-back meetings stay separate.
 - Lanes: Meetings / Work PM / You / Other AI. Stream labels from the session's
   `aiTitle` (fallback: slash command or first prompt).
+- **Antigravity reader**: harvests `~/.gemini/antigravity-cli/conversations/*.db`
+  (one SQLite file per conversation, opened read-only) alongside the Claude Code
+  reader, tagged `runtime: antigravity`. It measures per-step activity timestamps
+  and user-turn timestamps directly from the protobuf metadata blob, so block
+  clustering and `attention_h` are exact for this runtime too. What it can only
+  infer: interactive-vs-automation (a conversation with fewer than
+  `WORK_HOURS_AGY_MIN_TURNS`, default 2, user turns counts as a one-shot
+  automated call and is excluded, since Antigravity has no `entrypoint` field
+  like Claude Code does) and lane/client attribution (read from the optional
+  `conversation_summaries.db`, falling back to `other` when that db has no
+  match). Model attribution is unavailable entirely: the conversation store
+  records no model id. The legacy IDE store
+  (`~/.gemini/antigravity/conversations/*.pb`) is raw protobuf with no step
+  table; it is counted (so the UI can say it exists) but never parsed. Every
+  day's `sources` block in state discloses which of these were measured versus
+  inferred versus unavailable, so the Hours tab never renders a degraded number
+  as if it were measured.
+  - Disable this reader with `--no-antigravity` on `sweep`.
+  - Env vars: `WORK_HOURS_AGY_DIRS` (conversation db directories, default
+    `~/.gemini/antigravity-cli/conversations`), `WORK_HOURS_AGY_SUMMARY` (summary
+    db path), `WORK_HOURS_AGY_LEGACY` (legacy protobuf dir),
+    `WORK_HOURS_AGY_MIN_TURNS` (user-turn threshold for counting a conversation
+    as interactive, default 2), `WORK_HOURS_GIT_REPOS` (extra repos scanned for
+    commit markers, beyond this repo's defaults).
 
 ## Usage
 
@@ -46,6 +70,7 @@ dan berapa leverage-nya (output paralel ÷ jam aktual).
 python3 .agent/skills/work-hours/scripts/work_hours.py sweep --backfill 2   # cron form
 python3 .agent/skills/work-hours/scripts/work_hours.py sweep --backfill 14  # rebuild 2 weeks
 python3 .agent/skills/work-hours/scripts/work_hours.py sweep --date 2026-07-10
+python3 .agent/skills/work-hours/scripts/work_hours.py sweep --backfill 2 --no-antigravity  # Claude Code only
 python3 .agent/skills/work-hours/scripts/work_hours.py show  --date 2026-07-16
 ```
 

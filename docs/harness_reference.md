@@ -216,7 +216,7 @@ Use `pdftotext`, not the `Read` tool. Use `Read` only when the user directly ask
 - **Dedupe: one meeting -> one MOM.** All three write to `journal/fathom_registry.json`; entries for the same `matched_meeting`+date are cross-referenced (`related_recordings`) and MOM drafting is skipped when a related entry already has `mom_path`. Full detail: [`meeting-recorder/README.md`](../meeting-recorder/README.md).
 
 ### Slack
-- **Slack** -- [`.agent/skills/slack-connector/scripts/slack_client.py`](../.agent/skills/slack-connector/scripts/slack_client.py): read history/threads + **SEND AS the owner via `--action post`** (uses the owner's user token `SLACK_USER_TOKEN` / xoxp by default, no bot footer; `--thread-ts`, `--text-file`, prints permalink). **NEVER send via the MCP Slack tools (those post as the Claude bot); confirm with the owner before EVERY send.**
+- **Slack** -- [`.agent/skills/slack-connector/scripts/slack_client.py`](../.agent/skills/slack-connector/scripts/slack_client.py): read history/threads + **SEND AS the owner via `--action post`** (uses the owner's user token `SLACK_USER_TOKEN` / xoxp by default, no bot footer; `--thread-ts`, `--text-file`, prints permalink). **`--approved` is mandatory on `post`/`upload`/`invite`** -- the script refuses to send without it, and there is no environment-variable override, so pass it only once the owner has actually signed off on that draft. **NEVER send via the MCP Slack tools (those post as the Claude bot); confirm with the owner before EVERY send.**
 
 ### Figma
 - **Figma (raw API)** -- [`.agent/skills/figma-connector/scripts/figma_client.py`](../.agent/skills/figma-connector/scripts/figma_client.py): REST fallback; prefer MCP Figma for design context.

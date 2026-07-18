@@ -45,6 +45,9 @@ RUNS_DIR = os.path.join(BASE_DIR, 'journal', 'ai_runs')
 
 MAX_RUNNING = 2          # never more than N concurrent workers
 STALE_MIN = 45           # a "running" worker older than this stops blocking a slot
+TRIAGE_TIMEOUT = 180     # ceiling handed to the BACKEND (per candidate under agy);
+                         # the parent's own ceiling comes from ai_call.parent_timeout
+MAX_SPAWN_ATTEMPTS = 3   # dispatch tries this often before an unrunnable item is terminal
 
 # category -> (model alias, effort label, thinking directive woven into the prompt).
 # Mirrors the subagent routing table in CLAUDE.md: cheap+mechanical -> haiku, judgment -> opus.
@@ -202,14 +205,23 @@ def _run_triage(pending):
                 'ticket_title': i['ticket_title'], 'ticket_status': i['status']}
                for n, i in enumerate(pending)]
     prompt = TRIAGE_SYS + "\n\nCOMMANDS:\n" + json.dumps(payload, ensure_ascii=False)
-    spec = ai_call.plan(prompt, task='harvest', model='haiku', output_format='json')
+    # Triage only classifies text, so it needs no tools and any backend will do.
+    # TRIAGE_TIMEOUT is the ceiling handed to the backend, and under agy-bridge it
+    # is PER CANDIDATE, not for the whole call: the bridge walks its capability
+    # chain at that ceiling each time. So the parent ceiling is whatever
+    # ai_call.parent_timeout computed from the real chain (spec['parent_timeout']),
+    # never TRIAGE_TIMEOUT + DEFAULT_GRACE, which would kill the bridge mid-chain
+    # and make the FALLBACK_EXIT branch below unreachable.
+    spec = ai_call.plan(prompt, task='harvest', model='haiku', output_format='json',
+                        timeout=TRIAGE_TIMEOUT)
     if spec['backend'] == 'none':
         print(f'triage: no AI backend available ({spec["note"]}); leaving pending.',
               file=sys.stderr)
         return {}
+    ceiling = spec.get('parent_timeout') or (TRIAGE_TIMEOUT + ai_call.DEFAULT_GRACE)
     try:
         r = subprocess.run(spec['argv'], cwd=BASE_DIR, capture_output=True, text=True,
-                           timeout=180, env=_child_env())
+                           timeout=ceiling, env=_child_env())
     except Exception as e:
         print(f'triage: FAILED to run {spec["backend"]} ({e}); leaving pending.', file=sys.stderr)
         return {}
@@ -251,6 +263,50 @@ def _run_triage(pending):
 
 # ─────────────────────────── dispatch ───────────────────────────
 
+SENTINEL = 'AI_TASK_DONE rc='
+
+def _sentinel_rc(tail):
+    """Exit code from the worker's sentinel line, or None while it is still running."""
+    idx = tail.rfind(SENTINEL)
+    if idx == -1:
+        return None
+    try:
+        return int(tail[idx + len(SENTINEL):].split()[0])
+    except (IndexError, ValueError):
+        return -1
+
+def _finalize(item, rc):
+    """Terminal state for a finished worker. Returns the fields to merge.
+
+    Exit code alone is NOT evidence of work. Every worker prompt names a draft file
+    it must write, so a run that exits 0 without leaving a non-empty file at that
+    path produced nothing, usually because the backend had no write tool at all.
+    Marking that 'done' is a false clean reading, and this harness has already lost
+    a day to one (a reconciler reporting 0 of 0 meetings unminuted while three had
+    no minutes). The rule from that incident: no capture artifact means alarm,
+    never silence. So a missing or empty expected result is an 'error', which
+    cmd_report surfaces at the top."""
+    fields = {'rc': rc, 'finished_wib': _now_wib()}
+    if rc != 0:
+        fields.update({'state': 'error', 'reason': f'worker exited rc={rc}'})
+        return fields
+    expected = item.get('draft_path')
+    if not expected:
+        fields['state'] = 'done'   # nothing was declared, nothing to verify
+        return fields
+    try:
+        size = os.path.getsize(os.path.join(BASE_DIR, expected))
+    except OSError:
+        size = -1
+    if size <= 0:
+        fields.update({'state': 'error',
+                       'reason': 'exited rc=0 but expected result %s is %s'
+                                 % (expected, 'empty' if size == 0 else 'missing')})
+        return fields
+    # a finished worker with a real draft on disk awaits the owner's review
+    fields.update({'state': 'review', 'result_bytes': size})
+    return fields
+
 def _running_workers(q):
     now = time.time()
     out = []
@@ -260,21 +316,16 @@ def _running_workers(q):
         # reconcile against the run's sentinel/log so a finished worker frees a slot
         rid = i.get('run_id')
         log = os.path.join(RUNS_DIR, f'{rid}.log') if rid else None
-        done = False
+        rc = None
         if log and os.path.exists(log):
             try:
                 with open(log, encoding='utf-8', errors='replace') as fh:
                     tail = fh.read()[-2000:]
-                if 'AI_TASK_DONE rc=' in tail:
-                    done = True
+                rc = _sentinel_rc(tail)
             except OSError:
                 pass
-        if done:
-            # a finished worker with a draft on disk awaits the owner's review; otherwise just done
-            dp = i.get('draft_path')
-            has_draft = bool(dp and os.path.exists(os.path.join(BASE_DIR, dp)))
-            i['state'] = 'review' if has_draft else 'done'
-            i['finished_wib'] = _now_wib()
+        if rc is not None:
+            i.update(_finalize(i, rc))
             continue
         if now - (i.get('started_epoch') or 0) < STALE_MIN * 60:
             out.append(i)
@@ -334,11 +385,33 @@ def _spawn_worker(item, category):
         'mcp__claude_ai_Google_Drive__get_file_metadata,'
         'mcp__claude_ai_Slack__slack_search_public_and_private,'
         'mcp__claude_ai_Slack__slack_read_thread,mcp__claude_ai_Slack__slack_read_channel')
-    spec = ai_call.plan(prompt, model=model, output_format='json', allowed_tools=tools)
+    # require_tools: the prompt's whole deliverable is the draft FILE, so a backend
+    # that cannot write one cannot do this job no matter what it prints. ai_call
+    # refuses the sandboxed tool-less route rather than handing back an argv that
+    # would exit 0 having produced nothing.
+    spec = ai_call.plan(prompt, model=model, output_format='json',
+                        allowed_tools=tools, require_tools=True)
     if spec['backend'] == 'none':
-        # No model can run this. Say so and leave the item pending; a half-spawned
-        # worker that never writes a draft is worse than a deferred one.
-        print(f'  SKIP  {item["key"]:<22} no AI backend ({spec["note"]})')
+        # No model can run this. A half-spawned worker that never writes a draft is
+        # worse than a deferred one, so we do not dispatch. But leaving it pending
+        # FOREVER is its own bug: every later dispatch re-triages it (one paid model
+        # call per run) and reprints the same SKIP line, so a permanently unrunnable
+        # item burns budget quietly and never reaches anyone. Retry a bounded number
+        # of times (the backend may just be down), then make it terminal 'error' so
+        # cmd_report and the dashboard command-queue endpoint both surface it.
+        reason = spec.get('reason', 'no-backend')
+        n = int(item.get('spawn_attempts') or 0) + 1
+        item.update({'spawn_attempts': n, 'last_spawn_reason': reason,
+                     'last_spawn_note': spec.get('note', ''),
+                     'last_spawn_wib': _now_wib()})
+        if n >= MAX_SPAWN_ATTEMPTS:
+            item.update({'state': 'error', 'finished_wib': _now_wib(),
+                         'reason': 'no backend could run this after %d attempt(s): %s (%s)'
+                                   % (n, reason, spec.get('note', ''))})
+            print(f'  BLOCK {item["key"]:<22} {reason} after {n} attempt(s) -> error (needs a backend)')
+        else:
+            print(f'  SKIP  {item["key"]:<22} {reason} ({spec["note"]}) '
+                  f'[attempt {n}/{MAX_SPAWN_ATTEMPTS}, stays pending]')
         return None
     shell_cmd = shlex.join(spec['argv']) + '; echo AI_TASK_DONE rc=$?'
     with open(log_path, 'w', encoding='utf-8') as log_fh:
@@ -431,12 +504,19 @@ def cmd_report(_args):
     for i in items:
         by.setdefault(i['state'], []).append(i)
     print(f'## 🤖 Command queue — {len(items)} total (last run {q.get("last_run","?")})\n')
+    if by.get('error'):
+        # top of the report on purpose: a worker that finished without producing its
+        # draft is a silent failure, and silence is exactly how these get missed
+        print(f'### ⚠️ Produced nothing ({len(by["error"])}): needs a re-run')
+        for i in sorted(by['error'], key=lambda x: x.get('ts_wib', '')):
+            print(f'- **{i["ticket_id"]}** {i["command"][:60]}  → {i.get("reason","unknown")}')
+        print()
     if by.get('review'):
         print(f'### 📋 Awaiting your approval ({len(by["review"])})')
         for i in sorted(by['review'], key=lambda x: x.get('ts_wib', '')):
             print(f'- **{i["ticket_id"]}** {i["command"][:70]}  → [{i.get("draft_path","")}]')
         print()
-    for state in ('dispatched', 'pending', 'done', 'skipped'):
+    for state in ('dispatched', 'pending', 'done', 'skipped'):   # 'error' printed above
         rows = by.get(state, [])
         if not rows:
             continue

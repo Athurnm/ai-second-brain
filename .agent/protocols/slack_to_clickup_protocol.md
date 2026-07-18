@@ -1,5 +1,8 @@
 # Protocol: Slack-to-ClickUp Ticket Creation
 
+> [!WARNING]
+> **DEPRECATED -- do not follow.** ClickUp is not used for Work or Secondary, and Work tasks never connect to ClickUp (see CLAUDE.md and GEMINI.md). This protocol is retained only for history; it is orphaned (no active pointer references it) and contradicts the current rule. Do not create ClickUp tasks from Slack threads per this workflow.
+
 This protocol defines the mandatory communication steps when a Slack thread leads to the creation of a ClickUp ticket.
 
 > [!IMPORTANT]

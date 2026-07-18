@@ -322,7 +322,7 @@ A second brain that only reports over chat still asks you to take its word for i
 python3 dashboard/server.py
 ```
 
-Then open **http://localhost:3737**. It is pure Python standard library, no build step, no pip install, and it binds to localhost only. It reads your repo's files live on every request, so it is never stale by more than the last click.
+Then open **http://localhost:3737**. It is pure Python standard library, no build step, no pip install. Note on exposure: the server binds `0.0.0.0` (all interfaces), not localhost only, because on WSL a Windows browser reaches the dashboard through a NAT gateway rather than over loopback, so a loopback-only bind would refuse the very browser it is meant to serve. Every request is instead checked against an in-process IP allowlist before it is handled: `127.0.0.1`, `::1`, and the detected WSL gateway. `DASHBOARD_ALLOWED_IPS` can only add addresses to that list, it cannot narrow it, so if an all-interfaces bind is not acceptable on your machine or network, put the port behind a firewall rule rather than reaching for that variable. It reads your repo's files live on every request, so it is never stale by more than the last click.
 
 ### Six tabs
 
@@ -362,7 +362,7 @@ The System tab keeps the economics visible, not just the activity:
 
 ### It runs on rails: the cron layer
 
-Everything above is fed by automation, not by you remembering to run a script. As of this writing, **56 active cron jobs** keep the harness current, including:
+Most of what is above is fed by automation, not by you remembering to run a script. The Hours tab just above is the exception: it is reconstructed on each page load from transcripts, meeting records, and git commits, not written by a cron job. The rest of the dashboard's tabs are kept fresh by this repo's own crontab entries, which number in the low tens. If you point this repo's cron setup at a crontab you already use for other projects, only the entries this repo installs belong to it, including:
 
 - Ledgers that sweep commitments, waiting-on items, and Slack mentions.
 - An inbox sweep that refreshes the Inbox tab.
@@ -373,7 +373,6 @@ Everything above is fed by automation, not by you remembering to run a script. A
 - Portfolio sync.
 - The meeting recorder's bot watcher.
 - A dashboard keepalive.
-- The work-hours sweep that keeps the Hours tab current.
 
 Each registered job reports a heartbeat, and a silent overnight failure shows up as a failing row on the System tab instead of going unnoticed. See `.agent/skills/harness-health/` for the health-check layer itself.
 
