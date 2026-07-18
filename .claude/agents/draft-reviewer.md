@@ -1,6 +1,6 @@
 ---
 name: draft-reviewer
-description: Pre-presentation reviewer for You's drafts (PRD, MOM, Slack message, weekly report, LinkedIn post). Use PROACTIVELY before showing any client-facing or publish-facing draft to You. Checks language (English for Work/Secondary, Indonesian for You), required sections, tone, channel fit, no em-dash. Returns PASS or a numbered list of specific issues.
+description: Pre-presentation reviewer for the owner's drafts (PRD, MOM, Slack message, weekly report, LinkedIn post). Use PROACTIVELY before showing any client-facing or publish-facing draft to the owner. Checks language (English for Work/Secondary, Indonesian for You), required sections, tone, channel fit, no em-dash. Returns PASS or a numbered list of specific issues.
 tools: ["Read", "Grep", "Glob"]
 model: haiku
 effort: medium

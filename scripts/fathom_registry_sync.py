@@ -12,7 +12,7 @@ Why this exists
 The Fathom API only returns recent meetings per page (~10) but DOES paginate via
 `next_cursor`. This script walks that cursor and accumulates results into a local
 file keyed by recording_id, so historical mappings are never lost even after they
-fall out of the API window. Goal: when You names "meeting X on date Y", we can
+fall out of the API window. Goal: when the owner names "meeting X on date Y", we can
 look up the right Fathom link instantly.
 
 Outputs

@@ -193,6 +193,14 @@ def get_thread_replies(token, channel_id, thread_ts):
             
     return replies
 
+FULL_OUTPUT = False  # when True, disable the 100-char truncation in history/search prints
+
+def _clip(text):
+    """Truncate to 100 chars for display unless --full was passed."""
+    if FULL_OUTPUT or len(text) <= 100:
+        return text
+    return text[:100] + "..."
+
 def get_channel_history(token, channel_id, limit=20, fetch_replies=False):
     """
     Gets history for a channel.
@@ -218,7 +226,7 @@ def get_channel_history(token, channel_id, limit=20, fetch_replies=False):
             file_info = " [FILES: " + ", ".join([f"{f.get('name')} (ID: {f.get('id')})" for f in files]) + "]"
         
         # Basic formatting
-        print(f"[{ts}] {user}: {text[:100]}...{file_info}" if len(text) > 100 else f"[{ts}] {user}: {text}{file_info}")
+        print(f"[{ts}] {user}: {_clip(text)}{file_info}")
         
         if fetch_replies and thread_ts and reply_count > 0:
             if threads_fetched >= MAX_THREADS_PER_CHANNEL:
@@ -233,7 +241,7 @@ def get_channel_history(token, channel_id, limit=20, fetch_replies=False):
                 r_user = reply.get("user", "Unknown")
                 r_text = reply.get("text", "")
                 r_ts = reply.get("ts", "")
-                print(f"    [{r_ts}] {r_user}: {r_text[:100]}..." if len(r_text) > 100 else f"    [{r_ts}] {r_user}: {r_text}")
+                print(f"    [{r_ts}] {r_user}: {_clip(r_text)}")
 
 def list_channel_members(token, channel_id):
     """
@@ -279,7 +287,7 @@ def search_messages(token, query):
         user = msg.get("user", "N/A")
         text = msg.get("text", "")
         ts = msg.get("ts", "")
-        print(f"[{ts}] {user} in #{channel} ({channel_id}): {text[:100]}...")
+        print(f"[{ts}] {user} in #{channel} ({channel_id}): {_clip(text)}")
 
 def list_users(token):
     """
@@ -478,6 +486,15 @@ def post_message(token, channel_id, text, thread_ts=None, unfurl=False):
     """
     import re
 
+    # Self-heal broken mention syntax that slips in from hand-written drafts.
+    # 1. HTML-escaped brackets render as literal text and never ping:
+    #    &lt;@U123&gt; -> <@U123>  (also #channel and !here/!channel/!subteam)
+    text = re.sub(r'&lt;([@#!][A-Z0-9]+(?:\|[^&]*?)?)&gt;', r'<\1>', text)
+    text = re.sub(r'&lt;(![a-z]+(?:\^[A-Z0-9]+)?(?:\|[^&]*?)?)&gt;', r'<\1>', text)
+    # 2. Legacy "<@ID|Name>" label form often renders literally; Slack shows the
+    #    canonical name from a bare "<@ID>", so strip any |label.
+    text = re.sub(r'<@([A-Z0-9]+)\|[^>]*>', r'<@\1>', text)
+
     # Find @username (alphanumeric, dots, underscores, dashes).
     # Negative lookbehind for '<' so already-formed <@USERID> mentions are left
     # alone (otherwise each would trigger a full users.list scan and get mangled).
@@ -549,7 +566,7 @@ def leave_channel(token, channel_id):
 def main():
     parser = argparse.ArgumentParser(description="Slack Connector Helper")
     parser.add_argument("--action", required=True, choices=["list_channels", "list_joined_channels", "history", "list_users", "user_info", "channel_members", "search", "channel_info", "file_info", "download", "upload", "post", "lookup", "invite", "join", "leave"], help="Action to perform")
-    parser.add_argument("--token", help="Explicit Slack token. Default for all actions is SLACK_USER_TOKEN (xoxp, You's), falling back to SLACK_BOT_TOKEN. Use --bot to force the bot token.")
+    parser.add_argument("--token", help="Explicit Slack token. Default for all actions is SLACK_USER_TOKEN (xoxp, the owner's), falling back to SLACK_BOT_TOKEN. Use --bot to force the bot token.")
     parser.add_argument("--channel", help="Channel ID for history, channel_members, upload, post, lookup, invite, join, and leave actions")
     parser.add_argument("--user", help="User ID/Name for user_info or lookup action")
     parser.add_argument("--users", help="User IDs (comma-separated) for invite action")
@@ -561,13 +578,17 @@ def main():
     parser.add_argument("--query", help="Query for search action")
     parser.add_argument("--limit", type=int, default=20, help="Number of messages to retrieve")
     parser.add_argument("--replies", action="store_true", help="Fetch thread replies in history")
-    parser.add_argument("--as-user", dest="as_user", action="store_true", help="Post as You using SLACK_USER_TOKEN (no Claude-bot footer). This is the default for the post action.")
+    parser.add_argument("--as-user", dest="as_user", action="store_true", help="Post as the owner using SLACK_USER_TOKEN (no Claude-bot footer). This is the default for the post action.")
     parser.add_argument("--bot", action="store_true", help="Force the bot token (xoxb) for post instead of the user token.")
     parser.add_argument("--thread-ts", dest="thread_ts", help="Parent message ts to reply in-thread (post action).")
     parser.add_argument("--text-file", dest="text_file", help="Read post text from a file instead of --text (avoids shell escaping).")
     parser.add_argument("--unfurl", action="store_true", help="Enable link/media unfurling on post (default: off).")
+    parser.add_argument("--full", action="store_true", help="Disable the 100-char truncation in history/search output (print full message text).")
 
     args = parser.parse_args()
+
+    global FULL_OUTPUT
+    FULL_OUTPUT = args.full
 
     # Auto-load token.env from the connector directory so SLACK_USER_TOKEN /
     # SLACK_BOT_TOKEN are available without a manual export.
@@ -580,12 +601,12 @@ def main():
                     _k, _v = _line.split("=", 1)
                     os.environ.setdefault(_k.strip(), _v.strip())
 
-    # Token selection. Default to You's user token (xoxp) for EVERY action:
-    # it is a member of every channel You is in and is the only token type
+    # Token selection. Default to the owner's user token (xoxp) for EVERY action:
+    # it is a member of every channel the owner is in and is the only token type
     # Slack allows for search.messages. The bot token (xoxb) is only in a couple
     # of channels and lacks history scope, so reads with it fail with
     # channel_not_found / not_in_channel / not_allowed_token_type. This also keeps
-    # sends going out AS You (no Claude-bot footer), per the standing rule.
+    # sends going out AS the owner (no Claude-bot footer), per the standing rule.
     # --token overrides everything; --bot forces the bot token (e.g. for actions
     # that must run as the app, like join); --as-user is kept for back-compat.
     if args.token:

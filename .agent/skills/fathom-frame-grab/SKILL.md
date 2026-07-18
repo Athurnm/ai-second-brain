@@ -15,7 +15,7 @@ the requested timestamps, decodes the frame nearest each timestamp, and saves a 
 (optionally cropped + scaled).
 
 ## When to use
-- You asks for a screenshot of something shown during a Fathom-recorded demo/meeting
+- the owner asks for a screenshot of something shown during a Fathom-recorded demo/meeting
   (e.g. "grab the checkout screen from the ExampleCo demo for the BRD").
 - You need a visual that exists only in a screen-share recording and no clean source
   screenshot is available.
@@ -26,15 +26,15 @@ Provide the `_fathom_session` cookie one of three ways:
 2. env `FATHOM_SESSION=<value>`
 3. `token.env` in this skill dir with `FATHOM_SESSION=<value>`
 
-Get it from You's Chrome: DevTools → Application → Cookies → `https://fathom.video` →
+Get it from the owner's Chrome: DevTools → Application → Cookies → `https://fathom.video` →
 click `_fathom_session` → copy the full value from the bottom "Cookie Value" panel. It is
 `HttpOnly`, so it won't appear in JS; it must be read from DevTools. **Session cookies
-expire** — if you get a `sign_in` redirect, ask You to refresh it.
+expire** — if you get a `sign_in` redirect, ask the owner to refresh it.
 
 ## Usage
 ```bash
 python3 .agent/skills/fathom-frame-grab/scripts/fathom_frame_grab.py \
-  --call 724217462 \
+  --call 123456789 \
   --at 25:20,26:00 \
   --out ./shots \
   --cookie <_fathom_session> \

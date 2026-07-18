@@ -70,8 +70,8 @@ function canRender(container) {
   return !(a && container && container.contains(a) && a.matches('input, textarea, select'));
 }
 
-/* ── Router: #today (default) | #work[/filter] | #meetings | #system ── */
-const TAB_NAMES = ['today', 'work', 'meetings', 'system'];
+/* ── Router: #today (default) | #inbox | #work[/filter] | #meetings | #system ── */
+const TAB_NAMES = ['today', 'inbox', 'work', 'meetings', 'hours', 'system'];
 
 function parseHash() {
   const h = (location.hash || '#today').replace(/^#/, '');
@@ -127,13 +127,15 @@ async function refreshOverview(manual = false) {
   if (document.hidden && !manual) return;
   const btn = $id('btn-refresh');
   btn.classList.add('is-busy');
-  const [ovRes, progRes, briefRes, aiRes] = await Promise.allSettled([
+  const [ovRes, progRes, briefRes, aiRes, cqRes] = await Promise.allSettled([
     U.fetchJSON('/api/overview'),
     U.fetchJSON('/api/progress'),
     U.fetchJSON('/api/briefing'),
     U.fetchJSON('/api/ai-task?list=1'),
+    U.fetchJSON('/api/command-queue'),
   ]);
   if (aiRes.status === 'fulfilled') AI.adoptList(aiRes.value && aiRes.value.runs);
+  App.commandQueue = cqRes.status === 'fulfilled' ? cqRes.value : null;
   if (ovRes.status === 'fulfilled') {
     App.overview = ovRes.value;
     App.overviewError = null;
@@ -211,6 +213,7 @@ function renderToday() {
     momentumBand(),
     briefingCard(),
     escalationStrip(ov),
+    `<div id="today-approvals">${approvalsCard()}</div>`,
     actionItemsCard(ov),
     `<div class="two-col">
        <div class="stack">
@@ -237,7 +240,7 @@ function wibHourFromIso(iso) {
 }
 
 /* 📊 Momentum band — 4 trendCards from /api/progress, directly under the
-   hero tiles (You: "grafik cantik biar seneng lihat progress"). Fetch
+   hero tiles (the owner: "grafik cantik biar seneng lihat progress"). Fetch
    failure (App.progress stays null) -> band absent, no chrome at all. */
 function momentumBand() {
   const p = App.progress;
@@ -255,7 +258,7 @@ function momentumBand() {
 
 /* 🗞️ Briefing card — newest Pagi/Malam section from /api/briefing. Collapsed
    by default, EXCEPT a still-fresh morning briefing before 15:00 WIB (opened
-   so You sees it without an extra click). "Lihat yang sebelumnya" opens
+   so the owner sees it without an extra click). "Lihat yang sebelumnya" opens
    `other` (the other kind's most recent section) in the Drawer. Empty/failed
    fetch -> card absent. */
 function briefingCard() {
@@ -386,7 +389,20 @@ document.addEventListener('click', async e => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, action }),
     });
-    Comp.toast(action === 'close' ? `Ditandai selesai: ${id}` : `Nudge dicatat: ${id}`, true);
+    /* close is reversible (mis-click safety): the toast carries an Undo that
+       POSTs action:'reopen' — same endpoint, watchdog CLI restores the item */
+    const undo = action === 'close' ? {
+      label: 'Undo',
+      onClick: async () => {
+        await U.fetchJSON('/api/waiting-close', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, action: 'reopen' }),
+        });
+        Comp.toast(`Dibuka lagi: ${id}`, true);
+        refreshOverview(true);
+      },
+    } : null;
+    Comp.toast(action === 'close' ? `Ditandai selesai: ${id}` : `Nudge dicatat: ${id}`, true, undo);
     refreshOverview(true);
   } catch (err) {
     Comp.toast(`Gagal: ${err.message}`, false);
@@ -394,7 +410,7 @@ document.addEventListener('click', async e => {
   }
 });
 
-/* plain-prose escalation draft in You's voice: flowing sentences, no
+/* plain-prose escalation draft in the owner's voice: flowing sentences, no
    emoji, no bullet lists. NEVER a send path — Drawer + Copy button only. */
 function buildEscalationDraft(it) {
   const what = it.what || 'this item';
@@ -481,6 +497,54 @@ document.addEventListener('click', e => {
   e.preventDefault();
   const label = link.closest('.action-item-row')?.querySelector('.row-title')?.getAttribute('title') || 'Meeting notes';
   Drawer.open(label, href);
+});
+
+/* 📋 Commands awaiting approval — command-queue workers that finished and left a
+   draft for the owner to review. Empty (no chrome) when nothing is pending. Each row
+   opens the draft in the Drawer (rendered markdown) and can be ack'd to clear it. */
+function approvalsCard() {
+  const review = App.commandQueue?.review || [];
+  if (!review.length) return '';
+  const rows = review.map(r => `
+    <div class="row" data-cq-row="${U.esc(r.key)}">
+      <div class="row-main">
+        <span class="row-title" title="${U.esc(r.command || '')}">
+          <strong>${U.esc(r.ticket_id || '')}</strong> ${U.esc((r.command || '').slice(0, 90))}
+        </span>
+        <span class="row-meta">${U.esc(r.category || '')}${r.model ? ' · ' + U.esc(r.model) : ''}</span>
+      </div>
+      <span class="row-right">
+        <button class="prep-link" data-drawer-path="${U.esc(r.draft_path || '')}"
+          data-drawer-title="${U.esc((r.ticket_id || '') + ' — draft')}">📄 review draft</button>
+        <button class="prep-link cq-ack-btn" data-cq-key="${U.esc(r.key)}" title="Mark reviewed">✓ done</button>
+      </span>
+    </div>`).join('');
+  return Comp.card({
+    key: 'cmd-approvals', icon: '📋', title: 'Commands awaiting your approval',
+    count: `${review.length}`, open: true,
+    body: `<div class="rows">${rows}</div>`,
+  });
+}
+
+/* ack a reviewed command-queue draft -> clears it from the approval list */
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.cq-ack-btn');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const key = btn.getAttribute('data-cq-key');
+  btn.disabled = true;
+  try {
+    await U.fetchJSON('/api/command-queue-ack', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    btn.closest('[data-cq-row]')?.remove();
+    Comp.toast('Draft acknowledged', true);
+  } catch (err) {
+    btn.disabled = false;
+    Comp.toast(`Ack failed: ${err.message}`, false);
+  }
 });
 
 /* today's meetings: calendar (slow, separate fetch) joined with prep cards */
@@ -700,7 +764,7 @@ function ticketRow(t, today) {
       Comp.badge((t.priority || 'p2').toLowerCase(), t.priority || '—'),
       Comp.badge(projCat(t.project), t.project || 'Other'),
     ],
-    meta: t.owner && t.owner !== 'You' ? t.owner : '',
+    meta: t.owner && t.owner !== 'the owner' ? t.owner : '',
     right: dueBadge,
     expandBody,
   });

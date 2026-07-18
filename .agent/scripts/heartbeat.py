@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared heartbeat for scheduled routines + specialist agents (observability).
 
-Each job/agent appends one status row so You can SEE on the localhost:3737 "Routines"
+Each job/agent appends one status row so the owner can SEE on the localhost:3737 "Routines"
 panel whether a 2am cloud routine succeeded, without polling. No human owner needed: the
 system self-reports; a ❌ row (or a stale last-success) is the signal to act.
 

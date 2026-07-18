@@ -296,6 +296,22 @@ Two levers pull at the same time:
 
 > These figures are an **illustrative model from list prices, not a published benchmark.** Your exact numbers depend on how many meetings you had, transcript length, and caching. The two levers and their direction hold regardless: bulk work on a 5x-cheaper tier, and a flagship context that never bloats with raw source. The same pattern applies to deep-research briefs, large PRDs, and any gather-then-synthesize job.
 
+### Optional: offload bulk work to non-Claude models
+
+The repo ships an optional **model bridge** (`.agent/skills/agy-bridge/`) that can route harvest, critique, and research subtasks to cheaper non-Claude backends (GLM, Kimi, Gemini via CLI) when you happen to have those subscriptions.
+
+**You do not need any of them.** With no bridge backends configured, every caller detects it instantly and falls back to the Claude tiers above; the whole harness runs Claude-only at full capability. The bridge is a cost saver for people who already pay for a second model, never a requirement. Run `python3 .agent/skills/agy-bridge/run.py --doctor` to see your mode.
+
+### It keeps getting cheaper: the token-efficiency loop
+
+Cost discipline is not a one-time setup, so the harness audits itself:
+
+- A weekly cron runs `.agent/scripts/token_efficiency.py report`: tokens, cost, and offload share per task type, week over week, from real usage logs.
+- Every change made to save tokens is recorded with `token_efficiency.py log-change`, so the next report shows each optimization next to its **observed** effect, not its promised one.
+- The dashboard renders the trend, the current top-3 token hotspots, and the what-changed log; weekly planning picks at most one hotspot to optimize next.
+
+The protocol lives in `.agent/protocols/token_efficiency.md`.
+
 ---
 
 ## Getting Started
@@ -329,12 +345,7 @@ Deeper references:
 - **`docs/DASHBOARD.md`** to run the local visual dashboard at `http://localhost:3737`.
 - **`docs/ARCHITECTURE.md`** for how the pieces fit together.
 - **`docs/UPDATING.md`** to pull the latest template updates into your fork (or just type `/update-harness`).
-- **`SETUP_AGENT.md`** the agent-run onboarding playbook. Not using Claude Code? Open the repo in
-  Cursor or Antigravity and tell your agent *"read SETUP_AGENT.md and run it to set me up."* It
-  interviews you, writes your `CLAUDE.md` and `AGENTS.md`, and connects your tools for you.
 - **`docs/INSTALL_ID.md`** untuk panduan instalasi langkah demi langkah dalam Bahasa Indonesia (workshop companion).
-- **`docs/workshop/PANDUAN_CURSOR_ANTIGRAVITY.md`** panduan setup untuk pengguna **Cursor** atau **Antigravity** (Bahasa Indonesia, workshop AI Circle).
-- **`docs/workshop/SETUP_OTOMATIS.md`** jalan cepat: biarkan AI yang memasang, kamu cukup mengarahkan (Bahasa Indonesia).
 
 ---
 
@@ -350,7 +361,6 @@ Deeper references:
 meeting-recorder/   Record + transcribe meetings locally (macOS, Windows, Linux)
 dashboard/          Local visual dashboard web app (http://localhost:3737)
 docs/               Setup, customizing, and architecture guides
-SETUP_AGENT.md      Agent-run onboarding: tell your agent to read and run it
 CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 ```
 
@@ -360,10 +370,9 @@ CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 
 **Ready to start?**
 
-Open the folder in your editor and run **`/setup`** (Claude Code), or tell your agent in **Cursor**
-or **Antigravity**: *"read `SETUP_AGENT.md` and run it to set me up."* Either way the AI interviews
-you, requests access to your tools, and writes your `CLAUDE.md` for you. Prefer to do it by hand?
-Read `docs/SETUP.md`, fill in your `CLAUDE.md`, and let your second brain get to work.
+Open the folder in your editor and run **`/setup`**. The AI interviews you, requests access to
+your tools, and writes your `CLAUDE.md` for you. Prefer to do it by hand? Read `docs/SETUP.md`,
+fill in your `CLAUDE.md`, and let your second brain get to work.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
 

@@ -52,15 +52,15 @@ When a task is completed or a status changes, perform ALL 7 steps in order.
 - **Target**: `journal/master_followup_tracker.md`
 - **Actions**:
 
-    #### For Self-Tasks (You completed something):
+    #### For Self-Tasks (the owner completed something):
     - Find the item in **Immediate Priorities (Self)** table.
     - Change `[ ]` to `[x]` and Status from `PENDING` to `DONE`.
     - If this task was a prerequisite for an external follow-up, note it in that external item's "Notes" column.
 
-    #### For External Tasks (Someone delivered something You was waiting on):
+    #### For External Tasks (Someone delivered something the owner was waiting on):
     - Find the item in **External Follow-ups (Delegated)** table.
     - Change Status to `DONE`.
-    - **Cascade check**: Does this unblock a new self-task for You? If yes, add it to the Self section.
+    - **Cascade check**: Does this unblock a new self-task for the owner? If yes, add it to the Self section.
 
     #### Overdue Detection (Run during every update):
     - Scan ALL items in the External Follow-ups table.
@@ -74,7 +74,7 @@ When a task is completed or a status changes, perform ALL 7 steps in order.
 - **Target**: `Dashboard.md` -> `Advisor's Note` or a specific `Team Health` section.
 - **Actions**:
     - If a task involves Teammate (Platform) or Teammate (Marketplace), update the "Team Balance" context in the Advisor's note.
-    - If a task involves the Design team (Mark/Karima/Ranin), ensure You's direct oversight is reflected in the next steps.
+    - If a task involves the Design team (Mark/Teammate), ensure the owner's direct oversight is reflected in the next steps.
 
 ### Step 6: Synchronize Project Backlog (If Applicable)
 - **Target**: `Clients/[Client]/[Product]/backlog.md`
@@ -93,7 +93,7 @@ When a task is completed or a status changes, perform ALL 7 steps in order.
         - Master tracker says "DONE" -> todo.md must also say `[x]`
         - No file should say "In Progress" while another says "Done"
     
-    3. **Orphan Check**: Look for tasks in `todo.md` that reference external people (Gaith, ExampleVendor, Teammate, Teammate, Teammate, etc.) but are NOT in `master_followup_tracker.md`. If found, add them to the tracker.
+    3. **Orphan Check**: Look for tasks in `todo.md` that reference external people (Gaith, ExampleVendor, Teammate, etc.) but are NOT in `master_followup_tracker.md`. If found, add them to the tracker.
     
     4. **Staleness Check**: Are there items in `master_followup_tracker.md` with no Follow-up Date? Default them to **3 business days from now**.
 
@@ -103,11 +103,11 @@ When a task is completed or a status changes, perform ALL 7 steps in order.
 
 | Trigger | Action |
 |:---|:---|
-| You says "done", "completed", "shipped" | Full 7-step protocol |
-| You uploads a PRD or document | Steps 2, 3, 6 (add to summary, update project, update backlog) |
+| the owner says "done", "completed", "shipped" | Full 7-step protocol |
+| the owner uploads a PRD or document | Steps 2, 3, 6 (add to summary, update project, update backlog) |
 | Meeting summary processed | Steps 4, 5 (extract tasks to todo and tracker) |
 | `/daily-update` executed | Step 5 overdue detection + Step 7 full verification |
-| You mentions someone else's name + action | Step 5 only (add external follow-up) |
+| the owner mentions someone else's name + action | Step 5 only (add external follow-up) |
 | Status change mentioned | Steps 1, 3, 4 (briefing, project table, todo) |
 
 ---
@@ -151,7 +151,7 @@ When a task is completed or a status changes, perform ALL 7 steps in order.
 | Bad Pattern | Why It's Bad | Correct Behavior |
 |:---|:---|:---|
 | Updating only `todo.md` | Dashboard and tracker get out of sync | Always update all 3 files |
-| Adding external tasks to `todo.md` only | You loses visibility on WHO owes WHAT | Must also add to `master_followup_tracker.md` |
+| Adding external tasks to `todo.md` only | the owner loses visibility on WHO owes WHAT | Must also add to `master_followup_tracker.md` |
 | No follow-up date on external items | Items silently rot with no accountability | Default to +3 business days |
 | Marking "Done" in one file only | Creates contradictions across the system | Grep and verify consistency |
-| Silent updates | You doesn't know what changed | Always report: "Updated X, marked Y done, flagged Z overdue" |
+| Silent updates | the owner doesn't know what changed | Always report: "Updated X, marked Y done, flagged Z overdue" |

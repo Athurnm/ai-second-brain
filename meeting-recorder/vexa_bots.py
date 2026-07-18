@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vexa bot integration: send note-taker bots to meetings You doesn't attend.
+"""Vexa bot integration: send note-taker bots to meetings the owner doesn't attend.
 
 Talks to the self-hosted Vexa Lite API (localhost:8056). Transcription is served
 by the local whisper-server.exe (Vulkan, Radeon) that Vexa is configured to use.
@@ -122,7 +122,7 @@ _INTEROP_HINT = ("PowerShell interop unavailable from WSL -- cannot restart whis
 def interop_ok():
     """Can we launch a Windows .exe from this WSL session at all? When interop is
     broken (binfmt not registered), powershell.exe fails with OSError/Exec format
-    error, so the remote whisper restart can never work -- we must tell You."""
+    error, so the remote whisper restart can never work -- we must tell the owner."""
     try:
         r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", "$true"],
                            capture_output=True, timeout=15)
@@ -216,7 +216,9 @@ def parse_meet(s):
     if re.fullmatch(r"[a-z]{3}-[a-z]{4}-[a-z]{3}", s):
         return "google_meet", s, None
     if "teams.microsoft.com" in s or s.isdigit():
-        mid = re.search(r"(\d{10,14})", s)
+        # {10,20} to match TEAMS_RE; the old {10,14} silently truncated 15-digit
+        # Teams meeting IDs, producing a 404 on the transcript pull.
+        mid = re.search(r"(\d{10,20})", s)
         return "teams", (mid.group(1) if mid else s), None
     sys.exit(f"ERROR: cannot parse meeting id from: {s}")
 
@@ -225,7 +227,7 @@ def parse_meet(s):
 def cmd_setup(_):
     tok = admin_token()
     user = req("POST", "/admin/users",
-               {"email": "brian.local@yourcompany.com", "name": "You (local)"},
+               {"email": "owner.local@yourcompany.com", "name": "the owner (local)"},
                {"X-Admin-API-Key": tok})
     uid = user.get("id", 1)
     t = req("POST", f"/admin/users/{uid}/tokens?scopes=bot,tx,browser", {},
@@ -272,7 +274,7 @@ def cmd_status(_):
     if not st["meetings"]:
         print("(no meetings tracked)")
 
-def transcript_to_md(data, out_md):
+def transcript_to_md(data, out_md, truncated=False):
     lines = []
     for seg in data.get("segments", []):
         text = (seg.get("text") or "").strip()
@@ -280,7 +282,14 @@ def transcript_to_md(data, out_md):
             continue
         spk = seg.get("speaker") or "Unknown"
         lines.append(f"**[{fmt_ts(seg.get('start_time') or 0)}]** {spk}: {text}")
-    header = (f"# Transcript: {data.get('constructed_meeting_url') or data.get('native_meeting_id')}\n\n"
+    warn = ""
+    if truncated:
+        warn = (f"\n> INCOMPLETE: the bot left at {data.get('end_time')} with status "
+                f"'{data.get('status')}' while the call was still running. Everything after "
+                f"that point is MISSING. Recover the full call from Fathom before drafting "
+                f"anything off this file.\n")
+    header = (f"# Transcript: {data.get('constructed_meeting_url') or data.get('native_meeting_id')}\n"
+              f"{warn}\n"
               f"- Engine: Vexa bot + whisper-server (Vulkan GPU), speaker labels from meeting UI\n"
               f"- Status: {data.get('status')}\n"
               f"- Start: {data.get('start_time')}\n\n---\n\n")
@@ -320,11 +329,19 @@ def cmd_pull(a):
             print("no segments yet; meeting may not have started")
         return
 
+    # A bot that ended in "failed"/"stopped" left the call early (kicked, crashed,
+    # or its removal-detector misfired). Segments still come back, so the pull
+    # looks identical to a clean "completed" run -- the transcript is just silently
+    # truncated at the point the bot died. Never launder that into a normal draft.
+    bot_failed = data.get("status") in ("failed", "stopped")
     slug = slugify(title)
     stamp = datetime.datetime.now(WIB).strftime("%Y-%m-%d")
     out_md = os.path.join(W.TRANSCRIPTS_DIR, f"{stamp}_{slug}_vexa.md")
-    n = transcript_to_md(data, out_md)
+    n = transcript_to_md(data, out_md, truncated=bot_failed)
     print(f"transcript: {n} segments -> {out_md}")
+    if bot_failed:
+        print(f"WARNING: bot status={data.get('status')} -- transcript is TRUNCATED "
+              f"at {n} segments; recover the full call from Fathom", file=sys.stderr)
 
     # registry entry (reuse watcher shape)
     start_iso = data.get("start_time")
@@ -350,17 +367,27 @@ def cmd_pull(a):
             mom_path = os.path.join(W.MOM_DIR, f"MOM_{slug}_{start_wib.strftime('%Y-%m-%d')}.md")
             header = (f"> Status: DRAFT (Vexa bot, belum direview)\n"
                       f"> Source: bot transcript {platform}/{mid}, speaker labels from meeting UI\n"
-                      f"> Registry: {rec_id} | Review via /mom before sharing\n\n")
-            open(mom_path, "w", encoding="utf-8").write(header + mom + "\n")
+                      f"> Registry: {rec_id} | Review via /mom before sharing\n")
+            if bot_failed:
+                header += (f"> ⚠ PARTIAL: bot died mid-call (status '{data.get('status')}', "
+                           f"ended {data.get('end_time')}). This MOM only covers the call up to "
+                           f"that point. Pull the full recording from Fathom before trusting it.\n")
+            open(mom_path, "w", encoding="utf-8").write(header + "\n" + mom + "\n")
             W.update_registry_entry(rec_id, mom_path=os.path.relpath(mom_path, REPO_ROOT))
             print(f"MOM draft -> {mom_path}")
-            status = "drafted"
+            status = "drafted_partial" if bot_failed else "drafted"
         else:
             status = "transcribed (needs /mom manual)"
+    if bot_failed:
+        status = f"{status} (bot {data.get('status')} mid-call, transcript truncated)"
     st["meetings"][kid] = {**meta, "title": title, "status": status,
                            "transcript": out_md, "rec_id": rec_id}
     save_state(st)
-    heartbeat("ok", f"vexa {mid}: {status}")
+    if bot_failed:
+        heartbeat("fail", f"vexa {mid} ({title}): bot {data.get('status')} mid-call; "
+                          f"only {n} segments captured -- recover from Fathom")
+    else:
+        heartbeat("ok", f"vexa {mid}: {status}")
 
 TEAMS_RE = re.compile(r"teams\.microsoft\.com/meet/(\d{10,20})")
 PASSCODE_RE = re.compile(r"Passcode:\s*([A-Za-z0-9]+)")
@@ -396,13 +423,8 @@ def cmd_auto(a):
             heartbeat("fail", whisper_reason + " -- joins skipped this cycle")
     now = datetime.datetime.now().astimezone()
 
-    # Idle heartbeat ~once/hour (cron is */5, so minute<5 hits one slot per hour):
-    # without this, quiet stretches with no meetings look like "silent cron" to
-    # harness-health even though every 5-min tick ran fine.
-    if not dry and whisper_ok and now.minute < 5:
-        heartbeat("ok", "idle tick: stack healthy, no meeting events this cycle")
-
     # 1) join upcoming calendar meetings with a Meet link
+    calendar_ok = True
     try:
         r = subprocess.run([sys.executable, GCAL, "list", "--profile", "work",
                             "--days-back", "0", "--days-forward", "1", "--json"],
@@ -410,7 +432,12 @@ def cmd_auto(a):
         events = parse_json_tail(r.stdout)
     except Exception as e:
         events = []
+        calendar_ok = False
+        # An empty event list makes the join loop below a no-op, so without a
+        # fail heartbeat this cycle silently declines to join every meeting and
+        # still reports healthy. On 16 Jul this dropped YourManager's mandatory weekly.
         print(f"calendar unavailable: {e}", file=sys.stderr)
+        heartbeat("fail", f"calendar unavailable, joins skipped this cycle: {e}")
     for ev in events:
         stt = ev.get("start", "")
         if "T" not in stt:
@@ -431,8 +458,14 @@ def cmd_auto(a):
         if not whisper_ok:
             print("skip join (whisper-server down)", file=sys.stderr)
             break
+        # Force ISO code "en": the OpenAI-compat whisper-server returns the
+        # language as a full name ("english"), which Vexa's TranscriptionSegment
+        # validator rejects -> 0 segments saved -> empty transcript. cmd_auto only
+        # joins Work-calendar meetings (always English), so "en" is safe here.
+        # For non-English meetings use manual `send --lang <iso>`.
         body = {"platform": platform, "native_meeting_id": mid,
-                "bot_name": BOT_NAME, "transcribe_enabled": True}
+                "bot_name": BOT_NAME, "transcribe_enabled": True,
+                "language": "en"}
         if passcode:
             body["passcode"] = passcode
         try:
@@ -442,8 +475,24 @@ def cmd_auto(a):
                                    "sent_at": now.isoformat(timespec="seconds")}
             print(f"bot sent: {kid} ({ev.get('summary')})")
         except RuntimeError as e:
+            # Record the rejection instead of losing it to stderr. The common
+            # case is HTTP 403 "maximum concurrent bot limit (3)" during the
+            # 18:00-21:00 WIB block, which silently drops a real meeting.
             print(f"send failed {kid}: {e}", file=sys.stderr)
+            st["meetings"][kid] = {"title": ev.get("summary") or mid,
+                                   "status": "send_failed",
+                                   "error": str(e)[:300],
+                                   "sent_at": now.isoformat(timespec="seconds")}
+            heartbeat("fail", f"vexa send rejected for {ev.get('summary') or kid}: {e}")
     save_state(st)
+
+    # Idle heartbeat ~once/hour (cron is */5, so minute<5 hits one slot per hour):
+    # without this, quiet stretches with no meetings look like "silent cron" to
+    # harness-health even though every 5-min tick ran fine.
+    # Gated on calendar_ok and emitted only AFTER the join loop: a cycle that
+    # never saw the calendar cannot honestly claim "no meeting events".
+    if not dry and whisper_ok and calendar_ok and now.minute < 5:
+        heartbeat("ok", "idle tick: stack healthy, no meeting events this cycle")
 
     # 2) pull + process meetings whose bot finished
     for kid, meta in list(st["meetings"].items()):

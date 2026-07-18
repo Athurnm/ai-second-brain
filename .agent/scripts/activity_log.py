@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Append-only activity event log (the harness's full-context memory).
 
-Every meaningful action by You OR the agent appends one event here, tagged to a project,
+Every meaningful action by the owner OR the agent appends one event here, tagged to a project,
 so the dashboard can roll it up and the agent always has context. Append-only = no corruption.
 
 Usage:
@@ -31,7 +31,7 @@ def append(actor, action, project, target, summary, refs):
     row = {
         "event_id": _next_id(),
         "ts_wib": datetime.now(WIB).isoformat(timespec="seconds"),
-        "actor": actor,                 # brian | agent
+        "actor": actor,                 # owner | agent
         "action": action,               # task_done | daily_update | slack_reply | doc_update | status_change | note | ...
         "target_type": "ticket" if (target or "").upper().startswith(("S-", "E-", "O-", "T-")) else "other",
         "target_id": target or "",
@@ -65,7 +65,7 @@ def recent(n, project):
 
 def main():
     ap = argparse.ArgumentParser(description="append-only activity event log")
-    ap.add_argument("--actor", choices=["brian", "agent"], default="agent")
+    ap.add_argument("--actor", choices=["owner", "agent"], default="agent")
     ap.add_argument("--action")
     ap.add_argument("--project", default="Other")
     ap.add_argument("--target", default="")

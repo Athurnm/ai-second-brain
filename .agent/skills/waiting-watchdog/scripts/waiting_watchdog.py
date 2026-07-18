@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-waiting_watchdog.py - SLA watchdog for things You is waiting on from other people.
+waiting_watchdog.py - SLA watchdog for things the owner is waiting on from other people.
 
 Design (per plan bangun-aja-semuanya-barengan-wiggly-noodle.md, Komponen 3):
   sweep (cron, hourly, pure local, zero-network): age-vs-SLA check only.
@@ -10,9 +10,11 @@ Design (per plan bangun-aja-semuanya-barengan-wiggly-noodle.md, Komponen 3):
     posted after `since` -> status=answered.
 
 Subcommands:
-  add     --owner --what --sla-hours [--escalate-to] [--escalation-path] [--source] [--since]
+  add     --owner --what --sla-hours [--escalate-to] [--escalation-path] [--source]
+          [--since] [--initiative <portfolio initiative id>]
   sweep   [--check-slack]
   report  [--all]
+  link    <id> --initiative <portfolio initiative id> | --none
   close   <id>
   drop    <id>
   touch   <id>     (nudge: reset since=now, stamp last_nudge_at)
@@ -168,7 +170,7 @@ def parse_permalink(permalink):
 
 def owner_replied_since(token, source, owner_hint, since_ts):
     """conversations.replies on the source thread: any message after since_ts from
-    someone other than You (best-effort owner match; conservative - any non-You
+    someone other than the owner (best-effort owner match; conservative - any non-the owner
     reply in-thread after `since` counts, since we don't reliably know owner's U-id)."""
     parsed = parse_permalink(source.get('permalink', ''))
     if not parsed:
@@ -180,7 +182,7 @@ def owner_replied_since(token, source, owner_hint, since_ts):
     if not resp.get('ok'):
         return False, None
     msgs = resp.get('messages', [])
-    brian_id = os.environ.get('BRIAN_SLACK_ID', '<SLACK_ID>')
+    brian_id = os.environ.get('OWNER_SLACK_ID', '<SLACK_ID>')
     for m in msgs:
         mts = float(m.get('ts', 0))
         if mts <= float(since_ts):
@@ -192,8 +194,23 @@ def owner_replied_since(token, source, owner_hint, since_ts):
 
 # ------------------------------------------------------------------- sweep --
 
+def valid_initiative_ids():
+    """Ids from portfolio.json, or None when it can't be read (then skip validation)."""
+    path = os.path.join(os.path.dirname(STATE_PATH), 'portfolio.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return {i.get('id') for t in data.get('teams', []) for i in t.get('initiatives', [])}
+
 def cmd_add(args):
     state = load_state()
+    if args.initiative:
+        known = valid_initiative_ids()
+        if known is not None and args.initiative not in known:
+            sys.exit(f"--initiative '{args.initiative}' is not a portfolio initiative id. "
+                     f"Known: {', '.join(sorted(known))}")
     since = args.since if args.since else time.time()
     if args.since:
         # accept epoch seconds or ISO-ish; try float first
@@ -211,6 +228,9 @@ def cmd_add(args):
         'owner': args.owner,
         'owner_slug': resolve_person_slug(args.owner),
         'what': args.what,
+        # Links this item to a journal/state/portfolio.json initiative so
+        # portfolio_sync.py can roll it up as a blocker. Unset = not rolled up.
+        'initiative_id': args.initiative or None,
         'since': since,
         'sla_hours': args.sla_hours,
         'escalate_to': args.escalate_to or '',
@@ -309,6 +329,25 @@ def cmd_report(args):
 
 # ------------------------------------------------------------------- mutations --
 
+def cmd_link(args):
+    """Attach an existing item to a portfolio initiative (or detach with --none)."""
+    state = load_state()
+    it = state['items'].get(args.item_id)
+    if not it:
+        sys.exit(f'item not found: {args.item_id}')
+    if args.none:
+        it['initiative_id'] = None
+        save_state(state)
+        print(f'unlinked: {args.item_id}')
+        return
+    known = valid_initiative_ids()
+    if known is not None and args.initiative not in known:
+        sys.exit(f"--initiative '{args.initiative}' is not a portfolio initiative id. "
+                 f"Known: {', '.join(sorted(known))}")
+    it['initiative_id'] = args.initiative
+    save_state(state)
+    print(f'linked: {args.item_id} -> {args.initiative}')
+
 def cmd_close(args):
     state = load_state()
     it = state['items'].get(args.item_id)
@@ -337,6 +376,17 @@ def cmd_touch(args):
     save_state(state)
     print(f'touched (nudge sent, SLA clock reset): {args.item_id}')
 
+def cmd_reopen(args):
+    """Undo a close/drop (mis-click safety on the dashboard): back to open with the
+    original `since` clock intact — breach state is recomputed by the next sweep."""
+    state = load_state()
+    it = state['items'].get(args.item_id)
+    if not it:
+        sys.exit(f'item not found: {args.item_id}')
+    it.update(status='open', closed_at=None, breached_at=None)
+    save_state(state)
+    print(f'reopened: {args.item_id}')
+
 # -------------------------------------------------------------------- main --
 
 def main():
@@ -351,12 +401,20 @@ def main():
     ap.add_argument('--escalation-path')
     ap.add_argument('--source')
     ap.add_argument('--since', help='epoch seconds; default now')
+    ap.add_argument('--initiative',
+                    help='portfolio.json initiative id (e.g. mp-exampleprogram-eshop); '
+                         'rolls this item up as a blocker on the Portfolio board')
 
     sp = sub.add_parser('sweep')
     sp.add_argument('--check-slack', action='store_true')
 
     rp = sub.add_parser('report')
     rp.add_argument('--all', action='store_true')
+
+    lp = sub.add_parser('link')
+    lp.add_argument('item_id')
+    lp.add_argument('--initiative', help='portfolio.json initiative id')
+    lp.add_argument('--none', action='store_true', help='detach from any initiative')
 
     cp = sub.add_parser('close')
     cp.add_argument('item_id')
@@ -367,9 +425,13 @@ def main():
     tp = sub.add_parser('touch')
     tp.add_argument('item_id')
 
+    rop = sub.add_parser('reopen')
+    rop.add_argument('item_id')
+
     args = p.parse_args()
     {'add': cmd_add, 'sweep': cmd_sweep, 'report': cmd_report,
-     'close': cmd_close, 'drop': cmd_drop, 'touch': cmd_touch}.get(
+     'close': cmd_close, 'drop': cmd_drop, 'touch': cmd_touch,
+     'reopen': cmd_reopen, 'link': cmd_link}.get(
         args.cmd or 'sweep', cmd_sweep)(args)
 
 if __name__ == '__main__':

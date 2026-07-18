@@ -5,7 +5,7 @@ harness burns, split per task type: `interactive`, `daily-update`, `mom`,
 `prd`, `weekly-report`, ..., `subagent`, `workflow-agent`, `ai-<kind>`
 (headless dashboard runs).
 
-> Cost framing: You pays a subscription, so every Claude figure here is an
+> Cost framing: the owner pays a subscription, so every Claude figure here is an
 > **estimasi setara-API** (what the same tokens would cost on the API), not a
 > bill. Real offload spend (GLM/Gemini) lives in agy-bridge cost telemetry.
 
@@ -62,7 +62,7 @@ the runner side instead (run meta `tokens_in/tokens_out/cost_usd`, surfaced by
 `GET /api/ai-task`). The `ai-<kind>` join stays in for the day transcripts
 appear.
 
-## Cron (You installs; on-window rule 12:30–22:00 WIB)
+## Cron (the owner installs; on-window rule 12:30–22:00 WIB)
 
 ```
 50 12,18 * * * flock -n /tmp/token_tracker.lock python3 ./.agent/skills/token-tracker/scripts/token_usage.py sweep >> ./.agent/skills/token-tracker/token_tracker_cron.log 2>&1

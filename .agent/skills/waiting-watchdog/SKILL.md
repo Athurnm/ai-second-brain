@@ -1,13 +1,13 @@
 ---
 name: waiting-watchdog
-description: Stateful SLA watchdog for things You is waiting on from other people (owner + what + SLA hours). Local age-vs-SLA sweep flags breaches; an optional --check-slack pass reads the source Slack thread for an owner reply. Surfaces a briefing-ready report with escalation lines first.
+description: Stateful SLA watchdog for things the owner is waiting on from other people (owner + what + SLA hours). Local age-vs-SLA sweep flags breaches; an optional --check-slack pass reads the source Slack thread for an owner reply. Surfaces a briefing-ready report with escalation lines first.
 ---
 
 # Waiting-on Watchdog
 
-Tracks everything You is **waiting on someone else for** (a decision, a doc, an answer,
+Tracks everything the owner is **waiting on someone else for** (a decision, a doc, an answer,
 an approval) with an SLA in hours. Unlike the mention ledger (which tracks things others
-are waiting on You for), this is the mirror: things You is waiting on others for.
+are waiting on the owner for), this is the mirror: things the owner is waiting on others for.
 
 ## Capabilities
 
@@ -16,7 +16,7 @@ are waiting on You for), this is the mirror: things You is waiting on others for
   `sla_hours`. Anything over SLA and still open secondarys to `status=breached`.
 - `sweep --check-slack` (**SOP-only, not cron'd** — Claude runs this during morning/evening
   update): for items with a Slack source permalink, reads `conversations.replies` on the
-  source thread and auto-closes (`status=answered`) if anyone other than You replied
+  source thread and auto-closes (`status=answered`) if anyone other than the owner replied
   after `since`.
 - `report [--all]`: briefing-ready markdown. Breached items first (🚨 ESCALATE lines),
   then open items with an SLA countdown. `--all` also includes answered/dropped.
@@ -65,7 +65,7 @@ python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py touch WAIT-00
   per the plan's "LLM/network out of mechanical cron" rule.
 - `--check-slack` reuses the `SLACK_USER_TOKEN` from `.agent/skills/slack-connector/token.env`
   (same auth as the mention ledger). It parses the source `permalink` to get channel + thread
-  ts, then treats any non-You message in that thread posted after `since` as a reply —
+  ts, then treats any non-the owner message in that thread posted after `since` as a reply —
   conservative by design (doesn't try to match the specific owner's Slack user ID, since
   that mapping isn't guaranteed at add-time).
 - `touch` is for a manual nudge you've sent the owner: it resets the SLA clock (`since=now`)

@@ -44,7 +44,7 @@ wsl.exe bash -c "cd . && timeout 180s python3 .agent/skills/gdocs-create/gdocs_c
 ```
 On **macOS** and **WSL** the same command runs directly with no prefix.
 
-**Fallback (Windows only, if `wsl.exe` fails)**: use `MSYS_NO_PATHCONV=1 wsl.exe bash -c "..."`. If WSL is not configured on a Windows machine, alert You -- Python skills need WSL there because credentials and tokens live in the WSL filesystem.
+**Fallback (Windows only, if `wsl.exe` fails)**: use `MSYS_NO_PATHCONV=1 wsl.exe bash -c "..."`. If WSL is not configured on a Windows machine, alert the owner -- Python skills need WSL there because credentials and tokens live in the WSL filesystem.
 
 **Critical**: `uname -s` is cheap and reliable, so always run detection and never guess. NEVER use `wsl.exe` on macOS (`Darwin`) -- the binary does not exist there and the call will fail.
 
@@ -132,7 +132,21 @@ Spawn subagents to isolate context, parallelize independent work, or offload bul
 
 Subagent definitions carry matching `model:` / `effort:` frontmatter; synthesis and strategy stay in the main loop. The routing table lives in core CLAUDE.md.
 
-Rules: pick the cheapest row that fully covers the task; mechanical → delegate, judgment → keep in main loop. If a subagent finds it needs a higher tier than itself, return to the parent. The main loop cannot auto-swap its own model/effort. If a task needs a different main-loop tier than the current session, say so and ask You to `/model` or `/effort` (or run it as a Workflow with explicit per-stage model+effort).
+Rules: pick the cheapest row that fully covers the task; mechanical → delegate, judgment → keep in main loop. If a subagent finds it needs a higher tier than itself, return to the parent. The main loop cannot auto-swap its own model/effort. If a task needs a different main-loop tier than the current session, say so and ask the owner to `/model` or `/effort` (or run it as a Workflow with explicit per-stage model+effort).
+
+**Bidirectional model routing.** `Agent(model: ...)` and Workflow's per-stage `model`/`effort` override the session model, so a spawned agent's tier is independent of the main loop's. Route by work class, not by session:
+
+| Main loop is on... | Delegate DOWN to | Delegate UP to |
+| :--- | :--- | :--- |
+| **fable** (planning-heavy session) | `opus` for execution-grade writing/analysis chunks; `sonnet` for routine drafts; `haiku` for harvest/lookup | rarely needed; spawn `opus` only for a differing flagship lens |
+| **opus** (default working session) | `sonnet` / `haiku` as per the routing table | `fable` + `effort: xhigh` for complex decomposition, ambiguous multi-step planning, adversarial plan review |
+
+Concretely: on a fable session, do NOT let the main loop do bulk generation just because it is capable of it. Fan the execution chunks out to opus/sonnet workers and keep fable on the plan + the seams. On an opus session facing a genuinely hard planning problem (roadmap sequencing, a migration order, a multi-workstream unblock plan), spawn a fable planner, get the plan back, then execute in-loop.
+
+Invariants that do not change with tier:
+- Final the owner-facing synthesis, tone, and judgment stay in the main loop. Up-delegated agents return plans/analyses, not finished deliverables.
+- `synthesize` and `strategize` never leave Claude (see Cross-model offload below); the down-delegation lever for those is effort, not a non-Claude model.
+- Cost discipline: a higher tier is justified by decision-density, not by task size. Big-but-mechanical → haiku. Small-but-load-bearing → flagship.
 
 **Cross-model offload.** `harvest`, `critic` (the adversarial half of `review`/`/hyperplan`), and `research` MAY route to a non-Claude model via `agy-bridge` instead of a Claude subagent (cheap-bulk or cross-model diversity); `synthesize` and `strategize` NEVER leave Claude. The bridge is capability-routed and cost-logged, and honors a `claude_fallback` sentinel when every non-Claude model is down (honor it, don't degrade). Offload heuristic: during likely-Anthropic-busy hours (~21:00-12:00 WIB) prefer the bridge to conserve the Claude pool. The full capability→model matrix, per-Mtok pricing, and time-routing live in the agy-bridge entry under [#dedicated-tools](#dedicated-tools) + `models.json`.
 
@@ -170,11 +184,11 @@ Use `pdftotext`, not the `Read` tool. Use `Read` only when the user directly ask
 ## dedicated-tools
 
 ### Research / internet (read-only)
-- **Agent-Reach** -- multi-platform reader (Exa search, X authed-as-You, Reddit, YouTube, RSS, GitHub, Jina web). **Read-only, NEVER posts/DMs/comments.** Activate per shell: `source ~/.agent-reach/activate.sh`. Use for `/deep-research` and research sweeps. Commands, auth status, and the WSL DNS-over-TCP gotcha: [[reference_agent_reach_tool]] + `~/.agents/skills/agent-reach/SKILL.md`.
+- **Agent-Reach** -- multi-platform reader (Exa search, X authed-as-the owner, Reddit, YouTube, RSS, GitHub, Jina web). **Read-only, NEVER posts/DMs/comments.** Activate per shell: `source ~/.agent-reach/activate.sh`. Use for `/deep-research` and research sweeps. Commands, auth status, and the WSL DNS-over-TCP gotcha: [[reference_agent_reach_tool]] + `~/.agents/skills/agent-reach/SKILL.md`.
 
 ### Google Drive / Docs
 - **Work Drive** -- [`.agent/skills/work-drive-connector/gdrive_manager.py`](../.agent/skills/work-drive-connector/gdrive_manager.py): upload/update/delete/search/read/rename/share/comments; `fetch_sheets.py` reads Sheets by tab.
-- **GDoc comment replies (as You)** -- [`.agent/skills/work-drive-connector/reply_helper.py`](../.agent/skills/work-drive-connector/reply_helper.py): reply to AND resolve Google Doc comment threads as You (reuses the Work Drive OAuth token; owner verified = you@yourcompany.com). `whoami` confirms token owner; `list --id FILE_ID` prints comment IDs; `reply --id FILE_ID --comment COMMENT_ID --text "..." [--resolve]`. Base `gdrive_manager.py comments` only READS; this is the write path. **Caveat: `@email` mentions post as plain text via the API and usually do NOT notify the person**, so ping them separately (Slack DM). Approval-gated: confirm with You before posting, same as Slack.
+- **GDoc comment replies (as the owner)** -- [`.agent/skills/work-drive-connector/reply_helper.py`](../.agent/skills/work-drive-connector/reply_helper.py): reply to AND resolve Google Doc comment threads as the owner (reuses the Work Drive OAuth token; owner verified = you@yourcompany.com). `whoami` confirms token owner; `list --id FILE_ID` prints comment IDs; `reply --id FILE_ID --comment COMMENT_ID --text "..." [--resolve]`. Base `gdrive_manager.py comments` only READS; this is the write path. **Caveat: `@email` mentions post as plain text via the API and usually do NOT notify the person**, so ping them separately (Slack DM). Approval-gated: confirm with the owner before posting, same as Slack.
 - **Personal Drive** -- [`.agent/skills/personal-drive-connector/gdrive_manager.py`](../.agent/skills/personal-drive-connector/gdrive_manager.py): same caps, you@example.com.
 - **Secondary-client Drive** -- [`.agent/skills/secondary-drive-connector/gdrive_manager.py`](../.agent/skills/secondary-drive-connector/gdrive_manager.py): generic non-Work/non-personal slot (`--account secondary`); drop creds+token in the dir.
 - **Drive Permissions** -- [`.agent/scripts/drive_permissions.py`](../.agent/scripts/drive_permissions.py): **LANDMINE -- every upload auto-publishes as `anyone with link`, so docs leak public by default.** After any new `gdocs-create`/upload that shouldn't be public, run `restrict --domain yourcompany.com --apply` (`list <FILE_ID>` to audit; no `--apply` = dry run).
@@ -196,12 +210,12 @@ Use `pdftotext`, not the `Read` tool. Use `Read` only when the user directly ask
 
 ### Meeting recording routing (2026-07-06)
 - **Vexa bot = PRIMARY auto-recorder** -- [`meeting-recorder/vexa_bots.py`](../meeting-recorder/vexa_bots.py) `auto` on cron `*/5` joins EVERY Work calendar event with a Meet/Teams link as bot "Your Name"; transcript -> registry + MOM draft. Log `/tmp/vexa_auto.log`, heartbeat job `vexa-auto`. Self-heals gateway-IP drift, restarts container/whisper-server, flags empty transcripts as failures.
-- **Fathom = backup + video** for meetings You attends (unchanged).
+- **Fathom = backup + video** for meetings the owner attends (unchanged).
 - **Desktop recorder = manual fallback** -- [`meeting-recorder/recorder.py`](../meeting-recorder/recorder.py) / GUI; `--video` or GUI checkbox adds a screen-record `.mp4` sidecar (`video_path` in registry).
 - **Dedupe: one meeting -> one MOM.** All three write to `journal/fathom_registry.json`; entries for the same `matched_meeting`+date are cross-referenced (`related_recordings`) and MOM drafting is skipped when a related entry already has `mom_path`. Full detail: [`meeting-recorder/README.md`](../meeting-recorder/README.md).
 
 ### Slack
-- **Slack** -- [`.agent/skills/slack-connector/scripts/slack_client.py`](../.agent/skills/slack-connector/scripts/slack_client.py): read history/threads + **SEND AS You via `--action post`** (uses You's user token `SLACK_USER_TOKEN` / xoxp by default, no bot footer; `--thread-ts`, `--text-file`, prints permalink). **NEVER send via the MCP Slack tools (those post as the Claude bot); confirm with You before EVERY send.**
+- **Slack** -- [`.agent/skills/slack-connector/scripts/slack_client.py`](../.agent/skills/slack-connector/scripts/slack_client.py): read history/threads + **SEND AS the owner via `--action post`** (uses the owner's user token `SLACK_USER_TOKEN` / xoxp by default, no bot footer; `--thread-ts`, `--text-file`, prints permalink). **NEVER send via the MCP Slack tools (those post as the Claude bot); confirm with the owner before EVERY send.**
 
 ### Figma
 - **Figma (raw API)** -- [`.agent/skills/figma-connector/scripts/figma_client.py`](../.agent/skills/figma-connector/scripts/figma_client.py): REST fallback; prefer MCP Figma for design context.
@@ -214,6 +228,7 @@ Use `pdftotext`, not the `Read` tool. Use `Read` only when the user directly ask
 ### Analytics / observability
 - **Dashboard Sync** -- [`.agent/skills/dashboard-updater/scripts/dashboard_sync.py`](../.agent/skills/dashboard-updater/scripts/dashboard_sync.py): calendar+Drive+Slack -> `Dashboard.md`.
 - **Mixpanel** -- [`.agent/skills/mixpanel-connector/scripts/mixpanel_client.py`](../.agent/skills/mixpanel-connector/scripts/mixpanel_client.py): events/funnels/retention/export (creds in `token.env`).
+- **GA4 (Work)** -- [`.agent/skills/ga4-connector/scripts/ga4_client.py`](../.agent/skills/ga4-connector/scripts/ga4_client.py): read-only Google Analytics 4. `snapshot` (KPIs + deltas + top tables) is the default entry point; also `report`/`realtime`/`top`/`meta`/`accounts`. Default property = exampleprogram-estore (`config.json`). Token `token_ga4_work.json` via `ga4_auth_helper.py` (reuses Work OAuth client); analysis SOP in `SKILL.md`.
 - **Heartbeat** -- [`.agent/scripts/heartbeat.py`](../.agent/scripts/heartbeat.py): routines/agents append status -> `dashboard-data/agent_heartbeat.jsonl` -> `localhost:3737` "⏰ Routines" tab (catches silent 2am failures). `--job <name> --status ok|fail --summary "..."`.
 
 ### Content / document tooling (dual-use; copies also live in the You repo)

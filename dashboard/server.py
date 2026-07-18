@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from datetime import datetime, timedelta, timezone
@@ -52,14 +53,15 @@ MEMORY_DIR = Path.home() / '.claude' / 'projects' / '-home-you-antigravity-proje
 JOB_ACKS_PATH = BASE_DIR / 'journal' / 'state' / 'job_acks.json'
 AI_RUNS_DIR = BASE_DIR / 'journal' / 'ai_runs'
 AI_DRAFTS_DIR = BASE_DIR / 'journal' / 'ai_drafts'
+COMMAND_QUEUE_PATH = BASE_DIR / 'journal' / 'state' / 'command_queue.json'
 COMMITMENT_CLI = '.agent/skills/commitment-ledger/scripts/commitment_ledger.py'
-# claude CLI: WSL resolves the Windows npm global wrapper (a POSIX sh script that
-# runs Linux node against the package on /mnt/c) — verified working headless
-# 2026-07-11 (~4s haiku round-trip). which() first so a future native Linux
-# install wins automatically; fallback hardcoded for cron-started servers whose
-# PATH lacks /mnt/c interop dirs.
-CLAUDE_BIN_FALLBACK = '/mnt/c/Users/You/AppData/Roaming/npm/claude'
-WIB = timezone(timedelta(hours=7))
+INBOX_PATH = BASE_DIR / 'journal' / 'state' / 'inbox.json'
+INBOX_CLI = '.agent/skills/inbox-hub/scripts/inbox_sweep.py'
+# claude CLI: prefer the WSL-native binary (logged in via the claude.ai
+# subscription). The Windows npm wrapper on /mnt/c reads Windows-side config and
+# shows loggedIn:false under headless auth, so it is never used as a silent
+# fallback — _claude_bin() raises instead when no native binary is found.
+WIB = timezone(timedelta(hours=7))  # template note: set your timezone offset here
 VEXA_AUTO_LOG = '/tmp/vexa_auto.log'
 
 # Job -> log file + heartbeat-job-name map for GET /api/job-log. Hardcoded from the
@@ -107,7 +109,52 @@ JOB_LOG_MAP = {
         'log_file': str(BASE_DIR / '.agent' / 'skills' / 'token-tracker' / 'token_tracker_cron.log'),
         'heartbeat_job': 'token-tracker',
     },
+    'work-hours': {
+        'log_file': str(BASE_DIR / '.agent' / 'skills' / 'work-hours' / 'work_hours_cron.log'),
+        'heartbeat_job': 'work-hours',
+    },
 }
+
+# --- Access control -----------------------------------------------------
+# Server binds 0.0.0.0 (Windows browsers reach WSL via NAT, so the source IP
+# is the WSL gateway, not 127.0.0.1) -- so every request is filtered by
+# client IP at ONE chokepoint (see DashboardHandler._check_client_ip below).
+
+def _detect_wsl_gateway():
+    """Best-effort autodetect of the WSL default-gateway IP. Fails soft to
+    None -- an undetectable gateway just means one less allowed IP, never an
+    open server."""
+    try:
+        out = subprocess.run(['ip', 'route', 'show', 'default'], capture_output=True,
+                              text=True, timeout=2)
+        m = re.search(r'default via (\d+\.\d+\.\d+\.\d+)', out.stdout)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    try:
+        with open('/proc/net/route') as f:
+            for line in f.readlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 3 and fields[1] == '00000000':
+                    gw_hex = fields[2]
+                    return '.'.join(str(int(gw_hex[i:i + 2], 16)) for i in (6, 4, 2, 0))
+    except Exception:
+        pass
+    return None
+
+def _build_allowed_ips():
+    ips = {'127.0.0.1', '::1'}
+    gw = _detect_wsl_gateway()
+    if gw:
+        ips.add(gw)
+    for ip in os.environ.get('DASHBOARD_ALLOWED_IPS', '').split(','):
+        ip = ip.strip()
+        if ip:
+            ips.add(ip)
+    return ips
+
+ALLOWED_IPS = _build_allowed_ips()
 
 # POST /api/run-job whitelist: job -> argv (relative to BASE_DIR) + its crontab flock
 # lockfile (same paths as `crontab -l`, so a manual click can never race the real cron
@@ -144,15 +191,25 @@ JOB_RUN_MAP = {
         'argv': ['python3', '.agent/skills/token-tracker/scripts/token_usage.py', 'sweep'],
         'lock': '/tmp/token_tracker.lock',
     },
+    'work-hours': {
+        'argv': ['python3', '.agent/skills/work-hours/scripts/work_hours.py', 'sweep', '--backfill', '2', '--quiet'],
+        'lock': '/tmp/work_hours.lock',
+    },
 }
 
 # ── token usage tracker (GET /api/token-usage) ──
 TOKEN_USAGE_PATH = BASE_DIR / 'journal' / 'state' / 'token_usage.json'
+WORK_HOURS_PATH = BASE_DIR / 'journal' / 'state' / 'work_hours.json'
+WORK_HOURS_REFRESH_SECS = 15 * 60  # auto-sweep when the state file is older than this
 TOKEN_TRACKER_SCRIPT = BASE_DIR / '.agent' / 'skills' / 'token-tracker' / 'scripts' / 'token_usage.py'
 TOKEN_TRACKER_LOG = BASE_DIR / '.agent' / 'skills' / 'token-tracker' / 'token_tracker_cron.log'
 TOKEN_USAGE_STALE_SECS = 6 * 3600
-TOKEN_USAGE_NOTE = ('Claude = estimasi setara-API (You pakai subscription); '
-                    'biaya offload riil ada di agy')
+
+# ── token efficiency report (GET /api/token-efficiency) ──
+TOKEN_EFFICIENCY_PATH = BASE_DIR / 'journal' / 'state' / 'token_efficiency.json'
+EFFICIENCY_CHANGELOG_PATH = BASE_DIR / 'journal' / 'state' / 'efficiency_changelog.jsonl'
+TOKEN_USAGE_NOTE = ('Claude = API-equivalent estimate (the owner is on a subscription); '
+                    'real offload cost is tracked in agy')
 
 # ═══════════════════════════════════════════
 # AI TASK RUNNER (headless claude CLI, detached)
@@ -161,16 +218,30 @@ TOKEN_USAGE_NOTE = ('Claude = estimasi setara-API (You pakai subscription); '
 # stream to journal/ai_runs/<id>.log; a shell sentinel line 'AI_TASK_DONE rc=N' marks
 # completion so status is derivable from the log alone (no process table needed).
 # Meta lives in journal/ai_runs/<id>.json. Drafts land in journal/ai_drafts/ — the
-# prompts forbid any external send (Slack/email/API writes); You reviews drafts.
+# prompts forbid any external send (Slack/email/API writes); the owner reviews drafts.
 
 AI_TASK_SENTINEL = 'AI_TASK_DONE rc='
 AI_TASK_MAX_RUNNING = 2
 AI_TASK_STALE_MIN = 45          # running runs older than this stop blocking the slots
-AI_TASK_KINDS = ('ping', 'commitment', 'fix-job', 'verify-commitments')
-BRIAN_SLACK_ID = '<SLACK_ID>'  # verified via auth.test 2026-07-09 (commitment_ledger.py)
+AI_TASK_KINDS = ('ping', 'commitment', 'fix-job', 'verify-commitments', 'inbox',
+                 'inbox-digest', 'premeeting-enrich')
+OWNER_SLACK_ID = '<SLACK_ID>'  # verified via auth.test 2026-07-09 (commitment_ledger.py)
 
 def _claude_bin():
-    return shutil.which('claude') or CLAUDE_BIN_FALLBACK
+    # Prefer the WSL-native claude (logged in via the claude.ai subscription); never the
+    # Windows binary on /mnt/c that `which claude` returns here — it reads Windows-side
+    # config and shows loggedIn:false, so headless auth fails.
+    for c in (os.path.expanduser('~/.npm-global/bin/claude'),
+              os.path.expanduser('~/.local/bin/claude'), '/usr/local/bin/claude'):
+        if os.path.exists(c):
+            return c
+    found = shutil.which('claude')
+    if found and not found.startswith('/mnt/'):
+        return found
+    raise RuntimeError(
+        'no WSL-native claude binary found (checked ~/.npm-global/bin, ~/.local/bin, '
+        '/usr/local/bin, PATH); refusing to fall back to the /mnt/c Windows binary — '
+        'it fails headless auth silently. Install/link a native claude binary.')
 
 def _ai_env():
     """Child env for claude runs: strip the parent Claude-Code session markers so a
@@ -183,6 +254,47 @@ def _ai_env():
             env.pop(k, None)
     return env
 
+def _slack_names_map():
+    """UID -> display name from slack_user_names.json + people.json (for the inbox
+    UI to render/round-trip <@ID> mentions readably)."""
+    names = {}
+    try:
+        people_path = BASE_DIR / 'journal' / 'state' / 'people.json'
+        if people_path.exists():
+            plist = json.loads(people_path.read_text(encoding='utf-8'))
+            plist = plist.get('people', plist)
+            for p in (plist.values() if isinstance(plist, dict) else plist):
+                if p.get('slack_id') and p.get('name'):
+                    names[p['slack_id']] = p['name']
+        cache_path = BASE_DIR / 'journal' / 'state' / 'slack_user_names.json'
+        if cache_path.exists():
+            names.update(json.loads(cache_path.read_text(encoding='utf-8')))
+    except Exception:
+        pass
+    return names
+
+def _resolve_slack_uids(text):
+    """Replace <@UID> / <@UID|label> markers in served AI-draft content with real
+    names from journal/state/slack_user_names.json + people.json. Unknown IDs stay
+    as-is (never guessed)."""
+    try:
+        names = {}
+        people_path = BASE_DIR / 'journal' / 'state' / 'people.json'
+        cache_path = BASE_DIR / 'journal' / 'state' / 'slack_user_names.json'
+        if people_path.exists():
+            plist = json.loads(people_path.read_text(encoding='utf-8'))
+            plist = plist.get('people', plist)
+            for p in (plist.values() if isinstance(plist, dict) else plist):
+                if p.get('slack_id') and p.get('name'):
+                    names[p['slack_id']] = p['name']
+        if cache_path.exists():
+            names.update(json.loads(cache_path.read_text(encoding='utf-8')))
+        text = re.sub(r'<@([A-Z0-9]+)\|([^>]+)>', r'@\2', text)
+        return re.sub(r'<@([A-Z0-9]+)>',
+                      lambda m: '@' + names.get(m.group(1), m.group(1)), text)
+    except Exception:
+        return text
+
 def _default_gateway_ip():
     try:
         r = subprocess.run(['sh', '-c', "ip route | awk '/default/{print $3; exit}'"],
@@ -191,8 +303,10 @@ def _default_gateway_ip():
     except Exception:
         return ''
 
-def _ai_task_spec(kind, ref):
+def _ai_task_spec(kind, ref, instruction=None):
     """(prompt, allowed_tools, model, expected_result_relpath|None) for a kind+ref.
+    `instruction` (optional, inbox kind only) is the owner's free-form directive typed in
+    the Inbox drawer — folded into the prompt as the task to perform.
     Raises ValueError with a user-facing message on a bad ref."""
     repo = str(BASE_DIR)
     if kind == 'ping':
@@ -214,7 +328,7 @@ def _ai_task_spec(kind, ref):
             + (f" (source: {source_bits})" if source_bits else '') + '. '
             f"Research context in the repo (MOMs in Clients/*/meetings, journal/, Slack "
             f"ledger states in journal/state/) then produce the DELIVERABLE AS A DRAFT in "
-            f"{draft_rel}: if it's a message -> a ready-to-send draft in You's plain "
+            f"{draft_rel}: if it's a message -> a ready-to-send draft in the owner's plain "
             f"flowing prose (no emoji, no numbered-bold); if a doc -> the doc draft; if "
             f"scheduling -> the proposed invite text. First line of the file: "
             f"'# Draft for {ref} — REVIEW BEFORE SENDING'. NEVER send anything, never "
@@ -265,19 +379,120 @@ def _ai_task_spec(kind, ref):
         draft_rel = f'journal/ai_drafts/commitment_verify_{today}.md'
         prompt = (
             f"Work in {repo}. Audit ALL open items in journal/state/commitments.json for "
-            f"validity/staleness: for each, look for completion evidence in You's sent "
+            f"validity/staleness: for each, look for completion evidence in the owner's sent "
             f"Slack messages (use `python3 .agent/skills/slack-connector/scripts/"
-            f"slack_client.py --action search --query \"from:<@{BRIAN_SLACK_ID}> "
+            f"slack_client.py --action search --query \"from:<@{OWNER_SLACK_ID}> "
             f"<keywords>\"` — bounded, a few searches max, sleep ~0.3s between calls) and "
             f"in MOMs under Clients/*/meetings newer than the item. Close proven-done ones "
             f"via `python3 {COMMITMENT_CLI} close <id> --note '<evidence>'`, drop "
             f"clearly-invalid/not-a-commitment ones via `python3 {COMMITMENT_CLI} drop "
             f"<id> --note '<why>'`, and write {draft_rel} listing three sections: closed "
-            f"(with evidence link), dropped (why), kept-but-suspicious (why, needs You). "
+            f"(with evidence link), dropped (why), kept-but-suspicious (why, needs the owner). "
             f"Be conservative: only close on clear evidence. Do NOT send any Slack/email/"
             f"external message; the slack_client search action is read-only and allowed."
         )
         return prompt, 'Read,Grep,Glob,Bash,Write', 'sonnet', draft_rel
+
+    if kind == 'inbox':
+        state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
+        it = (state.get('items') or {}).get(ref)
+        if not it:
+            raise ValueError(f'inbox item {ref!r} not found in inbox.json')
+        safe = re.sub(r'[^A-Za-z0-9_-]+', '_', ref)[:80]
+        draft_rel = f'journal/ai_drafts/inbox_{safe}.md'
+        ticket_bit = (f" It is linked to tracker ticket {it['linked_ticket']} — read that "
+                      f"ticket in journal/state/tickets.json for status/comments."
+                      if it.get('linked_ticket') else '')
+        instr_bit = (f"\n\nBRIAN'S INSTRUCTION for this item (follow it as the task): "
+                     f"{instruction[:1500]}" if instruction else '')
+        prompt = (
+            f"Work in {repo}. You are the owner's inbox copilot. Inbound item {ref} "
+            f"({it.get('source')}) from {it.get('from') or it.get('from_id') or '?'} "
+            f"in {it.get('channel') or '-'}: subject/title '{it.get('title', '')}', "
+            f"content: '{(it.get('text') or '')[:1200]}'"
+            + (f" (permalink: {it['permalink']})" if it.get('permalink') else '') + '.'
+            + ticket_bit +
+            f" Research full context in the repo: grep Clients/*/ (PRDs, MOMs, meeting "
+            f"transcripts), journal/state/ ledgers (commitments, waiting_on, decisions, "
+            f"tickets), journal/premeeting/, Dashboard.md. For a gmail item you may read "
+            f"the full thread via `python3 .agent/skills/gmail-connector/gmail_manager.py "
+            f"get <msgid>` (read-only). "
+            f"HARD OUTPUT RULES (the file renders in the owner's dashboard drawer): "
+            f"(a) NAMES — never leave a raw Slack UID like <@U…> anywhere; resolve every "
+            f"UID via journal/state/slack_user_names.json + journal/state/people.json and "
+            f"write the person's real name (e.g. 'Teammate Tahir'); if unresolvable use the "
+            f"role/channel instead. "
+            f"(b) LINKS — every referenced artifact must be a clickable markdown link: "
+            f"repo files as [name](relative/path/from/repo/root.md), Jira as "
+            f"[KEY](https://…atlassian.net/browse/KEY), Slack threads/GDocs/Fathom as "
+            f"their full https URL. Never a bare backticked path with no link. "
+            f"(c) ORDER — the draft comes FIRST so the owner can act immediately. "
+            f"Then write {draft_rel} with exactly: "
+            f"1) # Inbox {ref} — REVIEW BEFORE ACTING, 2) '## Draft reply' (ready-to-"
+            f"send, the owner's plain flowing prose, no emoji, no numbered-bold, real names), "
+            f"3) '## Context' (what this is, tied to which ticket/project/decision, "
+            f"clickable links per rule b), 4) '## Recommendation' (what the owner should do "
+            f"+ why), 5) '## Suggested ticket' (existing T-/MTG- id to link, or a one-"
+            f"line new-ticket proposal). "
+            f"(d) MAKE THE DRAFT APPROVABLE — after writing the file, save JUST the "
+            f"final send-ready reply text (the plain reply itself, no headings, no "
+            f"'Draft reply:' label) to /tmp/ibx_{safe}.txt and run `python3 "
+            f"{INBOX_CLI} set-draft '{ref}' --file /tmp/ibx_{safe}.txt --source "
+            f"claude-copilot` so it appears in the owner's Approve & kirim box. If a "
+            f"tracker ticket in journal/state/tickets.json clearly matches this "
+            f"conversation, also `python3 {INBOX_CLI} link '{ref}' --ticket <T-id>` "
+            f"(skip when unsure — never guess). NEVER send anything: no Slack posts, "
+            f"no emails, no external write APIs — read-only research, the draft file, "
+            f"and the set-draft/link CLI writes only."
+            + instr_bit
+        )
+        return prompt, ('Read,Grep,Glob,Write,'
+                        'Bash(python3 .agent/skills/gmail-connector/gmail_manager.py get:*),'
+                        f'Bash(python3 {INBOX_CLI}:*)'), 'opus', draft_rel
+
+    if kind == 'inbox-digest':
+        # the periodic brain: read every open reply-needed conversation, research
+        # repo context, and write SUBSTANTIVE drafts (answer the ask, not an ack)
+        prompt = (
+            f"Work in {repo}. You are the owner's inbox digest agent. Read "
+            f"journal/state/inbox.json and select up to 8 OPEN items with "
+            f"triage='reply' whose draft_source is null or 'glm' (GLM placeholders "
+            f"need upgrading), highest priority_hi first then newest ts. For EACH "
+            f"conversation: read its full messages[] log, then research what it "
+            f"actually asks — grep Clients/*/ (PRDs, MOMs, transcripts), "
+            f"journal/state/ ledgers (tickets, commitments, waiting_on, decisions), "
+            f"Dashboard.md — BOUNDED: a few greps per item, don't spiral. Then write "
+            f"a reply draft that SOLVES it: answer the question with the real answer "
+            f"from the repo when derivable (cite the doc/ticket in prose); when not "
+            f"derivable, commit to a concrete next step (who the owner will check with, "
+            f"by when) — never a contentless acknowledgement. Voice: the owner's plain "
+            f"flowing prose, no emoji, no bullet lists, English, 2-6 sentences, real "
+            f"names only (resolve UIDs via journal/state/slack_user_names.json + "
+            f"people.json). Save each draft via: write the text to /tmp/ibxd.txt "
+            f"then `python3 {INBOX_CLI} set-draft '<item id>' --file /tmp/ibxd.txt "
+            f"--source claude`. ALSO: for every item you process (and any other open "
+            f"reply item you can match confidently), find its tracker ticket in "
+            f"journal/state/tickets.json (match by topic/people/project; only when "
+            f"clearly the same work) and link it: `python3 {INBOX_CLI} link "
+            f"'<item id>' --ticket <T-id>`. Skip the link when no ticket clearly "
+            f"matches — never guess. NEVER send anything — no Slack posts, no "
+            f"emails; drafts only, the owner approves on the dashboard. Finish by "
+            f"printing a one-line-per-item summary of what each draft does."
+        )
+        return prompt, f'Read,Grep,Glob,Write,Bash(python3 {INBOX_CLI}:*)', 'sonnet', None
+
+    if kind == 'premeeting-enrich':
+        # card enrichment ALWAYS goes through the dedicated agy/GLM script -- never
+        # re-implemented inline here. See [[feedback_premeeting_cards_enrich_with_agy_glm]].
+        import datetime as _dt
+        _date = ref if (ref and re.fullmatch(r'\d{4}-\d{2}-\d{2}', ref)) else \
+            _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=7))).strftime('%Y-%m-%d')
+        enrich_script = '.agent/skills/premeeting-cards/scripts/enrich_cards_agy.py'
+        prompt = (
+            f"Work in {repo}. Run `python3 {enrich_script} --date {_date}` and report its "
+            f"stdout verbatim, nothing else. Do not re-implement card enrichment yourself."
+        )
+        return prompt, f'Read,Bash(python3 {enrich_script}:*)', 'haiku', None
 
     raise ValueError(f'unknown kind {kind!r}; allowed: {", ".join(AI_TASK_KINDS)}')
 
@@ -825,7 +1040,24 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
+    def _check_client_ip(self):
+        """Single chokepoint for the IP allowlist -- called at the top of every
+        do_* handler so no endpoint is reachable without passing it."""
+        ip = self.client_address[0]
+        if ip in ALLOWED_IPS:
+            return True
+        sys.stderr.write(f"[dashboard] rejected request from disallowed IP: {ip}\n")
+        self._send_json(403, json.dumps({'error': 'forbidden ip'}))
+        return False
+
+    def do_DELETE(self):
+        if not self._check_client_ip():
+            return
+        self.send_error(404, 'Not Found')
+
     def do_GET(self):
+        if not self._check_client_ip():
+            return
         if self.path == '/api/dashboard':
             self._handle_get_dashboard()
         elif self.path.startswith('/api/calendar'):
@@ -874,6 +1106,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_get_metrics()
         elif self.path == '/api/harness':
             self._handle_get_harness()
+        elif self.path == '/api/command-queue':
+            self._handle_get_command_queue()
         elif self.path == '/api/harness-map':
             self._handle_get_harness_map()
         elif self.path == '/api/decisions':
@@ -894,6 +1128,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_get_ai_task()
         elif self.path == '/api/token-usage':
             self._handle_token_usage()
+        elif self.path == '/api/token-efficiency':
+            self._handle_get_token_efficiency()
+        elif self.path == '/api/work-hours':
+            self._handle_get_work_hours()
+        elif self.path == '/api/inbox':
+            self._handle_get_inbox()
         elif self.path == '/api/briefing':
             self._handle_get_briefing()
         elif self.path == '/api/progress':
@@ -901,7 +1141,53 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    _wh_spawned_at = 0.0
+
+    def _handle_get_work_hours(self):
+        """Work-hours tracker state (written by .agent/skills/work-hours). The
+        gcal_cache key is sweep-internal — strip it so the payload stays lean.
+        Self-refreshing: a stale state file triggers a detached background sweep,
+        so an open dashboard keeps itself current without needing a cron entry."""
+        try:
+            self._maybe_refresh_work_hours()
+            data = json.loads(WORK_HOURS_PATH.read_text(encoding='utf-8'))
+            data.pop('gcal_cache', None)
+            self._send_json(200, json.dumps(data, ensure_ascii=False))
+        except FileNotFoundError:
+            self._send_json(404, json.dumps({
+                'error': 'work_hours.json not found',
+                'hint': 'run: python3 .agent/skills/work-hours/scripts/work_hours.py sweep --backfill 14'}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'Failed to read work hours', 'details': str(e)}))
+
+    def _maybe_refresh_work_hours(self):
+        """Spawn a detached `work_hours.py sweep --backfill 2` when the state file
+        is older than WORK_HOURS_REFRESH_SECS. flock + an in-process debounce keep
+        it single-flight; the 60s frontend poll picks up the fresh file next tick."""
+        try:
+            try:
+                age = time.time() - WORK_HOURS_PATH.stat().st_mtime
+            except FileNotFoundError:
+                age = None
+            if age is not None and age < WORK_HOURS_REFRESH_SECS:
+                return
+            now = time.time()
+            if now - DashboardHandler._wh_spawned_at < 120:
+                return
+            DashboardHandler._wh_spawned_at = now
+            log_path = BASE_DIR / '.agent' / 'skills' / 'work-hours' / 'work_hours_cron.log'
+            with open(log_path, 'ab') as log:
+                subprocess.Popen(
+                    ['flock', '-n', '/tmp/work_hours.lock', sys.executable,
+                     '.agent/skills/work-hours/scripts/work_hours.py',
+                     'sweep', '--backfill', '2', '--quiet'],
+                    cwd=str(BASE_DIR), stdout=log, stderr=log, start_new_session=True)
+        except Exception:
+            pass  # refresh is best-effort; serving the stale file is still correct
+
     def do_POST(self):
+        if not self._check_client_ip():
+            return
         if self.path == '/api/toggle':
             self._handle_toggle()
         elif self.path == '/api/action':
@@ -920,8 +1206,38 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_post_waiting_close()
         elif self.path == '/api/commitment-link':
             self._handle_post_commitment_link()
+        elif self.path == '/api/command-queue-ack':
+            self._handle_post_command_queue_ack()
+        elif self.path == '/api/inbox-sweep':
+            self._handle_post_inbox_sweep()
+        elif self.path == '/api/inbox-action':
+            self._handle_post_inbox_action()
+        elif self.path == '/api/inbox-send':
+            self._handle_post_inbox_send()
         else:
             self.send_error(404, 'Not Found')
+
+    def _handle_post_command_queue_ack(self):
+        """POST /api/command-queue-ack {key} — mark a reviewed command-queue draft
+        acknowledged (review -> done). Shells to the skill CLI so the queue file has a
+        single writer."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+            key = (body.get('key') or '').strip()
+            if not key:
+                self._send_json(400, json.dumps({'error': 'missing key'}))
+                return
+            r = subprocess.run(
+                ['python3', '.agent/skills/command-queue/scripts/command_queue.py', 'ack', key],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                self._send_json(400, json.dumps({'error': 'ack failed',
+                                                 'details': (r.stdout + r.stderr).strip()[:300]}))
+                return
+            self._send_json(200, json.dumps({'ok': True, 'key': key}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'ack error', 'details': str(e)}))
 
     def _handle_action(self):
         """Apply a Tracker edit to tickets.json (deterministic + atomic-swap) and log the event.
@@ -966,7 +1282,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 tid = f"T-{(max(nums) + 1) if nums else 1:03d}"
                 t = {'id': tid, 'title': body['title'][:300], 'priority': body.get('priority', 'P1'),
                      'status': body.get('status', 'todo'), 'kind': body.get('kind', 'self'),
-                     'owner': body.get('owner', 'You'), 'project': body.get('project', 'Other'),
+                     'owner': body.get('owner', 'the owner'), 'project': body.get('project', 'Other'),
                      'note': body.get('note', ''), 'due': body.get('due', ''), 'links': body.get('links', []),
                      'initiative_id': (initiative_id or None), 'jira_key': (jira_key or None),
                      'parent_id': (parent_id or None)}
@@ -984,7 +1300,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 json.loads(open(tmp, encoding='utf-8').read())
                 os.replace(tmp, TICKETS_PATH)
                 try:
-                    subprocess.run(['python3', '.agent/scripts/activity_log.py', '--actor', 'brian',
+                    subprocess.run(['python3', '.agent/scripts/activity_log.py', '--actor', 'owner',
                                     '--action', 'ticket_create', '--project', t.get('project', 'Other'),
                                     '--target', tid, '--summary', f"created {tid}: {t['title'][:80]}"],
                                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10)
@@ -1014,7 +1330,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # comment thread = per-ticket context + history (a real info source)
             now_wib = datetime.now(timezone(timedelta(hours=7))).isoformat(timespec='seconds')
             t.setdefault('comments', [])
-            t['comments'].append({'ts_wib': now_wib, 'by': 'brian',
+            t['comments'].append({'ts_wib': now_wib, 'by': 'owner',
                                   'change': '; '.join(changes), 'text': comment})
             doc['tickets'] = tickets
             # atomic swap: write tmp, validate, replace
@@ -1028,7 +1344,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if comment:
                 summary += f" | reason: {comment[:120]}"
             try:
-                subprocess.run(['python3', '.agent/scripts/activity_log.py', '--actor', 'brian',
+                subprocess.run(['python3', '.agent/scripts/activity_log.py', '--actor', 'owner',
                                 '--action', 'ticket_edit', '--project', t.get('project', 'Other'),
                                 '--target', tid, '--summary', summary],
                                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10)
@@ -1090,16 +1406,19 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             
             # Detect if path is already relative to BASE_DIR (includes 'scratch/', 'Clients/'
             # or the premeeting cards dir)
-            if rel_path.startswith(('scratch/', 'Clients/', 'journal/premeeting/')):
+            if rel_path.startswith(('scratch/', 'Clients/', 'journal/premeeting/',
+                                    'journal/ai_drafts/', '.agent/skills/')):
                 file_path = BASE_DIR / rel_path
             else:
                 file_path = CLIENTS_DIR / rel_path
                 if not file_path.exists():
                     file_path = SCRATCH_DIR / rel_path
 
-            # Security: ensure it's within CLIENTS_DIR, SCRATCH_DIR or the premeeting cards dir
+            # Security: ensure it's within CLIENTS_DIR, SCRATCH_DIR, the premeeting
+            # cards dir, or .agent/skills (read-only docs like SKILL.md / research notes)
             file_path = file_path.resolve()
-            if not (str(file_path).startswith(str(CLIENTS_DIR.resolve())) or str(file_path).startswith(str(SCRATCH_DIR.resolve())) or str(file_path).startswith(str(PREMEETING_DIR.resolve())) or str(file_path) == str(DASHBOARD_PATH.resolve())):
+            skills_dir = (BASE_DIR / '.agent' / 'skills').resolve()
+            if not (str(file_path).startswith(str(CLIENTS_DIR.resolve())) or str(file_path).startswith(str(SCRATCH_DIR.resolve())) or str(file_path).startswith(str(PREMEETING_DIR.resolve())) or str(file_path).startswith(str(AI_DRAFTS_DIR.resolve())) or str(file_path).startswith(str(skills_dir) + os.sep) or str(file_path) == str(DASHBOARD_PATH.resolve())):
                 self._send_json(403, json.dumps({'error': 'Access denied'}))
                 return
             if not file_path.exists():
@@ -1107,6 +1426,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return
 
             content = file_path.read_text(encoding='utf-8')
+            # AI drafts: rewrite raw Slack UIDs (<@U…> / bare U…) to real names so
+            # old drafts written before the name-resolution rules stay readable
+            if str(file_path).startswith(str(AI_DRAFTS_DIR.resolve())):
+                content = _resolve_slack_uids(content)
             self._send_json(200, json.dumps({
                 'content': content,
                 'name': file_path.name,
@@ -1116,6 +1439,29 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({
                 'error': 'Failed to read file', 'details': str(e)
             }))
+
+    def _handle_get_command_queue(self):
+        """GET /api/command-queue — command-queue items, foregrounding the ones awaiting
+        the owner's approval (state 'review' = a worker finished and left a draft on disk).
+        Read-only; the queue is owned by the command-queue skill."""
+        try:
+            q = json.loads(COMMAND_QUEUE_PATH.read_text(encoding='utf-8')) if COMMAND_QUEUE_PATH.exists() else {'items': {}}
+            items = list((q.get('items') or {}).values())
+            def _slim(i):
+                return {'key': i.get('key'), 'ticket_id': i.get('ticket_id'),
+                        'ticket_title': i.get('ticket_title'), 'command': i.get('command'),
+                        'category': i.get('category'), 'model': i.get('model'),
+                        'draft_path': i.get('draft_path'), 'finished_wib': i.get('finished_wib'),
+                        'ts_wib': i.get('ts_wib')}
+            review = [_slim(i) for i in items if i.get('state') == 'review']
+            review.sort(key=lambda x: x.get('finished_wib') or '', reverse=True)
+            counts = {}
+            for i in items:
+                counts[i.get('state', '?')] = counts.get(i.get('state', '?'), 0) + 1
+            self._send_json(200, json.dumps({
+                'review': review, 'counts': counts, 'last_run': q.get('last_run')}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'command-queue read failed', 'details': str(e)}))
 
     def _handle_toggle(self):
         try:
@@ -1282,7 +1628,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def _handle_get_initiative_detail(self):
         """GET /api/initiative/<id> — Portfolio drill-down join: initiative meta from
         portfolio.json + its tickets (top-level, each with children by parent_id), sorted
-        blocked-first / overdue-first / priority. unlinked_hint helps You find tickets
+        blocked-first / overdue-first / priority. unlinked_hint helps the owner find tickets
         that should be tagged with this initiative_id but aren't yet."""
         try:
             raw = self.path.split('/api/initiative/', 1)[1] if '/api/initiative/' in self.path else ''
@@ -1750,7 +2096,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({'error': 'run-job failed', 'details': str(e)}))
 
     def _handle_post_ack_job(self):
-        """POST /api/ack-job {job} — records 'You has seen this failure' as an epoch
+        """POST /api/ack-job {job} — records 'the owner has seen this failure' as an epoch
         timestamp (atomic .tmp+replace). /api/routines then reports acked:true for that
         job as long as no NEWER failure has landed since."""
         try:
@@ -2020,7 +2366,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({'error': 'Failed to build overview', 'details': str(e)}))
 
     def _handle_get_metrics(self):
-        """Health tab: output + pipeline metrics for You and the AI harness."""
+        """Health tab: output + pipeline metrics for the owner and the AI harness."""
         try:
             now = datetime.now(WIB)
             today = now.date()
@@ -2039,16 +2385,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-            per_day = {d: {'total': 0, 'agent': 0, 'brian': 0} for d in days}
+            per_day = {d: {'total': 0, 'agent': 0, 'owner': 0} for d in days}
             by_action_7, by_action_30 = {}, {}
-            by_actor_7 = {'agent': 0, 'brian': 0}
+            by_actor_7 = {'agent': 0, 'owner': 0}
             for e in events:
                 d = (e.get('ts_wib') or '')[:10]
                 act = e.get('action', 'other')
                 actor = e.get('actor', 'agent')
                 if d in per_day:
                     per_day[d]['total'] += 1
-                    per_day[d][actor if actor in ('agent', 'brian') else 'agent'] += 1
+                    per_day[d][actor if actor in ('agent', 'owner') else 'agent'] += 1
                 if d in d30:
                     by_action_30[act] = by_action_30.get(act, 0) + 1
                 if d in d7:
@@ -2380,9 +2726,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             tickets_node = freshness_node('tickets', 'Tickets', 'Ticket tracker (tickets.json)',
                                            'tickets.json (tracker)',
                                            'Updated by dashboard actions + enrich_tickets.py')
-            commitments_node = staleness_node('commitments', 'Commitments', 'Things You owes others',
+            commitments_node = staleness_node('commitments', 'Commitments', 'Things the owner owes others',
                                                'commitments', 'Refresh via commitment_ledger.py sweep')
-            waiting_node = staleness_node('waiting_on', 'Waiting on', 'Things others owe You',
+            waiting_node = staleness_node('waiting_on', 'Waiting on', 'Things others owe the owner',
                                            'waiting_on', 'Refresh via waiting_watchdog.py sweep')
             decisions_node = staleness_node('decisions', 'Decisions', 'Open decision log',
                                              'decisions', 'Captured via decision_log.py — no freshness SLA (exempt)')
@@ -2400,7 +2746,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                                     'context': 'Refresh via stakeholders.py render --all'}}
 
             portfolio_node = freshness_node('portfolio', 'Portfolio', 'Team/initiative rollups',
-                                             'portfolio.json', 'Refresh via .agent/scripts/portfolio_render.py')
+                                             'portfolio.json', 'Refresh via .agent/scripts/portfolio_sync.py')
             fathom_node = freshness_node('fathom-registry', 'Fathom registry', 'Recording index',
                                           'fathom_registry.json', 'Refresh via scripts/fathom_registry_sync.py')
 
@@ -2423,7 +2769,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
             # ── Tangan: gated actions — always 'gated', that IS their status ──
             tangan_defs = [
-                ('slack-post', 'Slack post', 'Send as You via slack_client.py — approval-gated'),
+                ('slack-post', 'Slack post', 'Send as the owner via slack_client.py — approval-gated'),
                 ('gdocs', 'GDocs', 'Create/update Google Docs — approval-gated for client-facing docs'),
                 ('calendar-create', 'Calendar create', 'Create/update calendar events — approval-gated'),
                 ('jira-create', 'Jira create', 'Create/transition Jira issues — approval-gated'),
@@ -2549,7 +2895,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 'last_sweep': state.get('last_sweep')}
 
     def _handle_get_commitments(self):
-        """Ledgers tab: commitment-ledger (journal/state/commitments.json) — things You owes others."""
+        """Ledgers tab: commitment-ledger (journal/state/commitments.json) — things the owner owes others."""
         try:
             self._send_json(200, json.dumps(self._commitments_payload()))
         except Exception as e:
@@ -2582,7 +2928,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return {'items': items, 'counts': counts, 'last_sweep': state.get('last_sweep')}
 
     def _handle_get_waiting_on(self):
-        """Ledgers tab: waiting-watchdog (journal/state/waiting_on.json) — things others owe You."""
+        """Ledgers tab: waiting-watchdog (journal/state/waiting_on.json) — things others owe the owner."""
         try:
             self._send_json(200, json.dumps(self._waiting_payload()))
         except Exception as e:
@@ -2769,7 +3115,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, json.dumps({'error': f'unknown kind {kind!r}',
                                                  'allowed': list(AI_TASK_KINDS)}))
                 return
-            if kind == 'verify-commitments':
+            if kind in ('verify-commitments', 'inbox-digest'):
                 ref = 'all'
             if kind == 'ping' and not ref:
                 ref = 'ping'
@@ -2779,8 +3125,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
             # validate the ref / build the spec FIRST so a bad ref is always a 400,
             # even when the runner is at capacity
+            instruction = (body.get('instruction') or '').strip() or None
             try:
-                prompt, tools, model, expected_result = _ai_task_spec(kind, ref)
+                prompt, tools, model, expected_result = _ai_task_spec(kind, ref, instruction)
             except ValueError as ve:
                 self._send_json(400, json.dumps({'error': str(ve)}))
                 return
@@ -2927,6 +3274,31 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({'error': 'token-usage failed',
                                              'details': str(e)}))
 
+    def _handle_get_token_efficiency(self):
+        """GET /api/token-efficiency — read-only: journal/state/token_efficiency.json
+        (weekly by_task_type/totals/hotspots/changes_recent, built by
+        .agent/scripts/token_efficiency.py) + the last 50 rows of
+        journal/state/efficiency_changelog.jsonl. Missing file -> {efficiency: null}
+        graceful, matching the other state-file endpoints' contract."""
+        try:
+            efficiency = None
+            if TOKEN_EFFICIENCY_PATH.exists():
+                efficiency = json.loads(TOKEN_EFFICIENCY_PATH.read_text(encoding='utf-8'))
+            changelog = []
+            if EFFICIENCY_CHANGELOG_PATH.exists():
+                for line in EFFICIENCY_CHANGELOG_PATH.read_text(encoding='utf-8').splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        changelog.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            self._send_json(200, json.dumps({'efficiency': efficiency, 'changelog': changelog[-50:]}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'token-efficiency failed',
+                                             'details': str(e)}))
+
     def _handle_post_commitment_link(self):
         """POST /api/commitment-link {commitment_id, ticket_id} — link a COM item to a
         tracker ticket via the ledger CLI (single writer). Empty/null ticket_id = unlink."""
@@ -2956,15 +3328,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({'error': 'commitment-link failed', 'details': str(e)}))
 
     def _handle_post_commitment_close(self):
-        """POST /api/commitment-close {id, action: 'close'|'drop', note?} — close/drop a
-        COM item from the UI via the ledger CLI (single writer)."""
+        """POST /api/commitment-close {id, action: 'close'|'drop'|'reopen', note?} —
+        close/drop/undo a COM item from the UI via the ledger CLI (single writer).
+        'reopen' is the mis-click undo: restores status open + clears closure fields."""
         try:
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
             cid = (body.get('id') or '').strip()
             action = (body.get('action') or 'close').strip()
-            if not cid or action not in ('close', 'drop'):
-                self._send_json(400, json.dumps({'error': 'need id + action close|drop'}))
+            if not cid or action not in ('close', 'drop', 'reopen'):
+                self._send_json(400, json.dumps({'error': 'need id + action close|drop|reopen'}))
                 return
             argv = ['python3', COMMITMENT_CLI, action, cid]
             note = (body.get('note') or '').strip()
@@ -2982,15 +3355,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(500, json.dumps({'error': 'commitment-close failed', 'details': str(e)}))
 
     def _handle_post_waiting_close(self):
-        """POST /api/waiting-close {id, action: 'close'|'drop'|'touch'} — resolve/nudge a
-        WAIT item from the UI via the watchdog CLI (single writer)."""
+        """POST /api/waiting-close {id, action: 'close'|'drop'|'touch'|'reopen'} —
+        resolve/nudge/undo a WAIT item from the UI via the watchdog CLI (single
+        writer). 'reopen' is the mis-click undo: back to open, breach recomputed."""
         try:
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
             wid = (body.get('id') or '').strip()
             action = (body.get('action') or 'close').strip()
-            if not wid or action not in ('close', 'drop', 'touch'):
-                self._send_json(400, json.dumps({'error': 'need id + action close|drop|touch'}))
+            if not wid or action not in ('close', 'drop', 'touch', 'reopen'):
+                self._send_json(400, json.dumps({'error': 'need id + action close|drop|touch|reopen'}))
                 return
             watchdog_cli = str(BASE_DIR / '.agent' / 'skills' / 'waiting-watchdog' /
                                'scripts' / 'waiting_watchdog.py')
@@ -3004,6 +3378,163 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(200, json.dumps({'ok': True, 'id': wid, 'action': action}))
         except Exception as e:
             self._send_json(500, json.dumps({'error': 'waiting-close failed', 'details': str(e)}))
+
+    def _handle_get_inbox(self):
+        """GET /api/inbox — journal/state/inbox.json as a render-ready payload:
+        items[] sorted open-first/newest-first, counts, per-source health, and
+        (for reload persistence) each item's latest ai-run id/status + draft path."""
+        try:
+            if not INBOX_PATH.exists():
+                self._send_json(200, json.dumps({
+                    'items': [], 'counts': {'open': 0}, 'sources': {},
+                    'last_sweep': None,
+                    'note': 'no inbox.json yet — run inbox_sweep.py sweep (or the ↻ Sweep button)'}))
+                return
+            state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
+            items = list((state.get('items') or {}).values())
+
+            # latest ai-run per inbox ref (newest meta wins; cheap: metas are small)
+            runs_by_ref = {}
+            for m in _ai_runs_all():
+                if m.get('kind') == 'inbox' and m.get('ref') and m['ref'] not in runs_by_ref:
+                    runs_by_ref[m['ref']] = {'id': m.get('id'), 'status': m.get('status'),
+                                             'result_path': m.get('result_path')}
+            for it in items:
+                run = runs_by_ref.get(it['id'])
+                if run:
+                    it['last_run'] = run
+                safe = re.sub(r'[^A-Za-z0-9_-]+', '_', it['id'])[:80]
+                draft = AI_DRAFTS_DIR / f'inbox_{safe}.md'
+                if draft.exists():
+                    it['ai_draft'] = str(draft.relative_to(BASE_DIR))
+
+            status_rank = {'open': 0, 'done': 1, 'ignored': 2}
+            items.sort(key=lambda i: (status_rank.get(i.get('status'), 3),
+                                      -(i.get('ts') or 0)))
+            counts = {}
+            for it in items:
+                counts[it.get('status', '?')] = counts.get(it.get('status', '?'), 0) + 1
+                counts.setdefault('by_source', {})
+                if it.get('status') == 'open':
+                    src = it.get('source', '?')
+                    counts['by_source'][src] = counts['by_source'].get(src, 0) + 1
+            self._send_json(200, json.dumps({
+                'items': items, 'counts': counts,
+                'sources': state.get('sources') or {},
+                'names': _slack_names_map(),
+                'last_sweep': state.get('last_sweep'),
+                'last_sweep_wib': state.get('last_sweep_wib')}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'inbox read failed', 'details': str(e)}))
+
+    def _handle_post_inbox_sweep(self):
+        """POST /api/inbox-sweep — run the aggregator synchronously (manual ↻ button;
+        the 30-min cron covers periodic refresh). Gmail dominates the latency; 90s cap.
+        On success, GLM reply-drafting for new reply-needed items runs DETACHED so the
+        button returns fast — drafts appear on the next poll/refresh."""
+        try:
+            proc = subprocess.run(['python3', INBOX_CLI, 'sweep'], cwd=str(BASE_DIR),
+                                  capture_output=True, text=True, timeout=90)
+            if proc.returncode != 0:
+                self._send_json(500, json.dumps({
+                    'error': 'sweep failed',
+                    'details': (proc.stderr or proc.stdout or '')[:400]}))
+                return
+            subprocess.Popen(['python3', INBOX_CLI, 'draft'], cwd=str(BASE_DIR),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, start_new_session=True)
+            self._send_json(200, json.dumps({'ok': True,
+                                             'summary': (proc.stdout or '').strip()[:300]}))
+        except subprocess.TimeoutExpired:
+            self._send_json(504, json.dumps({'error': 'sweep timed out (90s)'}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'inbox-sweep failed', 'details': str(e)}))
+
+    def _handle_post_inbox_action(self):
+        """POST /api/inbox-action {id, action: done|ignore|reopen|link, ticket?} —
+        triage an inbox item via the inbox CLI (single writer). Every action is
+        reversible: done/ignore ↔ reopen; link with an empty ticket clears it."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+            iid = (body.get('id') or '').strip()
+            action = (body.get('action') or '').strip()
+            if not iid or action not in ('done', 'ignore', 'reopen', 'link'):
+                self._send_json(400, json.dumps({'error': 'need id + action done|ignore|reopen|link'}))
+                return
+            if action == 'link':
+                argv = ['python3', INBOX_CLI, 'link', iid,
+                        '--ticket', (body.get('ticket') or '').strip()]
+            else:
+                status = {'done': 'done', 'ignore': 'ignored', 'reopen': 'open'}[action]
+                argv = ['python3', INBOX_CLI, 'set-status', iid, '--status', status]
+            proc = subprocess.run(argv, cwd=str(BASE_DIR), capture_output=True,
+                                  text=True, timeout=30)
+            if proc.returncode != 0:
+                out = (proc.stderr or proc.stdout or '')[:300]
+                self._send_json(404 if 'not found' in out else 500,
+                                json.dumps({'error': f'{action} failed', 'details': out}))
+                return
+            self._send_json(200, json.dumps({'ok': True, 'id': iid, 'action': action}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'inbox-action failed', 'details': str(e)}))
+
+    def _handle_post_inbox_send(self):
+        """POST /api/inbox-send {id, text} — the owner APPROVED a reply draft in the
+        drawer: send it AS OWNER (slack_client.py post, user token — never the bot)
+        to the conversation's channel/thread, then mark the item done with the sent
+        permalink. The approve click on the shown draft IS the explicit approval the
+        Slack gate requires; only slack conversations are sendable (gmail = copy)."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
+            iid = (body.get('id') or '').strip()
+            text = (body.get('text') or '').strip()
+            if not iid or not text:
+                self._send_json(400, json.dumps({'error': 'need id + text'}))
+                return
+            state = json.loads(INBOX_PATH.read_text(encoding='utf-8'))
+            it = (state.get('items') or {}).get(iid)
+            if not it:
+                self._send_json(404, json.dumps({'error': f'item {iid} not found'}))
+                return
+            if it.get('source') != 'slack' or not it.get('send_channel'):
+                self._send_json(400, json.dumps({
+                    'error': 'only slack conversations are sendable from here '
+                             '(gmail: copy the draft into a reply)'}))
+                return
+            if it.get('status') != 'open':
+                self._send_json(409, json.dumps({'error': f"item is {it.get('status')}, not open"}))
+                return
+            slack_cli = str(BASE_DIR / '.agent' / 'skills' / 'slack-connector' /
+                            'scripts' / 'slack_client.py')
+            with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False,
+                                             encoding='utf-8') as tf:
+                tf.write(text)
+                tmp = tf.name
+            try:
+                argv = ['python3', slack_cli, '--action', 'post',
+                        '--channel', it['send_channel'], '--text-file', tmp]
+                if it.get('send_thread_ts'):
+                    argv += ['--thread-ts', str(it['send_thread_ts'])]
+                proc = subprocess.run(argv, cwd=str(BASE_DIR), capture_output=True,
+                                      text=True, timeout=45)
+            finally:
+                os.unlink(tmp)
+            out = (proc.stdout or '') + (proc.stderr or '')
+            if proc.returncode != 0:
+                self._send_json(500, json.dumps({'error': 'send failed',
+                                                 'details': out[:400]}))
+                return
+            m = re.search(r'https://\S*slack\.com/\S+', out)
+            permalink = m.group(0).rstrip('>).,') if m else ''
+            subprocess.run(['python3', INBOX_CLI, 'mark-sent', iid,
+                            '--permalink', permalink],
+                           cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15)
+            self._send_json(200, json.dumps({'ok': True, 'id': iid,
+                                             'permalink': permalink}))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'inbox-send failed', 'details': str(e)}))
 
     def _handle_get_briefing(self):
         """GET /api/briefing — newest Pagi + Malam sections from Dashboard.md (file is
@@ -3149,7 +3680,8 @@ def main():
     print(f"\n  🚀 Dashboard running at http://localhost:{PORT}\n")
     print(f"  Reading from: {DASHBOARD_PATH}")
     print(f"  Calendar:     {'✅ token found' if TOKEN_FILE.exists() else '❌ no token'}")
-    print(f"  Projects:     {CLIENTS_DIR}\n")
+    print(f"  Projects:     {CLIENTS_DIR}")
+    print(f"  Allowed IPs:  {', '.join(sorted(ALLOWED_IPS))}\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

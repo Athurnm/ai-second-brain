@@ -122,6 +122,16 @@ follow `docs/SETUP.md` rather than duplicating its steps, and drive them through
    - Tick that integration in the `Integrations Active` checklist.
 3. If they want to skip a tool for now, that's fine: mark it unchecked and move on. They can run
    `/setup slack` (or any tool name) later to wire just that one.
+4. Ask about the **agy-bridge** (`.agent/skills/agy-bridge`), separately from the tools above,
+   since it's an optional cost saver, not a requirement: "Do you have a subscription to any
+   non-Claude model I could use as a cheaper co-processor for bulk/harvest work: z.ai's GLM Coding
+   Plan, Kimi Code, Antigravity (agy CLI for Gemini/GPT-OSS), or none of these?"
+   - If **none**: tell them that's completely fine, the harness runs Claude-only by default, and
+     skip token setup for this skill entirely. Note it as Claude-only mode, nothing to configure.
+   - If **one or more**: point them to the matching section of
+     `.agent/skills/agy-bridge/SKILL.md` (`## Setup`) and `token.env.example`, walk them through
+     `cp token.env.example token.env` plus pasting the token into the file (never into chat), and
+     verify with `python3 .agent/skills/agy-bridge/run.py --doctor`.
 
 ## Phase 7 - Assemble & write CLAUDE.md
 

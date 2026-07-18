@@ -21,12 +21,12 @@ When a PRD is finalized (State 4):
 ```bash
 python3 .agent/skills/master-product-list/register_prd.py \
   --component "E-commerce Core" \
-  --feature "MGC Legacy Sync" \
+  --feature "ExampleProgram Legacy Sync" \
   --details "Event-driven sync pipeline; product data, pricing, and stock write-back; delta sync" \
   --version "V1 Phase" \
   --status "Full" \
   --url "https://docs.google.com/document/d/<YOUR_DRIVE_ID>/edit" \
-  --title "PRD Seller Portal MGC Legacy Sync"
+  --title "PRD Seller Portal ExampleProgram Legacy Sync"
 ```
 
 ## Sheet Integrity

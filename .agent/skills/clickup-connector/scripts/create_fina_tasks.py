@@ -14,7 +14,7 @@ TOKEN = "pk_88954348_1FB6GNJATX3QOVXKP38TABFTA3U9Q0XS"
 LIST_ID = "901614365044"
 
 # User ID mapping
-BRIAN   = 88954348
+OWNER   = 88954348
 MUKHIB  = 37588486
 HAMZAH  = 100960269
 FADHLAN = 37519322
@@ -24,7 +24,7 @@ def resolve_owner(owner: str) -> list:
     o = owner.strip()
     # Named individuals
     if "Your Name" in o:
-        return [BRIAN]
+        return [OWNER]
     if "Muhammad Teammate" in o:
         return [MUKHIB]
     if "Muhammad Fajry Hamzah" in o:
@@ -38,7 +38,7 @@ def resolve_owner(owner: str) -> list:
     for part in parts:
         p = part.strip().lower()
         if p == "pm":
-            ids.add(BRIAN)
+            ids.add(OWNER)
         elif p == "ops":
             ids.add(FADHLAN)
         # BE and QA → empty (per user instructions)

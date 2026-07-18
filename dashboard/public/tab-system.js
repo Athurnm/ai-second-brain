@@ -30,12 +30,13 @@
      a muted "known jobs" hint on a 404, since U.fetchJSON discards the response body
      on a non-OK status (it throws a plain Error before parsing json). */
   const JOB_LOG_KNOWN = ['maintenance', 'dashboard-keepalive', 'vexa-auto', 'mention-ledger',
-    'commitment-ledger', 'waiting-watchdog', 'outcomes-loop', 'premeeting-cards', 'harness-health'];
+    'commitment-ledger', 'waiting-watchdog', 'outcomes-loop', 'premeeting-cards', 'harness-health',
+    'work-hours'];
 
   /* Mirrors server.py's JOB_RUN_MAP whitelist — only these jobs get a [▶ Run now]
      button on a failing routine row (everything else still gets [✓ Ack]). */
   const RUNNABLE_JOBS = new Set(['outcomes-loop', 'harness-health', 'commitment-ledger',
-    'waiting-watchdog', 'premeeting-cards', 'maintenance']);
+    'waiting-watchdog', 'premeeting-cards', 'maintenance', 'work-hours']);
 
   /* Job-specific "why + what to do" line for a failing routine — shown even before
      the lazy job-log is expanded, so "ini fail bisa diapain?" has an answer inline. */
@@ -388,7 +389,7 @@
     const rows = [];
     if (Object.keys(bySev).length) {
       /* severity chips are now CLICKABLE — opens the full grouped findings
-         list in a wide drawer instead of leaving You stuck at a bare count */
+         list in a wide drawer instead of leaving the owner stuck at a bare count */
       const chips = Object.entries(bySev).map(([sev, n]) =>
         `<button class="sev-chip-btn" title="Open findings">${Comp.badge(SEV_KIND[sev] || 'muted', `${sev} ${n}`)}</button>`).join('');
       rows.push(Comp.listRow({ key: 'harness:findings', icon: '🔎', title: 'Findings by severity', right: chips }));
@@ -660,11 +661,109 @@
     return Comp.card({ key: 'token-usage', icon: '🧮', title: 'Token Usage (Claude)', count, body, open: true });
   }
 
+  /* ── 8. 📈 Token Efficiency: /api/token-efficiency — weekly totals +
+     offload share (built by .agent/scripts/token_efficiency.py), distinct
+     from the 30d Token Usage card above (that one is a rolling window; this
+     one is week-over-week trend + hotspots + a changelog of optimizations
+     tried, so "did the last change actually help" has an answer). Same
+     graceful-empty contract as tokenUsageEmpty above — a missing/empty
+     payload never renders as a .load-error. */
+  function tokenEfficiencyEmpty(hint) {
+    return Comp.card({
+      key: 'token-efficiency', icon: '📈', title: 'Token Efficiency',
+      body: Comp.emptyState({ icon: '📈', title: 'Belum ada data efisiensi', hint }),
+      open: false,
+    });
+  }
+
+  function pctDelta(curr, prev) {
+    if (!Number.isFinite(curr) || !Number.isFinite(prev) || prev === 0) return null;
+    return ((curr - prev) / prev) * 100;
+  }
+
+  function deltaChip(curr, prev, { lowerIsBetter = true } = {}) {
+    const d = pctDelta(curr, prev);
+    if (d == null) return '';
+    const rounded = Math.round(d);
+    const improved = lowerIsBetter ? rounded < 0 : rounded > 0;
+    const kind = rounded === 0 ? 'muted' : improved ? 'good' : 'warn';
+    const arrow = rounded === 0 ? '→' : rounded > 0 ? '↑' : '↓';
+    return Comp.badge(kind, `${arrow} ${Math.abs(rounded)}% vs last wk`);
+  }
+
+  function tokenEfficiencySection(teR) {
+    if (!teR || teR.status !== 'fulfilled') {
+      return tokenEfficiencyEmpty('/api/token-efficiency belum live — coba lagi setelah endpoint kelar dideploy');
+    }
+    const d = teR.value || {};
+    const eff = d.efficiency;
+    const weeks = Array.isArray(eff && eff.weeks) ? eff.weeks.slice() : [];
+    const changelog = Array.isArray(d.changelog) ? d.changelog.slice() : [];
+    if (!eff || !weeks.length) {
+      return tokenEfficiencyEmpty('no weeks in journal/state/token_efficiency.json yet — run token_efficiency.py report');
+    }
+
+    const last = weeks[weeks.length - 1];
+    const prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+    const lastTotals = last.totals || {};
+    const prevTotals = (prev && prev.totals) || {};
+
+    const count = `${fmtCompact(lastTotals.tokens)} tok · ${fmtUsd(lastTotals.cost_usd)} · ${last.week || 'this wk'}`;
+
+    /* hero chips: this week's totals + week-over-week delta (tokens lower is
+       better, offload share higher is better) */
+    const chips = [
+      `<div class="stat-sub">${fmtCompact(lastTotals.tokens)} tokens · ${lastTotals.runs ?? 0} runs · ${fmtUsd(lastTotals.cost_usd)}</div>`,
+      `<div class="stat-sub">${deltaChip(lastTotals.tokens, prevTotals.tokens, { lowerIsBetter: true })}` +
+      ` ${deltaChip(lastTotals.offloaded_share_pct, prevTotals.offloaded_share_pct, { lowerIsBetter: false })}</div>`,
+    ].join('');
+
+    /* per-week trend: total tokens (a) vs offloaded tokens (b) — same
+       duoBars widget Cost & Savings uses for spent/saved, so the offload
+       share reads as the visual "b slice" of each week's bar */
+    const weekBars = weeks.slice(-10).map(w => ({
+      date: w.week,
+      a: (w.totals || {}).tokens || 0,
+      b: Object.values(w.by_task_type || {}).reduce((a, t) => a + (t.offloaded_tokens || 0), 0),
+    }));
+    const trendLegend = `<div class="stat-sub">${Comp.badge('cat-1', 'total tokens')}${Comp.badge('cat-2', 'offloaded')}</div>`;
+    const trendHtml = `<div class="stack">${trendLegend}${Comp.duoBars(weekBars) || Comp.emptyState({ icon: '📉', title: 'No weekly data yet' })}</div>`;
+
+    /* top-3 hotspots (server pre-ranks; render verbatim, capped at 3 as a
+       belt-and-braces in case the payload ever grows) */
+    const hotspots = (eff.hotspots || []).slice(0, 3);
+    const hotspotRows = hotspots.map((h, i) => Comp.listRow({
+      key: `te:hotspot:${h.task_type}`, icon: '🔥', title: h.task_type || '(unknown)',
+      badges: [Comp.badge(tuKind(i), fmtCompact(h.tokens))],
+      expandBody: h.why ? `<p>${U.esc(h.why)}</p>` : '',
+    }));
+
+    /* what-changed: changelog rows newest-first, expand shows the expected
+       effect + touched files (mirrors harnessFindingRow's linkChips use) */
+    const changeRows = changelog.slice().reverse().slice(0, 20).map(c => {
+      const ts = c.ts_wib ? U.esc(c.ts_wib.slice(0, 16).replace('T', ' ')) : '—';
+      const files = Comp.linkChips(c.files || []);
+      return Comp.listRow({
+        key: `te:change:${c.ts_wib || Math.random()}`, icon: '🛠', title: c.what || '(no description)',
+        meta: ts,
+        expandBody: `${c.expected_effect ? `<p>${U.esc(c.expected_effect)}</p>` : ''}${files}`,
+      });
+    });
+
+    const body = `<div class="two-col">${chips}${trendHtml}</div>` +
+      `<div class="section-label">Top hotspots</div>` +
+      `<div class="rows">${hotspotRows.join('') || Comp.emptyState({ icon: '🔥', title: 'No hotspots flagged' })}</div>` +
+      `<div class="section-label">What changed</div>` +
+      `<div class="rows">${changeRows.join('') || Comp.emptyState({ icon: '🛠', title: 'No optimizations logged yet' })}</div>`;
+
+    return Comp.card({ key: 'token-efficiency', icon: '📈', title: 'Token Efficiency', count, body, open: false });
+  }
+
   /* ── render + registration ── */
   async function render() {
     const panel = document.getElementById('tab-system');
     if (!panel) return;
-    const [mR, rR, hR, cR, spR, hbR, hmR, tuR] = await Promise.allSettled([
+    const [mR, rR, hR, cR, spR, hbR, hmR, tuR, teR] = await Promise.allSettled([
       U.fetchJSON('/api/metrics'),
       U.fetchJSON('/api/routines'),
       U.fetchJSON('/api/harness'),
@@ -673,6 +772,7 @@
       U.fetchJSON('/api/heartbeat'),
       U.fetchJSON('/api/harness-map'),
       U.fetchJSON('/api/token-usage'),
+      U.fetchJSON('/api/token-efficiency'),
     ]);
     panel.innerHTML = [
       heroSection(mR, cR),
@@ -683,6 +783,7 @@
       activitySection(spR, mR),
       costSection(cR),
       tokenUsageSection(tuR),
+      tokenEfficiencySection(teR),
     ].join('\n');
     wireRoutineLogs(panel);
   }

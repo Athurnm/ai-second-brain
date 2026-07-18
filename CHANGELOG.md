@@ -5,6 +5,72 @@ All notable changes to the AI Second Brain public template. Newest first.
 This template is kept in sync from a private working repo; each release is a scrubbed
 snapshot with all credentials, tokens, real client names, and personal data removed.
 
+## 2026-07-18
+
+### Added
+- **Claude-only mode is now first-class.** The optional model bridge (`agy-bridge`)
+  detects instantly when no non-Claude backend is configured and emits its standard
+  Claude-fallback signal, so the whole harness runs on Claude alone at full capability.
+  `run.py --doctor` explains your mode and what each optional backend needs; the
+  `/setup` wizard now asks which subscriptions you have (including "none") and skips
+  token setup accordingly. New optional backend: Kimi Code (Anthropic-compatible).
+- **Token-efficiency loop** (`.agent/scripts/token_efficiency.py` +
+  `.agent/protocols/token_efficiency.md`): weekly self-audit of tokens, cost, and
+  offload share per task type from real usage logs; a `log-change` ledger records every
+  optimization so the next report shows each change next to its observed effect. New
+  dashboard panel (`/api/token-efficiency`) renders the trend, top hotspots, and the
+  what-changed log; weekly planning picks at most one hotspot to optimize.
+- **PRD publish chain**: `scripts/publish_prd.sh` (gate → convert → embed → format →
+  share → restrict → verify, update-in-place, hard-fails loudly at every step) and
+  `scripts/readability_gate.py` (wall-of-text lint before publish, post-publish verify,
+  `--allow-public` for intentionally public docs).
+- **Meeting-coverage tripwire** (`meeting-recorder/mom_reconcile.py`): enumerates the
+  day from the live recorder API (never a stale local registry), tri-state exit
+  (covered / gaps / cannot-verify), grace window for just-ended meetings, skips
+  recordings that belong to other workspaces, designed to run on its own cron.
+- **Inbox hub** (dashboard): conversations with context-aware reply drafts and an
+  approve-before-send flow; drafts can never send themselves. Command-queue workers are
+  draft-only by tool policy, not just by prompt.
+
+### Security
+- **Dashboard access control**: per-request client-IP allowlist (loopback + auto-detected
+  WSL gateway + `DASHBOARD_ALLOWED_IPS`) enforced for every route, including the
+  send-capable endpoints. 403 for everything else.
+- **Headless AI runs de-fanged**: background inbox/digest/enrichment tasks now get
+  narrowly scoped tool allowlists (no unscoped shell) since their prompts embed
+  untrusted inbound message content; sends stay approval-gated at the server.
+- **Scrub pipeline hardened**: runtime prompt snapshots (`*_prompt.txt`, which can carry
+  real message text) and retired code are now blocklisted from ever syncing here.
+
+### Fixed
+- Premeeting-card enrichment always goes through the dedicated bridge script (the
+  headless cron path had silently grown a divergent inline re-implementation that could
+  overwrite the card audit trail).
+- Meeting-note sync no longer aborts the whole batch when one note targets a path
+  outside the repo; per-note failures are isolated and reported.
+- Commitment-ledger duplicate adjudication (`dedupe`) now runs on cron; cron log lines
+  carry timestamps; duplicate-assignment cleanup.
+- Weekly-report/PRD registration exits nonzero when the local markdown update fails.
+- Various small honesty fixes: publish verify no longer fails intentionally-public docs,
+  mermaid-embed failures are no longer masked, stale cron times corrected in SOPs, the
+  Claude binary fallback fails loudly instead of silently using a broken wrapper.
+
+### Added (from the prior unreleased batch)
+- **GA4 connector** (`.agent/skills/ga4-connector/`): read-only Google Analytics 4 CLI
+  for AI agents. Actions: `snapshot` (KPIs + % deltas vs previous period + top
+  pages/sources/events/countries/devices + daily trend + new-vs-returning, one call),
+  `report` (custom dimensions/metrics/filters), `realtime`, `top` presets, `meta`
+  (dimension/metric discovery incl. custom definitions), `accounts`, `property`.
+  Two-step headless OAuth helper reuses the shared work Google OAuth client
+  (`analytics.readonly` scope); token auto-refreshes, cron-safe. Set your property id
+  in `config.example.json` → `config.json` or via `set-default`. Design adapted from
+  the official `googleanalytics/google-analytics-mcp` tool surface and
+  `Bin-Huang/google-analytics-cli` (CLI-first JSON output). SKILL.md includes an
+  analysis SOP: snapshot first, drill anomalies with segmented reports, weight by
+  revenue/conversion over raw traffic, every insight ends in an owned action item.
+  Prereq: enable Google Analytics Data API + Admin API on the Cloud project that
+  owns your OAuth client.
+
 ## 2026-07-12
 
 ### Added

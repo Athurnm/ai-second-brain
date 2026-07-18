@@ -10,7 +10,7 @@ This workflow processes files from the `inbox/` folder and organizes them into t
 ## Steps
 
 1. **Check inbox for new files**
-   - List all files in `c:\Users\You\Product Repo\inbox\`
+   - List all files in `c:\Users\the owner\Product Repo\inbox\`
    - If empty, confirm no files to process
 
 2. **For each file, analyze content**

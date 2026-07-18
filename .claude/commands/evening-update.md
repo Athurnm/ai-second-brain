@@ -15,7 +15,7 @@ Hard rules (restated because they are non-negotiable):
 - Apply ALL 9 checkpoints of `.agent/protocols/daily_update_quality_rubric.md` - mandatory in evening mode.
 - Compare against the morning plan in `_temp/daily_plan_[date].md` (scorecard: done / carryover).
 - End with the LinkedIn content check ("Udah posting di LinkedIn hari ini?").
-- If You corrected your output or process at any point today, offer to run `/learn` to persist the lesson.
+- If the owner corrected your output or process at any point today, offer to run `/learn` to persist the lesson.
 - No em-dashes in any output.
 
-Focus hint from You: $ARGUMENTS
+Focus hint from the owner: $ARGUMENTS

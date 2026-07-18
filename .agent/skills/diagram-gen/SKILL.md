@@ -24,7 +24,7 @@ A PRD/BRD needs an architecture or flow diagram; you want to visualize a sequenc
    - One edge per line; keep arrows simple (`-->`, `-.->`, `==>`); label edges with `-->|text|`.
    - No raw `(`/`)`/`:`/`;` outside quotes; no markdown inside labels.
    - Keep it readable: if a flow exceeds ~20 nodes, split into two diagrams.
-3. **Validate it renders BEFORE showing You** (never hand over un-rendered Mermaid):
+3. **Validate it renders BEFORE showing the owner** (never hand over un-rendered Mermaid):
    ```bash
    python3 .agent/skills/diagram-gen/render_check.py --file <mermaid.mmd> --out /tmp/diagram_preview.png
    ```

@@ -5,7 +5,7 @@ description: "Ultrawork mode. Plan, fan out parallel subagents, self-verify, dri
 
 # ULW: Ultrawork Mode (knowledge-work adaptation)
 
-The omo "ultrawork" pattern, adapted for You's PM and content work. Relentless, parallel, self-verifying execution toward an explicit definition of done. Reuses the routing table in CLAUDE.md (`## Subagents`) and the existing quality gates (`draft-reviewer`, `report-auditor`).
+The omo "ultrawork" pattern, adapted for the owner's PM and content work. Relentless, parallel, self-verifying execution toward an explicit definition of done. Reuses the routing table in CLAUDE.md (`## Subagents`) and the existing quality gates (`draft-reviewer`, `report-auditor`).
 
 ## When to use
 Multi-part tasks with independent sub-work: weekly report, PRD, briefing, research sweep, multi-doc operations. Skip it for a single quick reply (spawn overhead is not worth it).
@@ -30,7 +30,7 @@ Multi-part tasks with independent sub-work: weekly report, PRD, briefing, resear
 7. **Deliver.** Present the result plus a one-line "checked:" note stating what was verified and which gate passed.
 
 ## Scaling up (heavy tasks)
-If the work is large and highly parallel (broad audit, many documents, loop-until-criteria), propose running it as a **Workflow** instead: deterministic fan-out with explicit per-stage model and effort, adversarial verify stages, and loop-until-done. Ask You before launching, because it spends more tokens.
+If the work is large and highly parallel (broad audit, many documents, loop-until-criteria), propose running it as a **Workflow** instead: deterministic fan-out with explicit per-stage model and effort, adversarial verify stages, and loop-until-done. Ask the owner before launching, because it spends more tokens.
 
 ## Honest limits
 True cross-turn "never stop until done" cannot be hard-enforced: a Stop hook can block an exit but cannot feed goals back to the model. ULW enforces within-turn relentlessness and uses the Definition of Done as the stop gate. For genuine unattended looping, use `/loop` or a Workflow.

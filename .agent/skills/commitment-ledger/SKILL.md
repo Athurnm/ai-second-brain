@@ -1,19 +1,19 @@
 ---
 name: commitment-ledger
-description: Outbound commitments ledger - things You said he'd do (from Fathom meeting action items, sent Slack messages, and local meeting transcripts/MOM drafts), tracked from "I'll ..." until actually delivered or dropped. Not for things You is waiting on others for (see waiting-watchdog).
+description: Outbound commitments ledger - things the owner said he'd do (from Fathom meeting action items, sent Slack messages, and local meeting transcripts/MOM drafts), tracked from "I'll ..." until actually delivered or dropped. Not for things the owner is waiting on others for (see waiting-watchdog).
 ---
 
 ## Capabilities
 
-- Mechanically pull Fathom action items assigned to You from recently-synced meetings
+- Mechanically pull Fathom action items assigned to the owner from recently-synced meetings
   (`journal/fathom_registry.json`) into high-confidence commitment items - no LLM needed.
-- Sweep You's own sent Slack messages for commitment language ("I'll send...", "will follow
+- Sweep the owner's own sent Slack messages for commitment language ("I'll send...", "will follow
   up...") into a cheap-filtered candidate queue, then use GLM (via agy-bridge) to extract
   structured commitments (recipient, due date) from that queue.
-- Mechanically capture You's spoken "this is my action item" cues from local meeting
-  transcripts, plus MOM "Action Items" rows that name You, into high-confidence commitment
+- Mechanically capture the owner's spoken "this is my action item" cues from local meeting
+  transcripts, plus MOM "Action Items" rows that name the owner, into high-confidence commitment
   items - no LLM needed (see **Local meeting-cue capture** below for the exact trigger phrases).
-- Mechanically auto-close a commitment when You later posts a completion word or a Drive/Docs
+- Mechanically auto-close a commitment when the owner later posts a completion word or a Drive/Docs
   link in the same thread.
 - Emit a briefing-ready markdown report (overdue open first, then open by due date, then
   no-due, closed items only with `--all`).
@@ -36,11 +36,11 @@ items in `report`; add one later with the ledger's own `close --note` or by edit
 future manual pass if needed.
 
 Separately, ANY row inside a MOM's "Action Items" section (table row, checkbox bullet, plain
-line - whatever format that MOM uses) that contains the literal word "You" is also captured.
+line - whatever format that MOM uses) that contains the literal word "the owner" is also captured.
 **Caveat:** this is a blunt word match, not owner-column parsing - parsing which table column
 is "Owner" per MOM format would need real understanding, which the mechanical/no-LLM
-constraint rules out. So a row like `| Rani | Share X with You and Javi | ... |` gets
-captured even though You is only the recipient named in that row, not the owner. Skim these
+constraint rules out. So a row like `| Rani | Share X with the owner and Javi | ... |` gets
+captured even though the owner is only the recipient named in that row, not the owner. Skim these
 before turning one into a ticket.
 
 ## Usage
@@ -88,11 +88,11 @@ python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py report --al
   recording_playback_url, assignee: {name, email, team}}`). `sweep_fathom()` therefore uses
   `list --full` (bounded `--limit`, default 20) and cross-references against
   `fathom_registry.json` to identify which fetched meetings are new, rather than fetching
-  per-recording via `get`. You-assignee match: `assignee.email == you@example.com` OR
-  assignee name contains `"you"`/`"you"` (case-insensitive - Fathom's
-  transcript speaker-matching produces inconsistent casing/fullname variants, e.g. "brian
+  per-recording via `get`. the owner-assignee match: `assignee.email == you@example.com` OR
+  assignee name contains `"owner arfi"`/`"you"` (case-insensitive - Fathom's
+  transcript speaker-matching produces inconsistent casing/fullname variants, e.g. "owner
   arfi" vs "Your Name").
-- Slack sent-message sweep: `search.messages from:<@<SLACK_ID>>` (You's verified Slack
+- Slack sent-message sweep: `search.messages from:<@<SLACK_ID>>` (the owner's verified Slack
   ID), paginated (bounded to 5 pages/sweep), cheap regex pre-filter (`COMMIT_RE`) so
   `pending_candidates` doesn't fill with unrelated sent messages. First run looks back 3
   days. Extraction into real ledger items is NOT done during `sweep` - only `extract`
@@ -104,22 +104,22 @@ python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py report --al
   `Clients/*/meetings/*.md` (any other client's meeting notes, present or future). `.md` only
   - the `.txt` whisper sidecars in the transcripts dir are not scanned. Only files with
   `mtime` newer than `local_watermark` are read each sweep (first run: 3-day lookback, same
-  as Fathom/Slack). Two independent captures per file: (1) `CUE_RE` finds You's spoken
+  as Fathom/Slack). Two independent captures per file: (1) `CUE_RE` finds the owner's spoken
   cues anywhere in the text; (2) `extract_mom_action_lines()` finds the "Action Items"
   heading (heading-level aware, so a nested subheading doesn't end the section early) and
-  scans its rows for the literal word "You". Dedupe key: `local:<repo-relative
+  scans its rows for the literal word "the owner". Dedupe key: `local:<repo-relative
   path>:<sha1(raw line)[:12]>` in `processed_sources` - content-hashed per line, so
   re-touching a file (e.g. a later hand-edit of a MOM) only re-captures genuinely new/changed
   lines, not ones already ingested. Confidence `high` (mechanical, no LLM, same tier as
   Fathom). `permalink` and `source.ref` are both set to the repo-relative path so `report`
   renders a clickable local link (`[ref](Clients/Work/meetings/...)`), consistent with how
-  You opens local files from this harness.
+  the owner opens local files from this harness.
 - agy-bridge contract: rc 0 -> stdout has JSON lines to parse. rc 3 -> `FALLBACK_TO_CLAUDE`
   marker printed, `pending_candidates` left untouched, exit 0 (NOT a failure - Claude
   should run `extract`'s judgment manually in that case, same pattern as
   `mention_ledger.py cmd_classify`).
 - Auto-close is mechanical only: an open item with a `channel` + `thread_ts` gets closed
-  (`closed_by: auto_thread`) when You's own later message in that thread contains a
+  (`closed_by: auto_thread`) when the owner's own later message in that thread contains a
   completion word (done/sent/shared/delivered/...) or a `docs.google.com`/`drive.google.com`
   link. Fathom-sourced items have no `thread_ts` (the API gives no recipient thread) so they
   can only be closed via `close`/`drop`.

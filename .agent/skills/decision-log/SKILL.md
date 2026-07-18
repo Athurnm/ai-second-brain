@@ -1,6 +1,6 @@
 ---
 name: decision-log
-description: Durable ledger of decisions You tracks across Work/Secondary (from Fathom meetings, Slack, GDocs, or captured manually) - "what did we decide about X" without re-digging through memory. No cron; capture is Claude-driven via /mom and morning/evening update SOPs.
+description: Durable ledger of decisions the owner tracks across Work/Secondary (from Fathom meetings, Slack, GDocs, or captured manually) - "what did we decide about X" without re-digging through memory. No cron; capture is Claude-driven via /mom and morning/evening update SOPs.
 ---
 
 ## Capabilities
@@ -15,11 +15,11 @@ description: Durable ledger of decisions You tracks across Work/Secondary (from 
 # capture a new open decision (surfaced e.g. during /mom or a meeting)
 python3 .agent/skills/decision-log/scripts/decision_log.py add \
   --title "Q3 pricing floor for B2C bundles" \
-  --decider "YourManager Barry" \
+  --decider "YourManager Teammate" \
   --deadline 2026-07-20 \
   --project "B2C Super App" \
   --source "https://fathom.video/calls/12345" --source-type fathom --source-label "Fathom" \
-  --stakeholders "YourManager Barry, Teammate"
+  --stakeholders "YourManager Teammate"
 
 # mark it decided
 python3 .agent/skills/decision-log/scripts/decision_log.py decide DEC-0001 \
@@ -51,7 +51,7 @@ python3 .agent/skills/decision-log/scripts/decision_log.py report --all   # incl
 - `sources[].type` is one of `fathom | slack | gdoc | manual`.
 - No cron and no network calls in this script — it is a pure local ledger. Decisions get captured by
   Claude during `/mom` (meeting decisions -> `add`/`decide`), morning/evening update SOPs, or ad hoc
-  whenever You and someone land on a decision.
+  whenever the owner and someone land on a decision.
 - `report` ordering is fixed: (1) overdue open (deadline < today WIB), (2) open by deadline ascending
   (no-deadline items last), (3) decided in the last 7 days. Superseded items are hidden unless `--all`.
 - This skill never writes to `tickets.json`, the mention ledger, or any other component's state —

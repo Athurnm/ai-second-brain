@@ -359,7 +359,7 @@ def latest_heartbeat_ts(job):
 
 def load_job_acks():
     """journal/state/job_acks.json: {job: ack_epoch}. Fail rows at/before the
-    ack are considered handled (You pressed Ack on the dashboard)."""
+    ack are considered handled (the owner pressed Ack on the dashboard)."""
     path = os.path.join(BASE_DIR, 'journal', 'state', 'job_acks.json')
     try:
         with open(path, encoding='utf-8') as f:
@@ -368,7 +368,7 @@ def load_job_acks():
         return {}
 
 def heartbeat_fail_scan(job, lookback_days, ack_epoch=0.0):
-    """Counts fail/needs_reauth rows in the window, EXCLUDING rows You has
+    """Counts fail/needs_reauth rows in the window, EXCLUDING rows the owner has
     acked. Also returns how many un-acked fails are recent (<48h) -- only
     those justify 'fail' severity; older residue is informational."""
     cutoff = time.time() - lookback_days * 86400

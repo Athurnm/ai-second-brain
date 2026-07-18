@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """agy-bridge probe (optional): send a tiny prompt to each backend and log latency/throttle
-to the SAME telemetry log run.py uses, so `run.py --analyze` has data even for hours You
+to the SAME telemetry log run.py uses, so `run.py --analyze` has data even for hours the owner
 doesn't organically use the bridge. Run it hourly via /loop or the `schedule` skill, e.g.:
 
     /loop 1h python3 .agent/skills/agy-bridge/probe.py

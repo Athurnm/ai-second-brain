@@ -142,7 +142,7 @@ class App:
                 self.status.config(text="No calendar match, type a name", fg="#555")
                 return
             self.entry["values"] = candidates
-            # prefill unless You typed something custom
+            # prefill unless the owner typed something custom
             current = self.title_var.get().strip()
             if current in ("", "Meeting") or current in list(self.entry["values"]):
                 self.title_var.set(candidates[0])

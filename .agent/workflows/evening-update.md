@@ -18,10 +18,11 @@ python .agent/scripts/daily_update_runner.py --mode evening
 
 ## Email Check (mandatory)
 
-You acts off email too, so sweep it every evening (the runner does NOT pull email).
+the owner acts off email too, so sweep it every evening (the runner does NOT pull email).
 
-1. `gmail-connector` (Work, `you@yourcompany.com`): `gmail_manager.py list --query "newer_than:1d -category:promotions -category:social" --limit 30`.
-2. Surface, today-scoped: (a) **milestones / signals** an email confirms (e.g. an App Store submission accepted, a client approval), (b) threads still **waiting on a You reply / decision** to carry over, (c) **new meeting invites** not yet on the board, (d) doc-comment mentions owed.
+1. `gmail-connector` (Work, `you@yourcompany.com`) -- note the script sits at the skill root, NOT under `scripts/`:
+   `python3 .agent/skills/gmail-connector/gmail_manager.py list --query "newer_than:1d -category:promotions -category:social" --limit 30`
+2. Surface, today-scoped: (a) **milestones / signals** an email confirms (e.g. an App Store submission accepted, a client approval), (b) threads still **waiting on a the owner reply / decision** to carry over, (c) **new meeting invites** not yet on the board, (d) doc-comment mentions owed.
 3. Tie each to the morning plan, a meeting-prep item, or a todo: did it get done, or does it carry over?
 4. Filter noise (order pings, newsletters, Otter/Read/Fireflies/Fathom auto-recaps). Never auto-send email; surface the follow-up, draft only on request (approval-gated like Slack).
 
@@ -43,19 +44,30 @@ You acts off email too, so sweep it every evening (the runner does NOT pull emai
    - Flag stale items with no activity in 7+ days.
 5a. **New Ledgers pass (mandatory — each ledger is the SOURCE OF TRUTH for its domain; embed `report` output verbatim, never re-derive from raw dumps):**
    - **Decision log**: `python3 .agent/skills/decision-log/scripts/decision_log.py report` → embed. Then capture today's decided items: for every decision that actually landed today (in a meeting, Slack thread, or doc), run `decision_log.py decide <DEC-id> --decision "<what was decided>"`; brand-new decisions surfaced today get an `add` first (with `--source` + `--source-type`).
-   - **Commitments**: `python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py sweep` then `... report` → embed. Where the mechanical auto-close missed something You verifiably delivered today (sent DM, shared doc, MOM evidence), close it manually: `commitment_ledger.py close <COM-id> --note "<evidence>"`.
+   - **Commitments**: `python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py sweep` then `... report` → embed. Where the mechanical auto-close missed something the owner verifiably delivered today (sent DM, shared doc, MOM evidence), close it manually: `commitment_ledger.py close <COM-id> --note "<evidence>"`.
    - **Waiting-on watchdog**: `python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py report` → embed. Any 🚨 BREACHED item carries into tomorrow's plan as an explicit escalation action.
    - **Stakeholder pages**: `python3 .agent/skills/stakeholders/scripts/stakeholders.py render --all` (regenerates the AUTO blocks on every `Clients/Work/People/` page from today's ledger state; idempotent).
-   - **Monday only — outcomes loop**: `python3 .agent/skills/outcomes-loop/scripts/outcomes_loop.py report` → embed (the weekly `check` cron ran Monday 08:20 WIB; if a metric shows `needs_reauth`, surface the Metabase re-auth need to You).
+   - **Monday only — outcomes loop**: `python3 .agent/skills/outcomes-loop/scripts/outcomes_loop.py report` → embed (the weekly `check` cron ran Monday 08:20 WIB; if a metric shows `needs_reauth`, surface the Metabase re-auth need to the owner).
+5a-bis. **MOM coverage reconcile (mandatory — the pipeline cannot self-report a meeting it missed):**
+   - `python3 meeting-recorder/mom_reconcile.py` → reads `journal/state/mom_coverage.json`. It now enumerates directly from LIVE Fathom, so it no longer depends on `fathom_registry_sync.py` having run first (that chain is retired).
+   - Every other capture component is artifact-driven: an empty recordings dir is indistinguishable from a day with no meetings, so a missed meeting produces NO MOM and NO alarm. On 16 Jul this silently dropped YourManager's mandatory Product/Growth/PMO weekly (62 min, 12 decisions) while `vexa-auto` logged 19 "ok" heartbeats. Fathom is the only record of what happened that this harness does not produce itself, so it is the reconciliation source.
+   - Exit codes: `0` = clean, `1` = real gaps found, `2` = CANNOT VERIFY (could not reach Fathom / ground truth). Exit 2 no longer degrades to a false clean, so a `2` means the coverage claim is unproven and must be resolved before the recap.
+   - Any `missing` entry → pull the Fathom transcript and produce the MOM before delivering the recap. Any `suspect` entry (stub, sub-2KB, or filed under a non-meeting block like "Prayer") → treat as NOT minuted; a false-positive MOM reads as done and hides the miss.
+   - Never report the day's meetings as covered without this check passing (exit 0).
+   - **Runs on its own cron** on the work window alongside `meeting-recorder/watcher.py`, not only as a passenger on this evening chain, so a gap alarms within the window instead of at night. Crontab line to add (do not rely on this workflow to trigger it):
+     ```
+     */15 12-22 * * * flock -n /tmp/mom_reconcile.lock /bin/bash -c 'cd . && python3 meeting-recorder/mom_reconcile.py' >> ./meeting-recorder/mom_reconcile_cron.log 2>&1
+     ```
+
 5b. **Tracker reconcile (mandatory — keeps the dashboard Today tab honest):**
    - Sweep `journal/state/tickets.json` for open tickets with `due` >= 3 days in the past.
-   - For each, verify reality before touching it: You's SENT Slack DMs (`from:@brian`), today's MOMs, email threads, Jira. Evidence it happened -> set `status: done` + a comment with the evidence link. Still real but slipped -> move `due` forward or downgrade priority, with a comment saying why. Riding another workstream -> `status: waiting` / `monitor` and name the vehicle.
+   - For each, verify reality before touching it: the owner's SENT Slack DMs (`from:@yourhandle`), today's MOMs, email threads, Jira. Evidence it happened -> set `status: done` + a comment with the evidence link. Still real but slipped -> move `due` forward or downgrade priority, with a comment saying why. Riding another workstream -> `status: waiting` / `monitor` and name the vehicle.
    - Never mark done on guesswork; if unverifiable, leave open and note "unverified as of [date]".
    - Refresh `journal/state/portfolio.json` `updated_wib` + any initiative whose health/workstream status changed today, then regenerate the mirror via `python3 .agent/scripts/portfolio_render.py`.
    - Target end-state: zero tickets showing "stale ≥3d" on the dashboard Today tab without an explanatory comment.
 6. Sync Fathom meeting notes and Work Document Index.
 7. Run GitHub sync to push all changes.
-8. Present to You:
+8. Present to the owner:
    - Accomplishments vs Morning Plan scorecard.
    - Key Slack signals and decisions from today.
    - Open items carrying to tomorrow.

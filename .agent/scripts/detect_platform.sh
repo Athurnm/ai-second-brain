@@ -18,7 +18,7 @@ WSL_ROOT="."
 
 case "$(uname -s 2>/dev/null)" in
   Darwin)               PLATFORM="macos"   ;;
-  Linux)                PLATFORM="wsl"     ;;   # You's Linux is always WSL
+  Linux)                PLATFORM="wsl"     ;;   # the owner's Linux is always WSL
   MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
   *)                    PLATFORM="windows" ;;   # uname missing => native Windows
 esac

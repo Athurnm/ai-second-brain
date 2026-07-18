@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse hook: auto-open Work deliverable .md files in VS Code so You can read + comment.
+# PostToolUse hook: auto-open Work deliverable .md files in VS Code so the owner can read + comment.
 # Reads the tool-call JSON on stdin, extracts the file path, and opens it in the existing VS Code window.
 # Scope: only .md files under a Clients/ directory. Skips *_output.md scratch renders.
 # Silent + non-blocking by design (never fails a Write/Edit). Uses python3 (jq not guaranteed on PATH).

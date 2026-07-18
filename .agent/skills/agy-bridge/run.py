@@ -51,6 +51,21 @@ LOG_PATH = os.path.join(DATA_DIR, "agy_usage_log.jsonl")
 SUMMARY_PATH = os.path.join(DATA_DIR, "agy_cost_summary.json")
 WIB = timezone(timedelta(hours=7))
 
+def resolve_agy_bin():
+    """Locate the `agy` CLI. cron runs with a minimal PATH that omits
+    ~/.local/bin, so shutil.which alone returns None under cron even though the
+    binary is installed -- probe the common user install dirs as a fallback."""
+    found = shutil.which("agy")
+    if found:
+        return found
+    for p in (os.path.expanduser("~/.local/bin/agy"),
+              "/usr/local/bin/agy", "/usr/bin/agy"):
+        if os.path.exists(p):
+            return p
+    return "agy"  # last resort; run_agy handles the FileNotFoundError gracefully
+
+AGY_BIN = resolve_agy_bin()
+
 AUTH_MARKERS = (
     "authentication required", "please sign in", "please visit the url to log in",
     "authentication timed out", "waiting for authentication",
@@ -114,6 +129,19 @@ def compute_cost(in_tok, out_tok, ran_model, fallback_tier, cfg):
     }
 
 # ---------- chain resolution + time routing ----------
+
+def no_backends_configured(cfg):
+    """Fast, no-network check: is there ANY usable backend at all? Used to short-circuit
+    straight to the claude_fallback sentinel for Claude-only users instead of walking (and
+    failing) the whole chain per-backend."""
+    agy_present = shutil.which("agy") is not None or os.path.exists(AGY_BIN)
+    if agy_present:
+        return False
+    if load_token(cfg, "zai"):
+        return False
+    if load_token(cfg, "kimi"):
+        return False
+    return True
 
 def resolve_task(cfg, task):
     tasks = cfg.get("tasks", {})
@@ -206,13 +234,18 @@ def run_agy(model, prompt, timeout, known):
     meta = {"latency_ms": 0, "in_tok": 0, "out_tok": 0, "tokens_estimated": True}
     if known and model not in known:
         return False, "unknown-id (not in known_agy_models)", "unknown-id", meta
-    cmd = ["agy", "-p", prompt, "--model", model, "--print-timeout", f"{timeout}s", "--sandbox"]
+    cmd = [AGY_BIN, "-p", prompt, "--model", model, "--print-timeout", f"{timeout}s", "--sandbox"]
     t0 = time.monotonic()
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 15)
     except subprocess.TimeoutExpired:
         meta["latency_ms"] = int((time.monotonic() - t0) * 1000)
         return False, f"timeout after {timeout}s", "timeout", meta
+    except (FileNotFoundError, OSError) as e:
+        # agy CLI missing/unrunnable (e.g. not on cron PATH). Degrade to the next
+        # backend + claude_fallback instead of crashing the whole bridge.
+        meta["latency_ms"] = int((time.monotonic() - t0) * 1000)
+        return False, f"agy CLI unavailable: {e}", "unavailable", meta
     meta["latency_ms"] = int((time.monotonic() - t0) * 1000)
     out = (proc.stdout or "").strip()
     low = (out + "\n" + (proc.stderr or "")).lower()
@@ -228,16 +261,18 @@ def run_agy(model, prompt, timeout, known):
     meta["out_tok"] = max(1, len(out) // 4)
     return True, out, "ok", meta
 
-def run_zai(model, prompt, timeout, cfg):
-    """Returns (ok, text, reason, meta). z.ai returns EXACT usage."""
+def run_anthropic_compatible(backend, model, prompt, timeout, cfg):
+    """Generic Anthropic-compatible caller (z.ai GLM, Moonshot/Kimi, ...).
+    Returns (ok, text, reason, meta). Real servers return EXACT usage."""
     meta = {"latency_ms": 0, "in_tok": 0, "out_tok": 0, "tokens_estimated": False}
-    spec = cfg.get("backends", {}).get("zai", {})
+    spec = cfg.get("backends", {}).get(backend, {})
     base = (spec.get("base_url") or "").rstrip("/")
-    token = load_token(cfg, "zai")
+    token = load_token(cfg, backend)
+    hint = spec.get("credential_hint", f"set {spec.get('token_env','TOKEN')} or token.env")
     if not base:
-        return False, "no zai base_url", "error", meta
+        return False, f"no {backend} base_url", "error", meta
     if not token:
-        return False, "no zai token (z.ai/subscribe; set ZAI_API_TOKEN or token.env)", "no-credential", meta
+        return False, f"no {backend} token ({hint})", "no-credential", meta
     body = json.dumps({
         "model": model,
         "max_tokens": int(spec.get("max_tokens", 2048)),
@@ -260,13 +295,13 @@ def run_zai(model, prompt, timeout, cfg):
         except Exception:
             pass
         if e.code in (401, 403):
-            return False, f"zai auth {e.code}: {detail}", "auth", meta
+            return False, f"{backend} auth {e.code}: {detail}", "auth", meta
         if e.code in (400, 404):
-            return False, f"zai model/request {e.code}: {detail}", "unavailable", meta
-        return False, f"zai http {e.code}: {detail}", "error", meta
+            return False, f"{backend} model/request {e.code}: {detail}", "unavailable", meta
+        return False, f"{backend} http {e.code}: {detail}", "error", meta
     except Exception as e:
         meta["latency_ms"] = int((time.monotonic() - t0) * 1000)
-        return False, f"zai request failed: {e}", "error", meta
+        return False, f"{backend} request failed: {e}", "error", meta
     meta["latency_ms"] = int((time.monotonic() - t0) * 1000)
     parts = data.get("content") or []
     text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
@@ -275,14 +310,15 @@ def run_zai(model, prompt, timeout, cfg):
     meta["out_tok"] = int(usage.get("output_tokens", 0)) or max(1, len(text) // 4)
     meta["tokens_estimated"] = not usage
     if not text:
-        return False, "zai empty content", "empty", meta
+        return False, f"{backend} empty content", "empty", meta
     return True, text, "ok", meta
 
 def run_entry(backend, model, prompt, timeout, cfg, known):
     if backend == "agy":
         return run_agy(model, prompt, timeout, known)
-    if backend == "zai":
-        return run_zai(model, prompt, timeout, cfg)
+    btype = cfg.get("backends", {}).get(backend, {}).get("type")
+    if backend == "zai" or btype == "anthropic-compatible":
+        return run_anthropic_compatible(backend, model, prompt, timeout, cfg)
     return False, f"unknown backend '{backend}'", "error", {"latency_ms": 0, "in_tok": 0, "out_tok": 0, "tokens_estimated": True}
 
 # ---------- telemetry ----------
@@ -413,13 +449,26 @@ def doctor(cfg):
     hour, ts = wib_now()
     mode = cfg.get("time_routing", "off")
     print(f"WIB now: {ts} (hour {hour})   time_routing: {mode}")
-    has = shutil.which("agy")
-    print(f"agy on PATH: {'yes' if has else 'NO'}")
+    if no_backends_configured(cfg):
+        print("\n=== Claude-only mode ===")
+        print("No non-Claude backend is configured. This is FULLY SUPPORTED: the bridge is an")
+        print("OPTIONAL cost saver, not a dependency. Every caller automatically falls back to")
+        print("Claude tiers (haiku/sonnet per capability) via the claude_fallback sentinel.")
+        print("To enable a backend later (saves cost, changes nothing about correctness):")
+        print("  - agy CLI (Gemini / GPT-OSS via Antigravity): install `agy`, run it once")
+        print("    interactively to authenticate.")
+        print("  - z.ai GLM Coding Plan: subscribe at https://z.ai/subscribe, set ZAI_API_TOKEN")
+        print("    (env var or token.env).")
+        print("  - Kimi Code: get a token at kimi.com/code/console, set KIMI_CODE_TOKEN")
+        print("    (env var or token.env).")
+        print()
+    has = shutil.which("agy") or (os.path.exists(AGY_BIN) and AGY_BIN)
+    print(f"agy resolved: {AGY_BIN if has else 'NO (not found)'}")
     if has:
         authed = False
         for _ in range(2):
             try:
-                p = subprocess.run(["agy", "-p", "Reply with exactly: PONG", "--print-timeout", "12s"],
+                p = subprocess.run([AGY_BIN, "-p", "Reply with exactly: PONG", "--print-timeout", "12s"],
                                    capture_output=True, text=True, timeout=25)
                 blob = (p.stdout + p.stderr).lower()
                 authed = ("pong" in blob) and not any(m in blob for m in ("authentication", "sign in", "oauth", "log in"))
@@ -429,6 +478,7 @@ def doctor(cfg):
                 break
         print(f"agy authenticated: {'yes' if authed else 'NO -> run `agy` once interactively'}")
     print(f"zai token: {'present' if load_token(cfg, 'zai') else 'MISSING -> z.ai/subscribe, set ZAI_API_TOKEN or token.env'}")
+    print(f"kimi token: {'present' if load_token(cfg, 'kimi') else 'MISSING -> Kimi Code Console (kimi.com/code/console), set KIMI_CODE_TOKEN or token.env'}")
     known = cfg.get("known_agy_models", [])
     print(f"\nper-backend peak status @WIB {hour}h: ", end="")
     print(", ".join(f"{b}={'PEAK' if in_peak(b, hour, cfg) else 'off'}" for b in cfg.get("peak_wib", {}) if not b.startswith("_")))
@@ -456,7 +506,7 @@ def main():
     ap.add_argument("--prompt")
     ap.add_argument("--prompt-file")
     ap.add_argument("--model", help="force a single model id")
-    ap.add_argument("--backend", choices=["agy", "zai"], help="backend for --model (default agy)")
+    ap.add_argument("--backend", choices=["agy", "zai", "kimi"], help="backend for --model (default agy)")
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--list", action="store_true", help="print resolved chain, run nothing")
     ap.add_argument("--no-time-routing", action="store_true", help="ignore time_routing for this run")
@@ -478,6 +528,17 @@ def main():
     spec = resolve_task(cfg, args.task)
     hour, ts = wib_now()
     mode = "off" if args.no_time_routing else cfg.get("time_routing", "off")
+
+    if not args.model and not args.list and no_backends_configured(cfg):
+        # Claude-only mode: no agy CLI, no zai token, no kimi token. Skip the (guaranteed
+        # to fail) per-backend chain walk and go straight to the same sentinel the normal
+        # fallback path emits, so every caller behaves identically either way.
+        sys.stderr.write("[agy-bridge] no non-Claude backends configured, running "
+                         "Claude-only; see --doctor\n")
+        fallback_tier = spec["claude_fallback"]
+        print(json.dumps({"status": "fallback_to_claude", "task": args.task,
+                          "claude_fallback": fallback_tier, "tried": []}))
+        sys.exit(3)
 
     if args.model:
         chain = [{"backend": args.backend or "agy", "model": args.model}]

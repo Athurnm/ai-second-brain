@@ -1,6 +1,6 @@
 ---
 name: GDoc Surgical Editor
-description: Targeted in-place edits to existing Google Docs (replace text, append sections, insert table rows) via the Docs API - preserves hand edits, comments, images, and sharing. Use INSTEAD of re-uploading whenever a doc already exists.
+description: Targeted in-place edits to existing Google Docs (replace text, hyperlink text, append sections, insert table rows) via the Docs API - preserves hand edits, comments, images, and sharing. Use INSTEAD of re-uploading whenever a doc already exists.
 ---
 
 # GDoc Surgical Editor
@@ -21,7 +21,8 @@ token is valid for the Docs API too - no extra scopes or re-auth needed).
 | :--- | :--- |
 | Doc doesn't exist yet | `gdocs-create` |
 | Replace the ENTIRE content | drive connector `update --convert` (then re-run formatting + permissions) |
-| Fix a phrase, a date, a name, a link | **this skill: `replace`** |
+| Fix a phrase, a date, a name | **this skill: `replace`** |
+| Turn a "(Source: X)" citation / doc name into a clickable link | **this skill: `linkify`** |
 | Add a section / changelog entry at the end | **this skill: `append`** |
 | Add a row to an existing table | **this skill: `insert-row`** |
 
@@ -37,6 +38,10 @@ python3 .agent/skills/gdoc-surgical/gdoc_surgical.py read --id DOC_ID
 python3 .agent/skills/gdoc-surgical/gdoc_surgical.py replace --id DOC_ID \
   --find "Target ship: July 15" --with "Target ship: July 22"
 
+# 2a-bis. Linkify: hyperlink every occurrence of a name/citation, text unchanged
+python3 .agent/skills/gdoc-surgical/gdoc_surgical.py linkify --id DOC_ID \
+  --find "Q3 Roadmap v2.2" --url "https://docs.google.com/document/d/FILE_ID/edit"
+
 # 2b. Append a section (supports #/##/### headings and - bullets, \n for newlines)
 python3 .agent/skills/gdoc-surgical/gdoc_surgical.py append --id DOC_ID \
   --text "## Changelog\n- 2026-07-12: updated ship date"
@@ -44,7 +49,7 @@ python3 .agent/skills/gdoc-surgical/gdoc_surgical.py append --id DOC_ID \
 # 2c. Tables: list them, then insert a filled row
 python3 .agent/skills/gdoc-surgical/gdoc_surgical.py list-tables --id DOC_ID
 python3 .agent/skills/gdoc-surgical/gdoc_surgical.py insert-row --id DOC_ID \
-  --table 0 --cells "2026-07-12|Updated ship date|You"
+  --table 0 --cells "2026-07-12|Updated ship date|the owner"
 ```
 
 ## Rules of engagement
@@ -58,8 +63,13 @@ python3 .agent/skills/gdoc-surgical/gdoc_surgical.py insert-row --id DOC_ID \
    source of truth; surgical edits preserve them.
 4. **Verify after writing.** Every command prints the doc link - confirm the
    edit landed (Drive verification rule applies: output file ID + link).
-5. Text inside table cells is reachable by `replace` too - you rarely need
-   cell coordinates for content fixes.
+5. Text inside table cells is reachable by `replace`/`linkify` too - you
+   rarely need cell coordinates for content fixes.
+6. **`linkify` needs a real target.** Resolve the citation's actual Drive file
+   ID first (search Drive by title, or check master_links.md / memory) -
+   don't link to a guessed URL. If the cited doc genuinely doesn't exist in
+   Drive (only a local repo file), it can't be made clickable without
+   uploading it first - flag that to the owner rather than skipping silently.
 
 ## Limitations
 

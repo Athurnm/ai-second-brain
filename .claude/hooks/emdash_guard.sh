@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PostToolUse hook on Write|Edit: warn when an em-dash/en-dash lands in a repo .md/.txt file.
-# You's #1 style rule (no-emdash skill) - enforced deterministically, warning-only
+# the owner's #1 style rule (no-emdash skill) - enforced deterministically, warning-only
 # (em-dashes are legitimate when quoting transcripts, so never block).
 # Fast-path: grep stdin first - files without dashes exit in milliseconds, no python spawn.
 # Contract: always exit 0.

@@ -1,0 +1,6 @@
+{
+  "default_property": "<YOUR_GA4_PROPERTY_ID>",
+  "property_notes": {
+    "<YOUR_GA4_PROPERTY_ID>": "Your main GA4 property. Find the numeric id via: ga4_client.py accounts (or GA Admin -> Property Settings -> Property ID)."
+  }
+}

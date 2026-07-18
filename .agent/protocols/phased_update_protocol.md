@@ -51,7 +51,7 @@ The agent MUST NOT perform all steps in a single turn. Instead, proceed step-by-
 
 ### Weekend Mode (Saturday/Sunday)
 - Skip Jira and Fathom. Run Slack scan only (minimal mode).
-- No LinkedIn content prompt unless You explicitly requests it.
+- No LinkedIn content prompt unless the owner explicitly requests it.
 
 ---
 

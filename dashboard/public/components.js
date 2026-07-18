@@ -366,24 +366,47 @@ const U = {
   mdToHtml(md) {
     const inline = s => s
       .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      /* [text](url): http(s) opens a new tab; #hash is an internal view link;
+         any other value is a repo-relative path (e.g. a BRD/PRD .md) — render
+         it as a drawer opener so the doc is readable in-place instead of
+         leaking through as raw [text](path) literal text (server serves it via
+         /api/file/, same as the declarative data-drawer-path openers). */
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, url) => {
+        if (/^https?:/i.test(url)) return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+        if (/^#/.test(url)) return `<a href="${url}">${text}</a>`;
+        return `<a class="doc-link" data-drawer-path="${url}" data-drawer-title="${text}">${text}</a>`;
+      })
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:]|$)/g, '$1<em>$2</em>');
     const out = [];
-    let inList = false, para = [];
+    let listTag = null, para = [], quote = [];
     const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; } };
-    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const closeList = () => { if (listTag) { out.push(`</${listTag}>`); listTag = null; } };
+    const flushQuote = () => {
+      if (quote.length) { out.push(`<blockquote>${quote.map(q => `<p>${inline(q)}</p>`).join('')}</blockquote>`); quote = []; }
+    };
+    const openList = tag => {
+      if (listTag !== tag) { closeList(); out.push(`<${tag}>`); listTag = tag; }
+    };
     for (const raw of U.esc(md || '').split('\n')) {
       const ln = raw.trimEnd();
+      /* input was HTML-escaped BEFORE this loop, so a '>' quote marker is '&gt;' */
+      const bq = ln.match(/^\s*&gt;\s?(.*)/);
       const h = ln.match(/^(#{1,3})\s+(.+)/);
       const li = ln.match(/^\s*[-*]\s+(.+)/);
-      if (h) { flushPara(); closeList(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); }
-      else if (li) { flushPara(); if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${inline(li[1])}</li>`); }
-      else if (!ln.trim()) { flushPara(); closeList(); }
+      /* numbered lines ("1. …") are ORDERED LIST items — without this branch a
+         numbered Top-5 collapses into one giant unreadable paragraph */
+      const oli = ln.match(/^\s*\d+[.)]\s+(.+)/);
+      const hr = /^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(ln);
+      if (bq) { flushPara(); closeList(); if (bq[1].trim()) quote.push(bq[1]); }
+      else if (h) { flushPara(); closeList(); flushQuote(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); }
+      else if (hr) { flushPara(); closeList(); flushQuote(); out.push('<hr>'); }
+      else if (li) { flushPara(); flushQuote(); openList('ul'); out.push(`<li>${inline(li[1])}</li>`); }
+      else if (oli) { flushPara(); flushQuote(); openList('ol'); out.push(`<li>${inline(oli[1])}</li>`); }
+      else if (!ln.trim()) { flushPara(); closeList(); flushQuote(); }
       else para.push(ln);
     }
-    flushPara(); closeList();
+    flushPara(); closeList(); flushQuote();
     return out.join('\n');
   },
 
@@ -601,7 +624,10 @@ const Comp = {
     </div>`;
   },
 
-  toast(msg, ok = true) {
+  /* action (optional): {label:'Undo', onClick:async fn} renders a button in the
+     toast (used for reversible actions — mis-click safety). Such toasts linger
+     8s instead of 3.2s and stay clickable; clicking runs onClick + dismisses. */
+  toast(msg, ok = true, action = null) {
     let root = document.getElementById('toast-root');
     if (!root) {
       root = document.createElement('div');
@@ -610,10 +636,22 @@ const Comp = {
       document.body.appendChild(root);
     }
     const el = document.createElement('div');
-    el.className = `toast ${ok ? 'toast--ok' : 'toast--err'}`;
+    el.className = `toast ${ok ? 'toast--ok' : 'toast--err'}${action ? ' has-action' : ''}`;
     el.textContent = `${ok ? '✓' : '⛔'} ${msg}`;
-    root.appendChild(el);
-    setTimeout(() => { el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300); }, 3200);
+    if (action && action.label && typeof action.onClick === 'function') {
+      const btn = document.createElement('button');
+      btn.className = 'toast-action';
+      btn.textContent = action.label;
+      btn.addEventListener('click', async e => {
+        e.preventDefault();
+        btn.disabled = true;
+        try { await action.onClick(); } catch (err) { Comp.toast(`Gagal: ${err.message}`, false); }
+        el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300);
+      });
+      el.appendChild(btn);
+    }
+    const ttl = action ? 8000 : 3200;
+    setTimeout(() => { el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300); }, ttl);
     return '';
   },
 

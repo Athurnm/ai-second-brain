@@ -34,7 +34,7 @@ The script will:
 | You | General | You repo: WSL `~/antigravity-projects/You/meetings/`, macOS `~/You/You/meetings/` |
 | You | Taaruf Lalu Nikah | You repo: `<You repo>/Taaruf Lalu Nikah/meetings/` |
 
-**Anti-misfiling rule (2026-07-04):** "Impromptu Google Meet Meeting" recordings must be classified by CONTENT (participants + client keywords: Work/ExampleProgram/Teammate/Teammate = Work; ClientB/ClientB = ClientB), never defaulted to You. On 2026-07-04, 13 Work/ClientB meetings were found mis-filed under You and relocated. When unsure → `Clients/Work/meetings/` if any Work signal, else leave in `_temp/` for manual triage.
+**Anti-misfiling rule (2026-07-04):** "Impromptu Google Meet Meeting" recordings must be classified by CONTENT (participants + client keywords: Work/ExampleProgram/Teammate = Work; ClientB = ClientB), never defaulted to You. On 2026-07-04, 13 Work/ClientB meetings were found mis-filed under You and relocated. When unsure → `Clients/Work/meetings/` if any Work signal, else leave in `_temp/` for manual triage.
 
 ## 3. Filename Format
 
@@ -65,4 +65,4 @@ What it does:
    - `journal/fathom_registry.json` — source of truth (never drops history)
    - `Fathom_Registry.md` — human index, newest-first
 
-**Lookup rule**: when You names a meeting + date, grep `journal/fathom_registry.json` (by `date_wib` / `matched_meeting` / `client`) to find the right `fathom_url` before doing anything else. The registry runs automatically right after Step 8 in the evening runner.
+**Lookup rule**: when the owner names a meeting + date, grep `journal/fathom_registry.json` (by `date_wib` / `matched_meeting` / `client`) to find the right `fathom_url` before doing anything else. The registry runs automatically right after Step 8 in the evening runner.

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Transcription engine chain for the local meeting note-taker.
 
-Chain (engine=auto): whisper.cpp on GPU (Vulkan on Radeon/Windows-Linux, Metal on
-Apple Silicon) -> Gemini API (audio-in, returns speaker labels). There is NO
-automatic CPU fallback: You's rule. engine=cpu (explicit only) shells out to the
-legacy faster-whisper script.
+Chain (engine=auto): Gemini API (audio-in, returns speaker labels) -> whisper.cpp
+on GPU (Vulkan on Radeon/Windows-Linux, Metal on Apple Silicon) as fallback when
+Gemini is unavailable/fails. Gemini is preferred so transcripts carry speaker
+labels instead of a single unlabelled stream. There is NO automatic CPU fallback:
+the owner's rule. engine=cpu (explicit only) shells out to the legacy faster-whisper
+script.
 
 Usage:
   python3 transcribe.py --in recording.wav --out transcript.md \
@@ -231,7 +233,9 @@ def transcribe(audio, out_md, engine=None, lang=None, cfg=None):
     engine = engine or cfg.get("engine", "auto")
     lang = lang or cfg.get("language", "auto")
 
-    chain = {"auto": ["whispercpp", "cli"],
+    # auto prefers Gemini (audio-in, speaker labels); whisper.cpp is the fallback
+    # if Gemini is unavailable/fails. NEVER falls back to CPU (the owner's rule).
+    chain = {"auto": ["cli", "whispercpp"],
              "whispercpp": ["whispercpp"],
              "cli": ["cli"],
              "cpu": ["cpu"]}[engine]

@@ -8,7 +8,7 @@ Record meetings on your own machine, transcribe locally (GPU) or via Gemini
 | Recorder | Peran | Kapan |
 | :--- | :--- | :--- |
 | **Vexa bot** | **PRIMARY auto** | Cron `*/5` (`vexa_bots.py auto`): join otomatis SEMUA event kalender Work ber-Meet/Teams-link, sebagai bot "Your Name" |
-| **Fathom** | Backup + video | Tetap jalan di meeting yang You hadiri; satu-satunya sumber video meeting attended (`fathom-frame-grab`) |
+| **Fathom** | Backup + video | Tetap jalan di meeting yang the owner hadiri; satu-satunya sumber video meeting attended (`fathom-frame-grab`) |
 | **Desktop recorder** | Manual fallback + video on-demand | Bot gagal join / meeting offline / non-Meet; `--video` atau checkbox GUI untuk screen-record |
 
 **Dedupe: satu meeting -> satu MOM.** Semua recorder nulis ke
@@ -25,7 +25,7 @@ recorder.py (per mesin)  →  WAV di recordings_dir  →  watcher.py (host repo)
                                                         └─ heartbeat → dashboard :3737
 ```
 
-**Engine rule (You):** GPU dulu (whisper.cpp Vulkan/Metal); kalau GPU tidak
+**Engine rule (the owner):** GPU dulu (whisper.cpp Vulkan/Metal); kalau GPU tidak
 tersedia, fallback ke **Gemini API** (audio-in, dapat speaker labels). TIDAK
 pernah otomatis jatuh ke CPU; `engine: "cpu"` hanya kalau diset manual.
 
@@ -35,7 +35,7 @@ pernah otomatis jatuh ke CPU; `engine: "cpu"` hanya kalau diset manual.
 1. **Windows-side** (PowerShell, sekali):
    ```powershell
    pip install pyaudiowpatch
-   mkdir C:\Users\You\MeetingRecordings
+   mkdir C:\Users\the owner\MeetingRecordings
    ```
 2. Rekam (PowerShell): jalankan dengan Python Windows dari folder repo via WSL path:
    ```powershell
@@ -86,7 +86,7 @@ folder dipantau terus-menerus (mis. file audio yang ditaruh manual).
 **Video on-demand:** centang "Record video (screen)" di GUI, atau CLI
 `recorder.py "Nama" --video` (Windows, ffmpeg gdigrab). Hasil `<base>.mp4`
 tercatat sebagai `video_path` di registry entry; transcript tetap dari audio.
-Untuk meeting yang You hadiri sendiri, video sudah ada di Fathom.
+Untuk meeting yang the owner hadiri sendiri, video sudah ada di Fathom.
 
 ## Pemakaian harian (CLI)
 
@@ -96,7 +96,7 @@ python(.exe) recorder.py "OC Finance Sign-off"
 
 # 2. Watcher memproses otomatis (kalau jalan), atau manual:
 python3 meeting-recorder/watcher.py --once
-python3 meeting-recorder/watcher.py --file /mnt/c/Users/You/MeetingRecordings/xxx.wav
+python3 meeting-recorder/watcher.py --file /mnt/c/Users/the owner/MeetingRecordings/xxx.wav
 
 # 3. Hasil
 #    Transcript : Clients/Work/meetings/transcripts/<file>.md
@@ -123,8 +123,8 @@ python3 meeting-recorder/transcribe.py --in audio.m4a --out scratch/t.md --engin
 
 ## Phase 2: multi-meeting bots (Vexa, self-hosted)
 
-Bot join Meet/Teams sebagai participant ("You's Notetaker") untuk meeting yang
-You tidak hadiri; bisa ~10 meeting concurrent. Transcript sudah ber-label nama
+Bot join Meet/Teams sebagai participant ("the owner's Notetaker") untuk meeting yang
+the owner tidak hadiri; bisa ~10 meeting concurrent. Transcript sudah ber-label nama
 speaker asli (dari UI meeting) dan masuk pipeline yang sama (registry + MOM).
 
 **Arsitektur:**

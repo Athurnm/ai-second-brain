@@ -9,6 +9,15 @@
     "agy": {
       "type": "cli"
     },
+    "kimi": {
+      "type": "anthropic-compatible",
+      "base_url": "https://api.kimi.com/coding",
+      "token_env": "KIMI_CODE_TOKEN",
+      "token_file": "token.env",
+      "credential_hint": "Kimi Code Console (kimi.com/code/console) -> create API Key; set KIMI_CODE_TOKEN or token.env",
+      "max_tokens": 8192,
+      "_note": "Kimi Code SUBSCRIPTION endpoint (flat monthly via Kimi membership), Anthropic-compatible, plain API-key auth (not OAuth). Metered alternative would be api.moonshot.ai/anthropic + platform.moonshot.ai key. Confirm the model id in the console (e.g. kimi-latest); wired into cross-lineage for a distinct lineage vs GLM/Gemini/GPT-OSS. Price below is a per-Mtok SEED for the cost counterfactual only (real billing is the flat subscription, see subscriptions.kimi_code)."
+    },
     "zai": {
       "type": "anthropic-compatible",
       "base_url": "https://api.z.ai/api/anthropic",
@@ -39,6 +48,10 @@
     "_unit": "USD per 1,000,000 tokens, [input, output]. List/published rates as of 2026-06-24. Subscription backends are NOT free; this is their per-Mtok equivalent.",
     "_sources": "Claude: metacto/tldl 2026. Gemini: ai.google.dev/pricing. GPT-OSS: pricepertoken. GLM: estimated ~2.6x cheaper than Gemini Pro (confirm at z.ai pricing).",
     "by_model": {
+      "kimi-latest": [
+        0.6,
+        2.5
+      ],
       "glm-5.2": [
         0.6,
         2.2
@@ -61,6 +74,10 @@
       ]
     },
     "by_family": {
+      "kimi": [
+        0.6,
+        2.5
+      ],
       "glm": [
         0.6,
         2.2
@@ -80,7 +97,9 @@
     },
     "estimated_models": [
       "glm-5.2",
-      "glm"
+      "glm",
+      "kimi-latest",
+      "kimi"
     ],
     "claude_tiers": {
       "haiku": [
@@ -102,8 +121,10 @@
     }
   },
   "subscriptions": {
-    "_note": "Flat monthly outlay (USD). Context only: shown on the dashboard, NEVER folded into per-call cost as $0. You to confirm exact tiers.",
+    "_note": "Flat monthly outlay (USD). Context only: shown on the dashboard, NEVER folded into per-call cost as $0. the owner to confirm exact tiers.",
     "zai_glm_coding": 10,
+    "kimi_code": 0,
+    "_kimi_code_note": "Kimi membership tier that includes Kimi Code (Moderato ~$19 / Allegretto ~$39 / Allegro ~$99). Set to the tier the owner actually subscribes to.",
     "antigravity_agy": 0
   },
   "peak_wib": {
@@ -118,7 +139,7 @@
   },
   "capabilities": {
     "_note": "capability -> ordered backend+model candidates, grounded in model strengths/context. Tasks reference one of these. Cost is NOT the only axis here (context window + lineage matter); the cost dashboard reveals where a choice does/doesn't save vs its claude_fallback so chains can be retuned from data.",
-    "_bulk_cheap_note": "KEPUTUSAN BRIAN 2026-07-04: Gemini Flash TETAP memimpin harvest walau cost log menunjukkan GLM lebih murah per-call. Alasan: subscription Gemini (agy) jarang kepake, jadi utilisasi subscription > penghematan per-call. JANGAN 'optimasi' ini balik ke GLM-first berdasarkan agy_usage_log saja.",
+    "_bulk_cheap_note": "OWNER DECISION 2026-07-04: Gemini Flash stays lead for harvest even though the cost log shows GLM is cheaper per-call. Reason: the Gemini (agy) subscription is rarely used otherwise, so subscription utilization outweighs the per-call savings. Do NOT 'optimize' this back to GLM-first based on agy_usage_log alone.",
     "bulk-cheap": [
       "Gemini 3.5 Flash (High)",
       {
@@ -141,7 +162,11 @@
         "model": "glm-5.2"
       },
       "GPT-OSS 120B (Medium)",
-      "Gemini 3.1 Pro (High)"
+      "Gemini 3.1 Pro (High)",
+      {
+        "backend": "kimi",
+        "model": "kimi-latest"
+      }
     ],
     "long-context": [
       "Gemini 3.1 Pro (High)",

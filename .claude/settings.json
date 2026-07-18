@@ -56,6 +56,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/routing_mode.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking routing mode..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && bash .agent/scripts/ensure_dashboard.sh >/dev/null 2>&1 &",
             "timeout": 10,
             "statusMessage": "Ensuring dashboard (localhost:3737)..."

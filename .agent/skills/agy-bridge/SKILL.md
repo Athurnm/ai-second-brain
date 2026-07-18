@@ -1,5 +1,18 @@
 # agy-bridge
 
+## OPTIONAL - Claude-only mode is fully supported
+
+This bridge is an **optional cost saver, not a dependency**. If you have no subscription to any
+non-Claude model (no Antigravity `agy` CLI, no z.ai GLM Coding Plan, no Kimi Code), you don't need
+to set anything up here: every caller resolves a `claude_fallback` tier per task and every call
+into the bridge falls back to that Claude tier (haiku/sonnet/main-loop per capability)
+automatically. `run.py` detects the no-backend case up front and returns the same
+`fallback_to_claude` sentinel the normal fallback path uses, with no network calls and no per-model
+failure noise. Run `--doctor` any time to confirm you're in Claude-only mode and see what
+configuring a backend would take. The rest of this file describes the (optional) cost-saving setup.
+
+## What this is
+
 Call **non-Claude models as a co-processor** from inside this Claude Code harness, **prove the
 cost savings**, and route by **model expertise + time of day**. Two backends:
 - **agy**: Gemini 3.5 Flash / Gemini 3.1 Pro / GPT-OSS 120B via the Antigravity CLI.
@@ -41,7 +54,7 @@ flagged). GLM price is a seed estimate until confirmed at z.ai (flagged `estimat
   `GET /api/agy-cost` (the `agy_cost_summary.json` that every call rolls up).
 
 ⚠️ **Decision locked (2026-07-04):** cost logs show Gemini 3.5 Flash ($1.50/$9) is pricier than
-Haiku ($1/$5) per-call, and glm-5.2 ($0.60/$2.20) would save ~50%. You still keeps **Flash at
+Haiku ($1/$5) per-call, and glm-5.2 ($0.60/$2.20) would save ~50%. the owner still keeps **Flash at
 the head of `bulk-cheap`**: his Gemini subscription is rarely used, so utilizing idle subscription
 capacity beats per-call savings. Do NOT re-secondary this to GLM based on `agy_usage_log` alone (see
 `_bulk_cheap_note` in models.json). glm-5.2 stays as fallback #2.

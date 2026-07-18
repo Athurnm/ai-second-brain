@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-mention_ledger.py - Stateful Slack sweep: track every mention of You (channels,
+mention_ledger.py - Stateful Slack sweep: track every mention of the owner (channels,
 threads, DMs) until he has actually responded, plus a full-message watermark sweep
 of ALL joined channels for the GLM classification digest.
 
-Design (2026-07-09, per You):
+Design (2026-07-09, per the owner):
   Layer 1 (this script, pure Python, cron */30): collect + mechanical reply-state.
   Layer 2 (GLM via agy-bridge --task harvest): classify digest + open items.
   Layer 3 (Claude, morning/evening update): surface "Waiting on your reply".
@@ -46,7 +46,7 @@ BRIAN_ID_DEFAULT = '<SLACK_ID>'          # verified via auth.test 2026-07-09
 FRED_ID = '<SLACK_ID>'                    # any YourManager message = high priority
 PRIORITY_AUTHORS = {FRED_ID}
 
-# You's decision: only these reactions count as "answered"; eyes does NOT.
+# the owner's decision: only these reactions count as "answered"; eyes does NOT.
 ACK_REACTIONS = {'white_check_mark', 'heavy_check_mark', '+1', 'thumbsup', 'ok_hand'}
 
 FIRST_RUN_MENTION_LOOKBACK_DAYS = 3        # don't flood the ledger on first run
@@ -54,7 +54,7 @@ FIRST_RUN_CHANNEL_LOOKBACK_HOURS = 24
 ANSWERED_RETENTION_DAYS = 14               # prune answered/dismissed after this
 API_PAUSE = 0.15                           # pacing between Slack calls
 
-# Auto-dismiss noise so the queue only holds real "waiting on You" items.
+# Auto-dismiss noise so the queue only holds real "waiting on the owner" items.
 # CONSERVATIVE by design: a false-dismiss (hiding a real ask) is worse than a
 # little residual noise, so we only fire on bots or an unambiguous closer phrase.
 ACK_PHRASES = [
@@ -67,7 +67,7 @@ ACK_PHRASES = [
 ]
 
 # App/bot accounts that post as a normal user (no bot_id) but are pure noise.
-# Grow this as new notifier apps appear in You's DMs.
+# Grow this as new notifier apps appear in the owner's DMs.
 NOISE_AUTHORS = {
     'USLACKBOT',
     '<SLACK_ID>',   # Google Calendar app
@@ -266,7 +266,7 @@ def sweep_channels(token, state, brian_id):
             if author == brian_id:
                 brian_acted.append((cid, float(m['ts'])))
                 continue
-            # every DM message not from You is a candidate "needs response"
+            # every DM message not from the owner is a candidate "needs response"
             if is_im:
                 new_item(state, cid, f'DM:{name}', m['ts'], author, text, '', 'dm',
                          is_bot=is_bot)
@@ -282,9 +282,9 @@ def sweep_channels(token, state, brian_id):
     return len(digest_rows), dm_items, brian_acted
 
 def resolve_open_items(token, state, brian_id):
-    """Mechanical reply-state: an item is answered when You replied after it
+    """Mechanical reply-state: an item is answered when the owner replied after it
     (same thread, or same channel for non-thread items) or ack-reacted on it.
-    Also reopens a thread item if someone followed up after You's last reply."""
+    Also reopens a thread item if someone followed up after the owner's last reply."""
     answered = 0
     by_channel_open = {}
     for item_id, it in state['items'].items():
@@ -302,7 +302,7 @@ def resolve_open_items(token, state, brian_id):
                 continue
             msgs = resp.get('messages', [])
             root = msgs[0] if msgs else {}
-            # 1) ack-reaction by You on the root/mention message
+            # 1) ack-reaction by the owner on the root/mention message
             for r in root.get('reactions', []):
                 if r.get('name') in ACK_REACTIONS and brian_id in r.get('users', []):
                     it.update(status='answered', answered_by='reaction',
@@ -311,7 +311,7 @@ def resolve_open_items(token, state, brian_id):
                     break
             if it['status'] != 'open':
                 continue
-            # 2) You message later in the same thread
+            # 2) the owner message later in the same thread
             brian_after = [float(m['ts']) for m in msgs
                            if m.get('user') == brian_id and float(m['ts']) > float(it['ts'])]
             if brian_after:
@@ -319,7 +319,7 @@ def resolve_open_items(token, state, brian_id):
                           answered_at=time.time())
                 answered += 1
                 continue
-        # 3) non-thread items: any You message in the channel after the item
+        # 3) non-thread items: any the owner message in the channel after the item
         plain = [(iid, it) for iid, it in items
                  if it['status'] == 'open' and not it['thread_ts']]
         if plain:
@@ -526,11 +526,11 @@ def cmd_classify(args):
     state = load_state()
     open_items = [it for it in state['items'].values() if it['status'] == 'open']
     prompt = (
-        'You are a mechanical Slack triage classifier for You (Work PM, Slack id '
+        'You are a mechanical Slack triage classifier for the owner (Work PM, Slack id '
         f'{BRIAN_ID_DEFAULT}). For EACH message below output one JSON line: '
         '{"ts":..., "channel":..., "class":"needs_reply|action_item|meeting_input|fyi|noise", '
         '"urgency":"high|normal|low", "summary":"<max 15 words>"}. '
-        'needs_reply = a human is waiting on You specifically. YourManager messages are always high. '
+        'needs_reply = a human is waiting on the owner specifically. YourManager messages are always high. '
         'Output ONLY JSON lines, no prose.\n\n'
         '== OPEN LEDGER ITEMS (already known, classify urgency only) ==\n'
         + '\n'.join(json.dumps({'ts': i['ts'], 'channel': i['channel_name'],

@@ -38,7 +38,7 @@ timeout 180s python3 .agent/skills/mixpanel-connector/scripts/mixpanel_client.py
 ```bash
 timeout 180s python3 .agent/skills/mixpanel-connector/scripts/mixpanel_client.py people \
   --id "user_123" \
-  --props '{"$name": "You", "$email": "brian@example.com", "plan": "pro"}'
+  --props '{"$name": "the owner", "$email": "owner@example.com", "plan": "pro"}'
 ```
 
 ### Query Event Counts Over Time

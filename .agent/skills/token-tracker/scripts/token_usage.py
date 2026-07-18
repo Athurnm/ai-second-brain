@@ -2,7 +2,7 @@
 """
 token_usage.py - Token consumption tracker for the PSB Claude Code harness.
 
-Answers You's question: how many tokens (and how much API-equivalent money)
+Answers the owner's question: how many tokens (and how much API-equivalent money)
 does the harness burn, split PER TASK TYPE (morning-update, weekly-report,
 subagents, workflow agents, headless ai-tasks, plain interactive...).
 
@@ -19,7 +19,7 @@ Design (2026-07-11):
     from the bundled claude-api skill - NEVER from memory). Unknown model id
     with nonzero tokens => cost is null for those rows, tracked in
     unknown_models, never guessed.
-  - Costs are "API-equivalent" estimates: You pays a subscription, so this is
+  - Costs are "API-equivalent" estimates: the owner pays a subscription, so this is
     a consumption gauge, not a bill. Real offload spend lives in agy-bridge.
 
 Task-type classification per file:
@@ -36,7 +36,7 @@ Subcommands:
   report [--json]  briefing-ready markdown table per task type
 
 State: journal/state/token_usage.json (atomic tmp+replace)
-Cron (installed by You, on-window rule):
+Cron (installed by the owner, on-window rule):
   50 12,18 * * * flock -n /tmp/token_tracker.lock python3 <abs>/token_usage.py sweep >> <skill>/token_tracker_cron.log 2>&1
 """
 
@@ -76,7 +76,7 @@ CMD_RE = re.compile(r'<command-name>/?([A-Za-z0-9_:-]+)</command-name>')
 SLASH_RE = re.compile(r'^/([A-Za-z0-9_:-]+)(?:\s|$)')
 
 # Keyword buckets for command-less interactive sessions (first user message,
-# lowercased). First match wins; order = specificity. Keeps You's recurring
+# lowercased). First match wins; order = specificity. Keeps the owner's recurring
 # ad-hoc asks visible as their own task types instead of one 'interactive' blob.
 ADHOC_BUCKETS = [
     ('adhoc-harness-dev', ['dashboard', 'harness', 'cron', 'skill', 'workflow', 'agent',
@@ -315,7 +315,7 @@ def parse_file(path, rel, pricing, ai_runs):
         if models and first_epoch and 'vscode' not in (entrypoint or ''):
             task_type = match_ai_run(first_epoch, ai_runs)
         if task_type is None and first_user_text:
-            # keyword buckets for command-less interactive sessions, so You's
+            # keyword buckets for command-less interactive sessions, so the owner's
             # recurring ad-hoc asks get their own rows instead of one big
             # 'interactive' blob. First match wins, order = specificity.
             for bucket, words in ADHOC_BUCKETS:
@@ -540,7 +540,7 @@ def cmd_report(args):
     print(f"## Token usage - last {agg['window_days']}d "
           f"(swept {state.get('last_sweep', '?')}, {state.get('sweep_seconds', '?')}s)")
     print()
-    print(f"Claude = estimasi setara-API (You pakai subscription); "
+    print(f"Claude = estimasi setara-API (the owner pakai subscription); "
           f"biaya offload riil ada di agy.")
     print()
     print(f"**Totals:** {tot['sessions']} sessions | in {tot['input_tokens']:,} | "

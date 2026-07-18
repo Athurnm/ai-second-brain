@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-commitment_ledger.py - Outbound commitments ledger: things You said he'd do,
+commitment_ledger.py - Outbound commitments ledger: things the owner said he'd do,
 tracked from "I'll ..." until actually delivered. Clones the mention_ledger.py
 3-layer pattern (see .agent/skills/slack-tracker/scripts/mention_ledger.py):
 
   Layer 1 (this script, pure Python, cron 3x/day): collect candidates + Fathom
-           action items assigned to You (mechanical, high confidence) +
+           action items assigned to the owner (mechanical, high confidence) +
            mechanical thread auto-close.
   Layer 2 (GLM via agy-bridge --task harvest, `extract`): turn cheap-filtered
            Slack "I'll ..." message candidates into structured commitments.
@@ -14,12 +14,12 @@ tracked from "I'll ..." until actually delivered. Clones the mention_ledger.py
            markdown, embedded verbatim.
 
 Sources:
-  1. Fathom - action items assigned to You in recently-synced meetings
+  1. Fathom - action items assigned to the owner in recently-synced meetings
      (journal/fathom_registry.json) -> high-confidence items, no LLM needed.
   2. Slack sent messages - search.messages from:<@BRIAN_ID> since watermark,
      cheap regex filter for commitment language -> pending_candidates (NOT
      turned into items during sweep; `extract` does that via agy-bridge).
-  3. Auto-close - conversations.replies on a candidate's thread: You later
+  3. Auto-close - conversations.replies on a candidate's thread: the owner later
      posts a completion word or a Drive/Docs link -> closed_by: auto_thread.
 
 State: journal/state/commitments.json
@@ -29,6 +29,7 @@ Subcommands: sweep (cron default) / extract / add / close / drop / link / unlink
 """
 
 import argparse
+import difflib
 import glob
 import hashlib
 import json
@@ -36,6 +37,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -62,7 +64,7 @@ BRIAN_ID_DEFAULT = os.environ.get('OWNER_SLACK_ID', '<SLACK_ID>')   # verified v
 BRIAN_EMAIL = os.environ.get('OWNER_EMAIL', 'you@example.com')
 BRIAN_NAME_TOKENS = tuple(
     t.strip().lower() for t in
-    os.environ.get('OWNER_NAME_TOKENS', 'you,you').split(',')
+    os.environ.get('OWNER_NAME_TOKENS', 'owner arfi,you').split(',')
     if t.strip()
 )   # substring match, case-insensitive
 
@@ -86,7 +88,7 @@ COMMIT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Mechanical auto-close signal: You's own later message in the thread contains
+# Mechanical auto-close signal: the owner's own later message in the thread contains
 # a completion word, or a Drive/Docs link (the deliverable itself).
 CLOSE_WORD_RE = re.compile(
     r"\b(done|sent|shared|submitted|delivered|resolved|completed|finished|"
@@ -94,7 +96,7 @@ CLOSE_WORD_RE = re.compile(
 )
 DRIVE_LINK_RE = re.compile(r"(docs\.google\.com|drive\.google\.com)")
 
-# Mechanical spoken-cue detector for local transcripts/MOM drafts: You says one
+# Mechanical spoken-cue detector for local transcripts/MOM drafts: the owner says one
 # of these phrases mid-meeting to flag "this is my action item" -> capture
 # everything after the cue to end of line. re.MULTILINE so `$` anchors per line
 # when run against a whole file's text via finditer (not just end of string).
@@ -112,6 +114,218 @@ CUE_RE = re.compile(
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
 ACTION_ITEMS_TEXT_RE = re.compile(r'^[\d.\s]*[^\w]*action\s+items?\b', re.IGNORECASE)
 BRIAN_OWNER_RE = re.compile(r'\bBrian\b', re.IGNORECASE)
+
+# --------------------------------------------------------- content dedupe --
+#
+# Why this exists: `processed_sources` only dedupes by SOURCE key
+# (fathom:<call>:<ts>, local:<path>:<hash>, manual). The same real-world
+# commitment reaching the ledger through two ingestion paths gets two different
+# source keys, so both insert and neither is ever matched. That is how
+# COM-0151 ("Create PRD for Storefront analytics", fathom) and COM-0165 ("Write
+# the complete PRD for Storefront analytics ...", manual) both sat open on
+# 17 Jul 2026. Dedupe has to happen on CONTENT, not on provenance.
+#
+# Two layers, because they run under different constraints:
+#   1. create_item() - the single chokepoint every ingest path passes through.
+#      Runs inside sweep loops, so it stays deterministic and offline, and only
+#      auto-merges above DUP_AUTO where a false merge is implausible.
+#   2. cmd_dedupe() - batched full scan. Pairs in the uncertain band
+#      [DUP_BAND, DUP_AUTO) are adjudicated by GLM via agy-bridge in ONE call.
+#
+# Asymmetry that drives the thresholds: a missed duplicate is noise, a false
+# merge silently destroys a real commitment. So the deterministic bar is high
+# and anything arguable is escalated rather than guessed.
+
+DUP_AUTO = 0.86     # >= this: same commitment, merge without asking
+DUP_BAND = 0.55     # [DUP_BAND, DUP_AUTO): uncertain, send to GLM to adjudicate
+
+_DUP_STOP = {
+    'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with', 'and',
+    'or', 'is', 'are', 'be', 'that', 'this', 'it', 'as', 'from', 'into', 'once',
+    'already', 'complete', 'completely', 'full', 'new', 'then', 'so', 'can',
+    'will', 'need', 'needs', 'needed', 'before', 'after', 'via', 'per', 'up',
+}
+
+# Different sources phrase the same commitment with different verbs ("Create PRD"
+# vs "Write the complete PRD"). Collapse the common ones so the verb does not
+# defeat the overlap score.
+_VERB_CANON = {
+    'write': 'author', 'writing': 'author', 'draft': 'author', 'drafting': 'author',
+    'create': 'author', 'creating': 'author', 'produce': 'author', 'prepare': 'author',
+    'add': 'author', 'build': 'author',
+    'send': 'send', 'share': 'send', 'deliver': 'send', 'forward': 'send',
+    'confirm': 'confirm', 'verify': 'confirm', 'validate': 'confirm', 'check': 'confirm',
+    'ask': 'ask', 'chase': 'ask', 'follow': 'ask', 'ping': 'ask', 'nudge': 'ask',
+    'schedule': 'schedule', 'book': 'schedule', 'set': 'schedule',
+    'ticket': 'ticket', 'tickets': 'ticket', 'jira': 'ticket',
+    'prds': 'prd', 'docs': 'doc', 'document': 'doc',
+}
+
+def _dup_tokens(text):
+    """Normalized content-word set used for duplicate scoring."""
+    words = re.findall(r"[a-z0-9]+", (text or '').lower())
+    out = set()
+    for w in words:
+        w = _VERB_CANON.get(w, w)
+        if w in _DUP_STOP or len(w) < 2:
+            continue
+        out.add(w)
+    return out
+
+def _dup_score(a_text, b_text):
+    """0..1 similarity between two commitment texts.
+
+    Uses containment (intersection over the SMALLER set) rather than Jaccard on
+    purpose: sources differ wildly in verbosity, and a terse fathom line is
+    routinely a strict subset of a hand-written one. Jaccard would score that
+    pair low precisely when it is most certainly a duplicate. difflib is taken
+    as a floor so near-identical strings still score high when tokenization is
+    unhelpful (e.g. mostly identifiers).
+    """
+    ta, tb = _dup_tokens(a_text), _dup_tokens(b_text)
+    if not ta or not tb:
+        return 0.0
+    containment = len(ta & tb) / min(len(ta), len(tb))
+    seq = difflib.SequenceMatcher(
+        None, (a_text or '').lower(), (b_text or '').lower()).ratio()
+    return max(containment, seq)
+
+def _compatible(a, b):
+    """Cheap guard before scoring: two items with explicitly DIFFERENT named
+    recipients are not the same commitment, however similar the text. An empty
+    recipient is unknown, not a conflict, so it stays eligible.
+
+    Also honors `not_dup_of`: once a human has un-merged a pair, that verdict is
+    permanent. Without this the scorer would just re-merge it on the next run and
+    silently overturn the correction.
+    """
+    if b.get('id') in (a.get('not_dup_of') or []):
+        return False
+    if a.get('id') in (b.get('not_dup_of') or []):
+        return False
+    sa, sb = (a.get('to_slug') or ''), (b.get('to_slug') or '')
+    if sa and sb and sa != sb:
+        return False
+    return True
+
+def _richness(it):
+    """How much a record carries. The richer of a duplicate pair survives."""
+    score = 0
+    for field in ('to', 'due', 'project', 'permalink'):
+        if it.get(field):
+            score += 2
+    if (it.get('source') or {}).get('ref'):
+        score += 1
+    if it.get('confidence') == 'high':
+        score += 1
+    if it.get('priority'):
+        score += 1
+    score += min(len(it.get('text') or ''), 300) / 300.0
+    return score
+
+def find_content_dup(state, text, to='', exclude_id=None, threshold=DUP_AUTO):
+    """Return an existing OPEN item that is the same commitment as `text`, else None."""
+    probe = {'to_slug': resolve_person_slug(to) if to else ''}
+    best, best_score = None, 0.0
+    for it in state['items'].values():
+        if it.get('status') != 'open' or it.get('id') == exclude_id:
+            continue
+        if not _compatible(probe, it):
+            continue
+        s = _dup_score(text, it.get('text'))
+        if s > best_score:
+            best, best_score = it, s
+    return best if best_score >= threshold else None
+
+def merge_items(primary, secondary):
+    """Fold `secondary` into `primary` and mark it dropped.
+
+    Absorbs every field the primary is missing, so a merge never loses data -
+    the terse fathom record usually owns the permalink the rich manual record
+    lacks, which is exactly the COM-0151 / COM-0165 case.
+    """
+    for field in ('to', 'due', 'project', 'permalink', 'channel',
+                  'channel_name', 'thread_ts'):
+        if not primary.get(field) and secondary.get(field):
+            primary[field] = secondary[field]
+    if not primary.get('to_slug') and secondary.get('to_slug'):
+        primary['to_slug'] = secondary['to_slug']
+    if secondary.get('priority'):
+        primary['priority'] = True
+    if secondary.get('confidence') == 'high':
+        primary['confidence'] = 'high'
+    sref = (secondary.get('source') or {}).get('ref')
+    stype = (secondary.get('source') or {}).get('type')
+    primary.setdefault('merged_from', [])
+    primary['merged_from'].append({
+        'id': secondary['id'], 'source_type': stype, 'source_ref': sref,
+        'text': secondary.get('text'),
+    })
+    primary.setdefault('notes', []).append(
+        f"merged {secondary['id']} ({stype}) into this item")
+    secondary.update(status='dropped', closed_at=time.time(), closed_by='dedupe',
+                     merged_into=primary['id'])
+    secondary.setdefault('notes', []).append(f"duplicate of {primary['id']}")
+    return primary
+
+def _glm_adjudicate(pairs):
+    """Ask GLM which borderline pairs are the same commitment. ONE batched call.
+
+    Returns a set of pair indices judged duplicate. Honors the agy-bridge
+    fallback sentinel (exit 3): on fallback or ANY failure we return an empty
+    set, i.e. keep both items. Failing open would merge on a broken model call,
+    and a wrong merge destroys a commitment.
+    """
+    if not pairs:
+        return set()
+    lines = []
+    for i, (a, b) in enumerate(pairs):
+        lines.append(
+            f"[{i}]\nA ({a['id']}): {a.get('text')}\n"
+            f"    to={a.get('to') or '-'} project={a.get('project') or '-'}\n"
+            f"B ({b['id']}): {b.get('text')}\n"
+            f"    to={b.get('to') or '-'} project={b.get('project') or '-'}")
+    prompt = (
+        "You are deduplicating a product manager's commitment ledger. Each pair "
+        "below was captured from different sources and MAY describe the same "
+        "real-world commitment worded differently, or may be two genuinely "
+        "distinct commitments.\n\n"
+        "Answer DUPLICATE only if a person doing one has necessarily done the "
+        "other. Two different PRDs, two different tickets, or the same artifact "
+        "at different stages (draft vs review vs send) are DISTINCT.\n\n"
+        "When uncertain, answer DISTINCT. A wrong merge deletes real work.\n\n"
+        + "\n\n".join(lines) +
+        "\n\nReturn ONLY a JSON array of the indices that are DUPLICATE, "
+        'e.g. [0,3]. No prose.')
+    tmp = os.path.join(tempfile.gettempdir(), f'com_dedupe_{os.getpid()}.txt')
+    try:
+        with open(tmp, 'w') as f:
+            f.write(prompt)
+        out = subprocess.run(
+            [sys.executable, AGY_BRIDGE, '--task', 'harvest', '--prompt-file', tmp],
+            capture_output=True, text=True, timeout=180)
+        if out.returncode == 3:
+            print('  ! GLM returned fallback sentinel; keeping borderline pairs '
+                  'unmerged (review manually)', file=sys.stderr)
+            return set()
+        if out.returncode != 0:
+            print(f'  ! agy-bridge failed rc={out.returncode}; keeping borderline '
+                  f'pairs unmerged', file=sys.stderr)
+            return set()
+        m = re.search(r'\[[\d,\s]*\]', out.stdout)
+        if not m:
+            print('  ! could not parse GLM verdict; keeping borderline pairs '
+                  'unmerged', file=sys.stderr)
+            return set()
+        return {int(x) for x in json.loads(m.group(0))
+                if isinstance(x, int) and 0 <= int(x) < len(pairs)}
+    except Exception as e:
+        print(f'  ! GLM adjudication error ({e}); keeping borderline pairs '
+              f'unmerged', file=sys.stderr)
+        return set()
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 # ------------------------------------------------------------------- state --
 
@@ -258,7 +472,34 @@ def resolve_names(state, user_ids, token):
 
 def create_item(state, text, to='', channel=None, channel_name=None, thread_ts=None,
                  permalink='', due=None, project=None, source_type='manual',
-                 source_ref='', confidence='medium', priority=None, notes=None):
+                 source_ref='', confidence='medium', priority=None, notes=None,
+                 dedupe=True):
+    """Create a commitment, or fold it into the existing one it duplicates.
+
+    Every ingestion path (fathom / slack / local MOM / manual / extract) funnels
+    through here, so this is the one place a content-level guard actually holds.
+    Only high-confidence (>= DUP_AUTO) matches merge silently; anything arguable
+    is inserted and left for `dedupe` to adjudicate with the full picture.
+    """
+    if dedupe:
+        existing = find_content_dup(state, text, to=to)
+        if existing is not None:
+            incoming = {
+                'id': f'(ingest:{source_type})', 'text': text, 'to': to, 'due': due,
+                'project': project, 'permalink': permalink, 'channel': channel,
+                'channel_name': channel_name, 'thread_ts': thread_ts,
+                'to_slug': resolve_person_slug(to) if to else '',
+                'source': {'type': source_type, 'ref': source_ref or ''},
+                'confidence': confidence, 'priority': bool(priority),
+                'notes': notes or [],
+            }
+            # The richer text wins the record, but the merge absorbs both, so a
+            # terse fathom line still donates its permalink to a verbose manual one.
+            if _richness(incoming) > _richness(existing):
+                existing['text'] = (text or '')[:600]
+            merge_items(existing, incoming)
+            return existing
+
     iid = next_id(state)
     if priority is None:
         priority = 'YourManager' in (to or '').lower()
@@ -310,7 +551,7 @@ def sweep_fathom(state):
     """Registry entries not yet processed -> fathom_client.py --action list --full
     (NOT `get` - confirmed 404 on this deployment's recording IDs 2026-07-10;
     `list --full` DOES carry action_items per meeting, see integration_notes) ->
-    action items assigned to You, not yet completed -> high-confidence items."""
+    action items assigned to the owner, not yet completed -> high-confidence items."""
     registry = load_fathom_registry()
     processed = set(state.get('processed_fathom_ids', []))
     cutoff = (wib_today() - timedelta(days=FIRST_RUN_FATHOM_LOOKBACK_DAYS)).isoformat()
@@ -429,7 +670,7 @@ def extract_mom_action_lines(text):
     """Within each 'Action Items' heading's section (bounded by the next
     heading at the SAME or SHALLOWER level - a deeper subheading like
     '### Work Team' stays inside the section), return every raw line that
-    names You as owner (`\\bBrian\\b`, word-boundary - table row, checkbox
+    names the owner as owner (`\\bBrian\\b`, word-boundary - table row, checkbox
     bullet, or plain line, whatever format that MOM happens to use)."""
     lines = text.splitlines()
     n = len(lines)
@@ -465,9 +706,9 @@ def clean_mom_line(line):
     return re.sub(r'\s+', ' ', s).strip()
 
 def sweep_local(state):
-    """Mechanical, no-LLM: scan local transcripts + MOM drafts for (1) You's
+    """Mechanical, no-LLM: scan local transcripts + MOM drafts for (1) the owner's
     spoken action-item cues (CUE_RE) and (2) MOM 'Action Items' section rows
-    that name You as owner. Only files touched since `local_watermark`
+    that name the owner as owner. Only files touched since `local_watermark`
     (first run: 3-day lookback, matching the Fathom/Slack sources). Dedupe is
     per-line via a content hash so re-touching a file (e.g. a later /mom edit)
     only picks up genuinely new lines."""
@@ -526,7 +767,7 @@ def sweep_local(state):
 # --------------------------------------------------------------- auto-close --
 
 def sweep_auto_close(token, state):
-    """Mechanical only: for open items with a channel+thread_ts, check if You
+    """Mechanical only: for open items with a channel+thread_ts, check if the owner
     posted a later message containing a completion word or a Drive/Docs link."""
     closed = 0
     for it in state['items'].values():
@@ -573,7 +814,12 @@ def prune(state):
 
 # -------------------------------------------------------------------- sweep --
 
+def _wib_timestamp_header(label):
+    wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    print(f'=== {wib.strftime("%Y-%m-%d %H:%M")} WIB {label} ===')
+
 def cmd_sweep(args):
+    _wib_timestamp_header('sweep')
     try:
         token = load_token()
         auth = slack('auth.test', token)
@@ -604,6 +850,7 @@ def cmd_sweep(args):
 def cmd_extract(args):
     """Batch pending_candidates through GLM (agy-bridge harvest). GLM only
     extracts structure (to/due/is_commitment) - it never decides open/closed."""
+    _wib_timestamp_header('extract')
     state = load_state()
     candidates = state.get('pending_candidates', [])
     if not candidates:
@@ -611,12 +858,12 @@ def cmd_extract(args):
         return
     batch = candidates[:args.limit]
     prompt = (
-        'You are a mechanical outbound-commitment extractor for You (Work PM). '
-        'Each line below is a Slack message You SENT. For EACH line, output ONE JSON '
-        'line: {"ts":"<ts>", "is_commitment": true|false, "to": "<name You is '
+        'You are a mechanical outbound-commitment extractor for the owner (Work PM). '
+        'Each line below is a Slack message the owner SENT. For EACH line, output ONE JSON '
+        'line: {"ts":"<ts>", "is_commitment": true|false, "to": "<name the owner is '
         'committing to, or empty>", "due": "<YYYY-MM-DD or null>", "text": "<short '
-        'restatement of what You committed to do, max 20 words>"}. '
-        'is_commitment=true ONLY if You is promising a future action to someone '
+        'restatement of what the owner committed to do, max 20 words>"}. '
+        'is_commitment=true ONLY if the owner is promising a future action to someone '
         '(e.g. "I\'ll send you the PRD tomorrow"). Questions, acknowledgments, and '
         'statements about the past are is_commitment=false. Output ONLY JSON lines, no prose.\n\n'
         + '\n'.join(json.dumps({'ts': c['ts'], 'channel': c['channel_name'],
@@ -683,6 +930,69 @@ def cmd_add(args):
     save_state(state)
     print(f"added: {it['id']}")
 
+def cmd_dedupe(args):
+    """Collapse duplicate OPEN commitments that predate the ingest-time guard.
+
+    Dry-run by default: a merge is destructive and the ledger drives priorities,
+    so nothing is written without --apply.
+    """
+    state = load_state()
+    open_items = [it for it in state['items'].values() if it.get('status') == 'open']
+    open_items.sort(key=lambda it: it['id'])
+
+    auto, band = [], []
+    for i, a in enumerate(open_items):
+        for b in open_items[i + 1:]:
+            if not _compatible(a, b):
+                continue
+            s = _dup_score(a.get('text'), b.get('text'))
+            if s >= DUP_AUTO:
+                auto.append((s, a, b))
+            elif s >= DUP_BAND:
+                band.append((s, a, b))
+
+    confirmed = set()
+    if band and not args.no_glm:
+        print(f'  adjudicating {len(band)} borderline pair(s) via GLM ...')
+        pairs = [(a, b) for _, a, b in band]
+        confirmed = _glm_adjudicate(pairs)
+        print(f'  GLM: {len(confirmed)} of {len(band)} judged duplicate')
+
+    merges = [(s, a, b) for s, a, b in auto]
+    merges += [(s, a, b) for i, (s, a, b) in enumerate(band) if i in confirmed]
+    merges.sort(key=lambda t: -t[0])
+
+    # A record already folded into another must not also absorb a third: that
+    # would chain merges through a dropped item and lose the trail.
+    done, applied = set(), []
+    for s, a, b in merges:
+        if a['id'] in done or b['id'] in done:
+            continue
+        primary, secondary = (a, b) if _richness(a) >= _richness(b) else (b, a)
+        applied.append((s, primary, secondary))
+        done.add(secondary['id'])
+
+    if not applied:
+        print('dedupe: no duplicates found')
+        return
+
+    verb = 'merging' if args.apply else 'would merge'
+    print(f'\ndedupe: {verb} {len(applied)} duplicate pair(s)\n')
+    for s, primary, secondary in applied:
+        via = 'auto' if s >= DUP_AUTO else 'glm'
+        print(f"  [{via} {s:.2f}] keep {primary['id']}  <-  drop {secondary['id']}")
+        print(f"      keep: {(primary.get('text') or '')[:96]}")
+        print(f"      drop: {(secondary.get('text') or '')[:96]}")
+        if args.apply:
+            merge_items(primary, secondary)
+
+    if args.apply:
+        save_state(state)
+        still_open = sum(1 for it in state['items'].values() if it.get('status') == 'open')
+        print(f'\napplied: {len(applied)} merged -> {still_open} open')
+    else:
+        print('\n(dry run; re-run with --apply to write)')
+
 def cmd_close(args):
     state = load_state()
     it = state['items'].get(args.item_id)
@@ -704,6 +1014,49 @@ def cmd_drop(args):
         it.setdefault('notes', []).append(args.note)
     save_state(state)
     print(f'dropped: {args.item_id}')
+
+def cmd_reopen(args):
+    """Undo a close/drop (mis-click safety on the dashboard): back to open,
+    closure fields cleared so reports/SLA math treat it as never closed.
+
+    Reopening a DEDUPED item also has to unwind the merge on both sides,
+    otherwise the item comes back while the record that absorbed it still claims
+    it as merged_from - and the next dedupe run would happily re-merge it.
+    """
+    state = load_state()
+    it = state['items'].get(args.item_id)
+    if not it:
+        sys.exit(f'item not found: {args.item_id}')
+
+    primary_id = it.get('merged_into')
+    if primary_id:
+        primary = state['items'].get(primary_id)
+        if primary:
+            primary['merged_from'] = [
+                m for m in primary.get('merged_from', [])
+                if m.get('id') != args.item_id]
+            if not primary['merged_from']:
+                primary.pop('merged_from', None)
+            primary.setdefault('notes', []).append(
+                f'{args.item_id} un-merged (reopened); no longer treated as a duplicate')
+            # Record the verdict on BOTH sides so a later dedupe run cannot
+            # simply re-merge the pair and overturn this correction.
+            primary.setdefault('not_dup_of', [])
+            if args.item_id not in primary['not_dup_of']:
+                primary['not_dup_of'].append(args.item_id)
+            it.setdefault('not_dup_of', [])
+            if primary_id not in it['not_dup_of']:
+                it['not_dup_of'].append(primary_id)
+        it.pop('merged_into', None)
+
+    it.update(status='open', closed_at=None, closed_by=None)
+    if args.note:
+        it.setdefault('notes', []).append(args.note)
+    save_state(state)
+    if primary_id:
+        print(f'reopened: {args.item_id} (un-merged from {primary_id})')
+    else:
+        print(f'reopened: {args.item_id}')
 
 def cmd_link(args):
     """Link a commitment to a tracker ticket (tickets.json T-id) so the dashboard
@@ -802,6 +1155,10 @@ def main():
     dp.add_argument('item_id')
     dp.add_argument('--note', default=None)
 
+    rop = sub.add_parser('reopen')
+    rop.add_argument('item_id')
+    rop.add_argument('--note', default=None)
+
     lp = sub.add_parser('link')
     lp.add_argument('item_id')
     lp.add_argument('--ticket', required=True)
@@ -812,10 +1169,17 @@ def main():
     rp = sub.add_parser('report')
     rp.add_argument('--all', action='store_true')
 
+    ddp = sub.add_parser('dedupe', help='collapse duplicate open commitments')
+    ddp.add_argument('--apply', action='store_true',
+                     help='write the merges (default is a dry run)')
+    ddp.add_argument('--no-glm', action='store_true',
+                     help='deterministic matches only; skip GLM adjudication')
+
     args = p.parse_args()
     {'sweep': cmd_sweep, 'extract': cmd_extract, 'add': cmd_add,
-     'close': cmd_close, 'drop': cmd_drop, 'report': cmd_report,
-     'link': cmd_link, 'unlink': cmd_unlink,
+     'close': cmd_close, 'drop': cmd_drop, 'reopen': cmd_reopen,
+     'report': cmd_report, 'link': cmd_link, 'unlink': cmd_unlink,
+     'dedupe': cmd_dedupe,
      }.get(args.cmd or 'sweep', cmd_sweep)(args)
 
 if __name__ == '__main__':

@@ -14,7 +14,35 @@ if DRIVE_CONNECTOR_DIR not in sys.path:
     sys.path.append(DRIVE_CONNECTOR_DIR)
 from gdrive_manager import authenticate
 
-def update_markdown(component, feature, details, version, status, prd_url, prd_title):
+# The two tabs have DIFFERENT column orders. Writing one row shape to both silently
+# corrupts whichever tab does not match, so each tab declares its own schema.
+#
+#   MECE:     L0 | L1: Component | L2: Feature | Documents | Status | PRD Status | L3 | Phase
+#   Roadmap:  L1: Component | L2: Feature | L3 | Phase | PRD Status | Documents
+#
+# match_col is the column holding the component name (L1) for that tab. In MECE
+# column A is the product family (L0), not the component, so matching on column A
+# never finds anything.
+TAB_SCHEMAS = {
+    "Master Product List & Breakdown (MECE)": {
+        "match_col": 1,
+        "l0_col": 0,
+        "build_row": lambda ctx, l3: [
+            ctx["l0"], ctx["component"], ctx["feature"], ctx["link"],
+            ctx["build_status"], ctx["prd_status"], l3, ctx["phase"],
+        ],
+    },
+    "Roadmap Breakdown": {
+        "match_col": 0,
+        "l0_col": None,
+        "build_row": lambda ctx, l3: [
+            ctx["component"], ctx["feature"], l3, ctx["phase"],
+            ctx["prd_status"], ctx["link"],
+        ],
+    },
+}
+
+def update_markdown(component, feature, details, version, status, prd_url, prd_title, dry_run=False):
     print(f"Updating local MD file: {MASTER_LIST_MD}...")
     if not os.path.exists(MASTER_LIST_MD):
         print(f"Error: {MASTER_LIST_MD} not found.")
@@ -53,7 +81,7 @@ def update_markdown(component, feature, details, version, status, prd_url, prd_t
     row_pattern = rf"\| \*\*{feature_esc}\*\* \|.*?\|.*?\|.*?\|"
     formatted_details = details.replace(';', '<br>')
     new_row = f"| **{feature}** | {formatted_details} | {status} | [{prd_title}]({prd_url}) |"
-    
+
     if re.search(row_pattern, table_content, re.IGNORECASE):
         updated_table = re.sub(row_pattern, new_row, table_content, flags=re.IGNORECASE)
     else:
@@ -61,6 +89,10 @@ def update_markdown(component, feature, details, version, status, prd_url, prd_t
 
     new_comp_section = comp_section[:version_match.end()] + comp_section[version_match.end():].replace(table_content, updated_table)
     new_content = content[:comp_match.start()] + new_comp_section + content[search_limit:]
+
+    if dry_run:
+        print(f"  DRY RUN, would write this row into the MD:\n    {new_row}")
+        return True
 
     with open(MASTER_LIST_MD, 'w') as f:
         f.write(new_content)
@@ -71,73 +103,110 @@ def get_sheets_service():
     creds = authenticate()
     return build('sheets', 'v4', http=google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=60)))
 
-def _get_sheet_id(service, tab_name):
-    meta = service.spreadsheets().get(spreadsheetId=SHEET_ID, fields="sheets(properties(title,sheetId))").execute()
-    for s in meta['sheets']:
-        if s['properties']['title'] == tab_name: return s['properties']['sheetId']
-    return None
-
-def _update_sheet_tab(service, tab_name, component, feature, details, version, status, prd_url, prd_title):
-    print(f"Updating Sheet Tab: \"{tab_name}\"...")
-    sheet_id = _get_sheet_id(service, tab_name)
-    metadata = service.spreadsheets().get(spreadsheetId=SHEET_ID, ranges=[f"'{tab_name}'!A1:B300"], fields="sheets(merges,data(rowData(values(effectiveValue))))").execute()
-    sheet = metadata['sheets'][0]
-    merges = sheet.get('merges', [])
-    rows = sheet['data'][0].get('rowData', [])
-    
-    comp_row_idx = -1
-    comp_merge = None
-    for i, r in enumerate(rows):
+def _find_component(rows, component, match_col, l0_col):
+    """Return (found, l0) by matching the component name in that tab's component column."""
+    target = component.lower().replace(' ', '').replace('-', '')
+    for r in rows:
         vals = r.get('values', [])
-        if vals:
-            val = vals[0].get('effectiveValue', {}).get('stringValue', '')
-            if component.lower().replace(' ', '') in val.lower().replace(' ', ''):
-                comp_row_idx = i
-                for m in merges:
-                    if m.get('startColumnIndex', 0) == 0 and m.get('startRowIndex', 0) <= i < m.get('endRowIndex', 0):
-                        comp_merge = m
-                        break
-                break
-    
-    if comp_row_idx == -1:
-        print(f"Warning: Component '{component}' not found in tab '{tab_name}'. Skipping.")
-        return
+        if len(vals) <= match_col:
+            continue
+        val = vals[match_col].get('effectiveValue', {}).get('stringValue', '') or ''
+        if target and target in val.lower().replace(' ', '').replace('-', ''):
+            l0 = ''
+            if l0_col is not None and len(vals) > l0_col:
+                l0 = vals[l0_col].get('effectiveValue', {}).get('stringValue', '') or ''
+            return True, l0
+    return False, ''
 
-    c_start = comp_merge['startRowIndex'] if comp_merge else comp_row_idx
-    c_end = comp_merge['endRowIndex'] if comp_merge else comp_row_idx + 1
-    
-    details_items = [d.strip() for d in details.split(';')]
-    num_rows = len(details_items)
-    link_formula = f'=HYPERLINK("{prd_url}", "{prd_title}")'
-    
-    # Append a single row at the end of the tab.
-    # Google Sheets "Table" objects reject insertRange ("cannot insert cells over part of a table"),
-    # so we append instead of inserting mid-section. Grouping merges are intentionally skipped.
-    row = [component, feature, details.replace(';', ' / '), version, status, link_formula]
+def _update_sheet_tab(service, tab_name, component, feature, details, phase,
+                      prd_status, build_status, prd_url, prd_title, dry_run=False):
+    print(f"Updating Sheet Tab: \"{tab_name}\"...")
+    schema = TAB_SCHEMAS.get(tab_name)
+    if not schema:
+        print(f"Error: no schema defined for tab '{tab_name}'. Refusing to write.")
+        return False
+
+    metadata = service.spreadsheets().get(
+        spreadsheetId=SHEET_ID,
+        ranges=[f"'{tab_name}'!A1:H400"],
+        fields="sheets(data(rowData(values(effectiveValue))))",
+    ).execute()
+    rows = metadata['sheets'][0]['data'][0].get('rowData', [])
+
+    found, l0 = _find_component(rows, component, schema["match_col"], schema["l0_col"])
+    if not found:
+        print(f"Error: component '{component}' not found in tab '{tab_name}' "
+              f"(matched against column {chr(65 + schema['match_col'])}). Nothing written.")
+        return False
+
+    ctx = {
+        "l0": l0,
+        "component": component,
+        "feature": feature,
+        "phase": phase,
+        "prd_status": prd_status,
+        "build_status": build_status,
+        "link": f'=HYPERLINK("{prd_url}", "{prd_title}")',
+    }
+
+    # One row per detail item, matching how every existing block in both tabs is laid out.
+    items = [d.strip() for d in details.split(';') if d.strip()] or [details.strip()]
+    new_rows = [schema["build_row"](ctx, item) for item in items]
+
+    if dry_run:
+        print(f"  DRY RUN, would append {len(new_rows)} row(s) to '{tab_name}':")
+        for r in new_rows:
+            print("   ", " | ".join(str(x)[:30] for x in r))
+        return True
+
+    # Google Sheets "Table" objects reject insertRange ("cannot insert cells over part
+    # of a table"), so append at the end rather than inserting mid-section.
     service.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
         range=f"'{tab_name}'!A1",
         valueInputOption='USER_ENTERED',
         insertDataOption='INSERT_ROWS',
-        body={'values': [row]}
+        body={'values': new_rows},
     ).execute()
-    print(f"Sheet tab '{tab_name}' updated successfully (appended 1 row).")
+    print(f"Sheet tab '{tab_name}' updated successfully (appended {len(new_rows)} row(s)).")
+    return True
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--component', required=True)
-    parser.add_argument('--feature', required=True)
-    parser.add_argument('--details', required=True)
-    parser.add_argument('--version', required=True)
-    parser.add_argument('--status', default='Planned') # Default to Planned as per screenshot
+    parser = argparse.ArgumentParser(
+        description="Register a PRD in the Work Master Product List (local MD + both sheet tabs).")
+    parser.add_argument('--component', required=True,
+                        help="L1 component, e.g. 'E-commerce Front-end Builder'. Must already exist in the sheet.")
+    parser.add_argument('--feature', required=True, help="L2 feature name.")
+    parser.add_argument('--details', required=True,
+                        help="L3 detail items, semicolon-separated. Each becomes its own row.")
+    parser.add_argument('--version', required=True,
+                        help="Phase, e.g. 'V2 Phase (Q3-Q4 2026: Jul-Dec)'. Must match a phase heading in the MD.")
+    parser.add_argument('--prd-status', default=None,
+                        help="PRD maturity: Full | Stub | API/Overview | Draft. Default Full.")
+    parser.add_argument('--build-status', default='To Do',
+                        help="Build state for the MECE tab: To Do | In Progress | Released. Default To Do.")
+    parser.add_argument('--status', default=None,
+                        help="Deprecated alias for --prd-status, kept for older callers.")
     parser.add_argument('--url', required=True)
     parser.add_argument('--title', required=True)
+    parser.add_argument('--dry-run', action='store_true',
+                        help="Show what would be written without touching the sheet.")
     args = parser.parse_args()
-    
-    update_markdown(args.component, args.feature, args.details, args.version, args.status, args.url, args.title)
+
+    prd_status = args.prd_status or args.status or 'Full'
+
+    ok = update_markdown(args.component, args.feature, args.details, args.version,
+                    prd_status, args.url, args.title, dry_run=args.dry_run)
     service = get_sheets_service()
-    _update_sheet_tab(service, "Master Product List & Breakdown (MECE)", args.component, args.feature, args.details, args.version, args.status, args.url, args.title)
-    _update_sheet_tab(service, "Roadmap Breakdown", args.component, args.feature, args.details, args.version, args.status, args.url, args.title)
+
+    for tab in TAB_SCHEMAS:
+        ok &= _update_sheet_tab(service, tab, args.component, args.feature, args.details,
+                                args.version, prd_status, args.build_status,
+                                args.url, args.title, dry_run=args.dry_run)
+    if not ok:
+        print("\nOne or more tabs were not updated. Fix the component name and re-run; "
+              "nothing was partially written to a tab that failed lookup.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

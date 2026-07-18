@@ -2,7 +2,7 @@
 """Grant the standing Work collaborators (Teammate + known ExampleVendor team) commenter
 access on a Drive file.
 
-Standing rule (You, 2026-06-24): always allow Teammate and all known ExampleVendor team
+Standing rule (the owner, 2026-06-24): always allow Teammate and all known ExampleVendor team
 to access the Master Product List and any document we create, with comment access.
 
 Run this AFTER the domain-restrict step on any Work GDoc we create/update, so the

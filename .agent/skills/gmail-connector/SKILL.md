@@ -1,6 +1,6 @@
 # Gmail Connector Skill
 
-Manage You's Gmail account (connected to `you@yourcompany.com`) for reading, searching, and organizing emails.
+Manage the owner's Gmail account (connected to `you@yourcompany.com`) for reading, searching, and organizing emails.
 
 ## Overview
 This skill allows the assistant to interact with the Gmail API. It supports fetching recent emails, searching using standard Gmail queries, reading full content, and archiving messages.
@@ -27,7 +27,7 @@ Move an email from Inbox to Archive.
 - **Command**: `python .agent/skills/gmail-connector/gmail_manager.py archive <msg_id>`
 
 ### `send`
-Send a plain-text email from `you@yourcompany.com` (appears in Sent). The `gmail.modify` scope already permits sending. Always confirm with You before sending.
+Send a plain-text email from `you@yourcompany.com` (appears in Sent). The `gmail.modify` scope already permits sending. Always confirm with the owner before sending.
 - **Command**:
   ```bash
   python .agent/skills/gmail-connector/gmail_manager.py send \

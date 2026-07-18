@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate images via Google Gemini / Imagen API (You's key in token.env).
+"""Generate images via Google Gemini / Imagen API (the owner's key in token.env).
 
 Two backends:
   - imagen-4.0-generate-001  (:predict)  -> clean poster gen, true aspectRatio control

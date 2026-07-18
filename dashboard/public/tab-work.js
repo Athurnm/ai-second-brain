@@ -121,7 +121,7 @@ window.Tabs = window.Tabs || {};
       icon: KIND_ICON[t.kind] || '🎫',
       title: t.title,
       badges,
-      meta: t.owner && t.owner !== 'You' ? t.owner : '',
+      meta: t.owner && t.owner !== 'the owner' ? t.owner : '',
       right: dueBadgeFor(t.due, today),
       expandBody: ticketExpandBody(t),
     });
@@ -545,7 +545,20 @@ window.Tabs = window.Tabs || {};
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      Comp.toast(action === 'close' ? `Beres: ${id}` : `Di-drop: ${id}`, true);
+      /* close AND drop are reversible (mis-click safety) — Undo POSTs
+         action:'reopen' through the same endpoint (ledger CLI single writer) */
+      const undo = {
+        label: 'Undo',
+        onClick: async () => {
+          await U.fetchJSON('/api/commitment-close', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, action: 'reopen', note: 'undo from dashboard' }),
+          });
+          Comp.toast(`Dibuka lagi: ${id}`, true);
+          await reloadCommitmentsSection();
+        },
+      };
+      Comp.toast(action === 'close' ? `Beres: ${id}` : `Di-drop: ${id}`, true, undo);
       await reloadCommitmentsSection();
     } catch (err) {
       Comp.toast(`Gagal ${action === 'close' ? 'nutup' : 'drop'} ${id}: ${err.message}`, false);

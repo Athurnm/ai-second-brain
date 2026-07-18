@@ -2,17 +2,28 @@
 """Shared helpers for the local meeting note-taker (recorder / transcribe / watcher).
 
 Platform detection mirrors .agent/scripts/detect_platform.sh:
-Darwin -> macos, Linux -> wsl (You's Linux is always WSL), Windows -> windows.
+Darwin -> macos, Linux -> wsl (the owner's Linux is always WSL), Windows -> windows.
 """
 import json
 import os
 import platform
 import re
+import shutil
 import sys
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(MODULE_DIR)
 CONFIG_PATH = os.path.join(MODULE_DIR, "config.json")
+
+# Cron runs with a minimal PATH that excludes ~/.local/bin, so a bare "ffmpeg"
+# in config resolves fine in an interactive shell and dies under cron with
+# FileNotFoundError. Search these before giving up.
+FFMPEG_FALLBACK_DIRS = (
+    os.path.expanduser("~/.local/bin"),
+    "/usr/local/bin",
+    "/usr/bin",
+    "/opt/homebrew/bin",
+)
 
 def detect_platform():
     sysname = platform.system()
@@ -21,6 +32,27 @@ def detect_platform():
     if sysname == "Linux":
         return "wsl"
     return "windows"
+
+def resolve_ffmpeg(value):
+    """Turn whatever config says into an absolute, existing ffmpeg path.
+
+    Accepts an absolute path, a bare name, or nothing. Returns the input
+    unchanged when it cannot do better, so callers still fail loudly rather
+    than silently transcoding with the wrong binary."""
+    value = (value or "ffmpeg").strip()
+    if os.sep in value:
+        expanded = os.path.expanduser(value)
+        if os.path.isfile(expanded) and os.access(expanded, os.X_OK):
+            return expanded
+        value = os.path.basename(expanded)
+    found = shutil.which(value)
+    if found:
+        return found
+    for d in FFMPEG_FALLBACK_DIRS:
+        cand = os.path.join(d, value)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return value
 
 def load_config():
     with open(CONFIG_PATH, encoding="utf-8") as f:
@@ -31,6 +63,7 @@ def load_config():
         machine["recordings_dir"] = os.path.expanduser(machine["recordings_dir"])
     if machine.get("whispercpp_model"):
         machine["whispercpp_model"] = os.path.expanduser(machine["whispercpp_model"])
+    machine["ffmpeg"] = resolve_ffmpeg(machine.get("ffmpeg"))
     cfg["platform"] = plat
     cfg["machine"] = machine
     return cfg
@@ -53,7 +86,7 @@ def parse_json_tail(text):
     raise ValueError("no JSON found in output")
 
 def load_gemini_key():
-    """Reuse the Gemini API key from the gemini-image skill (metered, You's)."""
+    """Reuse the Gemini API key from the gemini-image skill (metered, the owner's)."""
     key = os.environ.get("GEMINI_API_KEY")
     if key:
         return key

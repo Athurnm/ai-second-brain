@@ -117,4 +117,4 @@ Currently, <current behaviour> creates challenges:
 - **B** = a single feature where the *navigation/UX flow* is the point → Objective/Problem/Goals + annotated
   Desktop & Mobile walkthroughs.
 
-When unsure, ask You which shape fits; default to A for a release, B for a single navigation/UX feature.
+When unsure, ask the owner which shape fits; default to A for a release, B for a single navigation/UX feature.

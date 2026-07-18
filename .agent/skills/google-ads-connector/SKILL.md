@@ -3,7 +3,7 @@
 Read Google Ads (Search/Display/YouTube) metrics for You. **Build priority #3** (most setup
 friction: developer token needs approval). Status: **NOT built yet.**
 
-## What You must obtain (one-time)
+## What the owner must obtain (one-time)
 1. **Google Ads account** + the **Customer ID** (`123-456-7890`).
 2. A **Developer Token** from the Google Ads API Center (starts in *test* access; **basic access
    needs an application + approval** (this has lead time, hence priority #3).

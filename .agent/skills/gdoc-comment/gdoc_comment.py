@@ -7,7 +7,7 @@ anchors, so API-created comments always orphan as "Original content deleted". Go
 through the editor mints a real kix anchor every time. See memory
 reference_gdoc_anchored_comments.
 
-Auth: a persistent Chromium profile (./profile/<account>) logged into You's Google
+Auth: a persistent Chromium profile (./profile/<account>) logged into the owner's Google
 account. Run `login` ONCE per account (headed window via WSLg); the session persists.
 
 Verification: after posting, reads the comment back via the Drive API and confirms it

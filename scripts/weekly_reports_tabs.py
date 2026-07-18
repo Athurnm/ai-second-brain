@@ -338,6 +338,39 @@ def _build_table(docs, doc_id, tab_id, mark, rows):
     if style_reqs:
         docs.documents().batchUpdate(documentId=doc_id, body={'requests': style_reqs}).execute()
 
+    # column widths: proportional to longest cell content per column, so
+    # narrow label/severity columns stop getting the same width as long
+    # status/description columns (GDocs default = equal widths).
+    total_pt = 468.0  # usable width inside 1in margins, letter portrait
+    weights = []
+    for c in range(ncols):
+        mx = 1
+        for r in range(nrows):
+            val = rows[r][c] if c < len(rows[r]) else ''
+            clean, _ = parse_inline(val)
+            mx = max(mx, min(len(clean), 60))
+        weights.append(float(max(mx, 6)))
+    tot = sum(weights)
+    raw = [total_pt * w / tot for w in weights]
+    MIN_PT = 55.0
+    deficit = sum(MIN_PT - r for r in raw if r < MIN_PT)
+    big_total = sum(r for r in raw if r >= MIN_PT)
+    width_reqs = []
+    for c, r in enumerate(raw):
+        if r < MIN_PT:
+            w_pt = MIN_PT
+        elif big_total > 0:
+            w_pt = r - deficit * (r / big_total)
+        else:
+            w_pt = r
+        width_reqs.append({'updateTableColumnProperties': {
+            'tableStartLocation': {'index': table['startIndex'], 'tabId': tab_id},
+            'columnIndices': [c],
+            'tableColumnProperties': {'widthType': 'FIXED_WIDTH',
+                                      'width': {'magnitude': round(w_pt, 1), 'unit': 'PT'}},
+            'fields': 'widthType,width'}})
+    docs.documents().batchUpdate(documentId=doc_id, body={'requests': width_reqs}).execute()
+
 # ----------------------------- commands -----------------------------
 
 def cmd_ensure_master(args):
@@ -377,6 +410,36 @@ def cmd_add_week(args):
 
     existing = find_tab_by_title(docs, args.id, args.tab_title)
     if existing:
+        # Safety net for the post-edit SSOT rule: deleteTab wipes any manual
+        # edits the owner made on the tab, so dump its current text to a local
+        # backup before replacing. Comments survive at doc level regardless.
+        try:
+            tab = get_tab(docs, args.id, existing)
+            lines = []
+            for el in tab_body_elements(tab):
+                para = el.get('paragraph')
+                if para:
+                    lines.append(''.join(pe.get('textRun', {}).get('content', '')
+                                         for pe in para.get('elements', [])))
+                elif el.get('table'):
+                    for row in el['table']['tableRows']:
+                        cells = []
+                        for cell in row['tableCells']:
+                            txt = ''
+                            for c_el in cell.get('content', []):
+                                for pe in c_el.get('paragraph', {}).get('elements', []):
+                                    txt += pe.get('textRun', {}).get('content', '')
+                            cells.append(txt.strip())
+                        lines.append('| ' + ' | '.join(cells) + ' |\n')
+            bdir = os.path.join(os.path.dirname(os.path.abspath(args.file)), '_tab_backups')
+            os.makedirs(bdir, exist_ok=True)
+            stamp = time.strftime('%Y%m%d-%H%M%S')
+            bpath = os.path.join(bdir, '%s_%s.txt' % (args.tab_title.replace(' ', '_').replace(',', ''), stamp))
+            with open(bpath, 'w', encoding='utf-8') as bf:
+                bf.write(''.join(lines))
+            print('Backed up existing tab to %s' % bpath)
+        except Exception as e:
+            print('WARNING: tab backup failed (%s); continuing with replace.' % e)
         docs.documents().batchUpdate(documentId=args.id, body={'requests': [
             {'deleteTab': {'tabId': existing}}]}).execute()
         print('Replaced existing tab "%s"' % args.tab_title)

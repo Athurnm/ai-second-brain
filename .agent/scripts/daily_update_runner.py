@@ -254,7 +254,7 @@ def get_skill_token(skill_name):
     # Prioritize SLACK_USER_TOKEN for personal POV as explicitly requested by user
     user_token = tokens.get('SLACK_USER_TOKEN') or os.environ.get('SLACK_USER_TOKEN')
     if user_token:
-        print(f"      [INFO] Found SLACK_USER_TOKEN for '{skill_name}', fetching data from You's POV", flush=True)
+        print(f"      [INFO] Found SLACK_USER_TOKEN for '{skill_name}', fetching data from the owner's POV", flush=True)
         return user_token
         
     bot_token = tokens.get('SLACK_BOT_TOKEN') or os.environ.get('SLACK_BOT_TOKEN')
@@ -551,16 +551,7 @@ def _main_logic(mode, dry_run=False):
     else:
         print("[2.5] Work Jira Sprints: SKIPPED (weekend)", flush=True)
 
-    # ── Step 3: Calendar (default) ───────────────────────────────────
-    print("[3] Calendar sweep (default)...", flush=True)
-    out = _step("Default Calendar", [
-        sys.executable, gcal_script,
-        'sweep', '--profile', 'default', '--output', 'markdown'
-    ], timeout=CALENDAR_TIMEOUT)
-    harvest.add_calendar("default", out)
-    sections.append(f"## Calendar: Default\n{out}\n")
-    write_output(sections, output_file)
-
+    # ── Step 3: Calendar (default/Secondary) removed — Secondary archived, token expired ──
     # ── Step 4: Calendar (work) ─────────────────────────────────────
     print("[4] Calendar sweep (work)...", flush=True)
     out = _step("Work Calendar", [
@@ -745,15 +736,18 @@ def _main_logic(mode, dry_run=False):
         sections.append(f"> Content Pillars: AI (priority), Career, Startup, Family.\n")
         write_output(sections, output_file)
 
-    # ── Step 10.5: Portfolio Mirror (Evening only) ───────────────────
-    # Regenerate journal/portfolio.md from journal/state/portfolio.json so the
-    # top-down team→initiative→sub-item mirror stays fresh (committed by git_sync below).
+    # ── Step 10.5: Portfolio Sync (Evening only) ─────────────────────
+    # Reconcile portfolio.json against the waiting-on ledger, refresh the `now` lines
+    # that have new evidence via GLM, then render journal/portfolio.md. Rendering alone
+    # never touched portfolio.json, so the Portfolio card's freshness rotted to "dead"
+    # while this step reported success every night.
     if not is_morning:
-        print("[10.5] Rendering portfolio mirror...", flush=True)
-        portfolio_script = os.path.join(BASE_DIR, '.agent', 'scripts', 'portfolio_render.py')
-        out = _step("Portfolio Mirror", [sys.executable, portfolio_script], timeout=60)
+        print("[10.5] Syncing portfolio...", flush=True)
+        portfolio_script = os.path.join(BASE_DIR, '.agent', 'scripts', 'portfolio_sync.py')
+        out = _step("Portfolio Sync", [sys.executable, portfolio_script, '--narrative'],
+                    timeout=600)
         harvest.set_portfolio(out)
-        sections.append(f"## Portfolio Mirror\n```\n{out}\n```\n")
+        sections.append(f"## Portfolio Sync\n```\n{out}\n```\n")
         write_output(sections, output_file)
 
     # ── Step 11: GitHub Sync (Evening only) ──────────────────────────

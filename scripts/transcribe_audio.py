@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Transcribe a local audio file with faster-whisper (CPU, no API key).
 
-Reusable wrapper for You's Windows "Sound Recordings" m4a/wav/mp3 files.
+Reusable wrapper for the owner's Windows "Sound Recordings" m4a/wav/mp3 files.
 Run with the dedicated venv: ~/.venvs/whisper/bin/python
 
 Usage:
   ~/.venvs/whisper/bin/python scripts/transcribe_audio.py \
-      --in "/mnt/c/Users/You/Documents/Sound Recordings/<file>.m4a" \
+      --in "/mnt/c/Users/the owner/Documents/Sound Recordings/<file>.m4a" \
       --out scratch/<name>.md \
       [--model small|medium|large-v3] [--lang en|id|auto]
 

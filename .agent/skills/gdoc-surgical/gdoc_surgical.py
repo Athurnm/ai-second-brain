@@ -9,6 +9,7 @@ https://www.googleapis.com/auth/drive is valid for the Docs API too.
 Commands:
   read        Print the doc's text with paragraph indexes (find your target first)
   replace     Replace ALL occurrences of exact text (Docs API replaceAllText)
+  linkify     Hyperlink ALL occurrences of exact text to a URL, without changing the text
   append      Append markdown-ish text (headings/bullets/plain) to the end of the doc
   insert-row  Insert a row into table N, filled with cell texts
   list-tables Show every table with its index, size, and first-row preview
@@ -16,6 +17,7 @@ Commands:
 Usage:
   python3 gdoc_surgical.py read        --id DOC_ID --account work
   python3 gdoc_surgical.py replace     --id DOC_ID --find "old text" --with "new text" [--match-case]
+  python3 gdoc_surgical.py linkify     --id DOC_ID --find "Q3 Roadmap" --url "https://docs.google.com/document/d/..."
   python3 gdoc_surgical.py append      --id DOC_ID --text "## New Section\nBody line"
   python3 gdoc_surgical.py list-tables --id DOC_ID
   python3 gdoc_surgical.py insert-row  --id DOC_ID --table 0 --cells "Col A|Col B|Col C" [--row -1]
@@ -150,6 +152,44 @@ def cmd_replace(docs, args):
         print("[WARN] Nothing replaced - check exact wording/case with `read` first.")
         sys.exit(2)
 
+def cmd_linkify(docs, args):
+    """Hyperlink every occurrence of --find to --url, leaving the visible text
+    unchanged. Walks paragraphs at the top level and inside table cells."""
+    doc = get_doc(docs, args.id)
+    requests = []
+
+    def walk_and_link(elements):
+        for el in elements:
+            if 'paragraph' in el:
+                text = _para_text(el)
+                start = 0
+                while True:
+                    idx = text.find(args.find, start)
+                    if idx == -1:
+                        break
+                    abs_start = el['startIndex'] + idx
+                    abs_end = abs_start + len(args.find)
+                    requests.append({'updateTextStyle': {
+                        'range': {'startIndex': abs_start, 'endIndex': abs_end},
+                        'textStyle': {'link': {'url': args.url}},
+                        'fields': 'link',
+                    }})
+                    start = idx + len(args.find)
+            elif 'table' in el:
+                for row in el['table']['tableRows']:
+                    for cell in row['tableCells']:
+                        walk_and_link(cell.get('content', []))
+
+    walk_and_link(doc['body']['content'])
+    if not requests:
+        print(f"[WARN] {args.find!r} not found anywhere in the doc - nothing linked.")
+        sys.exit(2)
+    # updateTextStyle never changes text length, so every request's indices stay
+    # valid against the original document regardless of batch order.
+    batch(docs, args.id, requests)
+    print(f"[OK] Linked {len(requests)} occurrence(s) of {args.find!r} -> {args.url}")
+    print(f"Doc: https://docs.google.com/document/d/{args.id}/edit")
+
 def cmd_append(docs, args):
     doc = get_doc(docs, args.id)
     end_index = doc['body']['content'][-1]['endIndex'] - 1  # before final newline
@@ -247,11 +287,12 @@ def cmd_insert_row(docs, args):
 
 def main():
     p = argparse.ArgumentParser(description='Surgical in-place Google Doc edits')
-    p.add_argument('command', choices=['read', 'replace', 'append', 'insert-row', 'list-tables'])
+    p.add_argument('command', choices=['read', 'replace', 'linkify', 'append', 'insert-row', 'list-tables'])
     p.add_argument('--id', required=True, help='Google Doc ID')
     p.add_argument('--account', default='work', choices=list(ACCOUNTS.keys()))
-    p.add_argument('--find', help='replace: exact text to find')
+    p.add_argument('--find', help='replace/linkify: exact text to find')
     p.add_argument('--with', dest='with', help='replace: replacement text')
+    p.add_argument('--url', help='linkify: URL to hyperlink --find to')
     p.add_argument('--match-case', action='store_true', help='replace: case-sensitive')
     p.add_argument('--text', help='append: text to append (\\n for newlines, #/## headings, - bullets)')
     p.add_argument('--table', type=int, default=0, help='insert-row: table index (see list-tables)')
@@ -266,6 +307,10 @@ def main():
         if not args.find or getattr(args, 'with') is None:
             p.error('replace requires --find and --with')
         cmd_replace(docs, args)
+    elif args.command == 'linkify':
+        if not args.find or not args.url:
+            p.error('linkify requires --find and --url')
+        cmd_linkify(docs, args)
     elif args.command == 'append':
         if not args.text:
             p.error('append requires --text')

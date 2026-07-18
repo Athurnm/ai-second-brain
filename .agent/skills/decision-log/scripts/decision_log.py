@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-decision_log.py - Decision Log: a durable ledger of decisions You is tracking
+decision_log.py - Decision Log: a durable ledger of decisions the owner is tracking
 across Work/Secondary work (Fathom meetings, Slack threads, GDocs, or captured
 manually), so "what did we decide about X" never has to be re-dug from memory.
 
-Design (2026-07-10, per You's harness-upgrade plan):
+Design (2026-07-10, per the owner's harness-upgrade plan):
   No cron, no network. This is a Claude-driven capture tool: /mom, morning/evening
   update SOPs, and ad-hoc conversation call `add` / `decide` / `supersede` / `update`
   when a decision surfaces; `report` embeds verbatim into briefings.
