@@ -10,7 +10,7 @@ site-wide traffic decline.
   python3 sorting_impact.py --release 2026-07-16 --window 14 --treated "Product List" \
       --control "Suggested Products,Featured Products"
 """
-import argparse, json, subprocess, statistics as stats
+import argparse, json, subprocess, sys, statistics as stats
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -18,7 +18,7 @@ CLIENT = Path(__file__).with_name("ga4_client.py")
 
 def fetch(start, end):
     out = subprocess.run(
-        ["python3", str(CLIENT), "report",
+        [sys.executable, str(CLIENT), "report",
          "--dimensions", "date,itemListName",
          "--metrics", "itemsViewedInList,itemsClickedInList",
          "--start", start, "--end", end, "--limit", "100000"],

@@ -27,6 +27,9 @@ import mimetypes
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.join(SKILL_DIR, '..', '..', '..')
 
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 ACCOUNTS = {
     'work':    os.path.join(REPO_ROOT, '.agent/skills/work-drive-connector'),
     'personal': os.path.join(REPO_ROOT, '.agent/skills/personal-drive-connector'),
@@ -271,6 +274,7 @@ def create_doc(args):
         media_body=media,
         fields='id,name,webViewLink'
     ).execute()
+    assert_drive_result(file, 'gdocs_create create-doc')
 
     # Default permission: anyone can comment. Fallback: domain can comment.
     # Set WORK_DOMAIN (env) to YOUR Google Workspace domain for the fallback.
@@ -324,6 +328,7 @@ def upload_file(args):
         media_body=media,
         fields='id,name,webViewLink,mimeType'
     ).execute()
+    assert_drive_result(file, 'gdocs_create upload')
 
     print(f"[OK] Uploaded: {file['name']} ({file['mimeType']})")
     print(f"     ID: {file['id']}")

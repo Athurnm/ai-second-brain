@@ -47,6 +47,8 @@ and token mechanic, so point to it rather than reinventing it.
      .agent/skills/*/token.env .agent/skills/*/credentials.json 2>/dev/null` so you don't re-ask
      for tools already wired.
    - Platform: run `bash .agent/scripts/detect_platform.sh` if present, else infer from `uname`.
+   - Runtime: run `bash .agent/scripts/detect_runtime.sh` if present, to learn which agent
+     runtime, model, and tier this session is on before asking the human anything about it.
 2. Greet briefly. Explain the shape: "I'll ask about you, your work, your track record, and your
    rules, then help you connect your tools. About 15 to 30 minutes, and you can stop anytime."
 3. Get a go-ahead, then start Phase 1.
@@ -132,6 +134,9 @@ follow `docs/SETUP.md` rather than duplicating its steps, and drive them through
      `.agent/skills/agy-bridge/SKILL.md` (`## Setup`) and `token.env.example`, walk them through
      `cp token.env.example token.env` plus pasting the token into the file (never into chat), and
      verify with `python3 .agent/skills/agy-bridge/run.py --doctor`.
+   - Either way, persist the answer so the routing layer can act on it instead of asking again
+     next session: `python3 .agent/scripts/harness_config.py --set non_claude_backends=<answer>`,
+     where `<answer>` is `none` or a comma separated list such as `zai,kimi,antigravity`.
 
 ## Phase 7 - Assemble & write CLAUDE.md
 

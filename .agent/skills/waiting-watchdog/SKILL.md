@@ -56,7 +56,18 @@ python3 .agent/skills/waiting-watchdog/scripts/waiting_watchdog.py touch WAIT-00
 - State: `journal/state/waiting_on.json`. Item schema (`WAIT-NNNN`):
   `{id, owner, owner_slug, what, since, sla_hours, escalate_to, escalation_path,
   source{type, permalink}, status: open|breached|answered|dropped, breached_at,
-  last_nudge_at, first_seen, closed_at, notes}`.
+  last_nudge_at, first_seen, closed_at, notes, needs_escalation}`.
+- `needs_escalation` (bool): set by `sweep` on every run for `status=breached` items
+  where `last_nudge_at` is `None` or older than `breached_at` -- i.e. breached with no
+  nudge sent since the breach. Cleared (`false`) by `touch`/`close`/`drop`/`reopen`, or
+  once the item leaves breached status. This is the field briefings/dashboard filter on
+  to catch silent breaches; it is recomputed every sweep, not just on the transition into
+  `breached`, so an old breach that's still un-nudged keeps surfacing. **No auto-send is
+  triggered by this flag** -- it only marks the item for a human (the owner, via
+  morning/evening update) to decide on and nudge manually via `touch`.
+  `sweep` also prints one `🚨 BREACH NEEDS ESCALATION:` line per such item to stdout/cron
+  log, in addition to the existing summary line, so breaches are visible in
+  `waiting_watchdog_cron.log` even between SOP-run `report` reads.
 - Retention: `answered`/`dropped` items are pruned 14 days after `closed_at`.
 - Cron design (not installed by this skill — install is an integration-stage step):
   `7 * * * * flock -n /tmp/waiting_watchdog.lock python3 <abs>/waiting_watchdog.py sweep >> .agent/skills/waiting-watchdog/waiting_watchdog_cron.log 2>&1`.

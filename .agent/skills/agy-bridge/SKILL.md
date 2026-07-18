@@ -48,6 +48,17 @@ Every attempt is logged to `dashboard-data/agy_usage_log.jsonl` with tokens + la
 Token counts: **z.ai = exact** (API `usage`); **agy = estimated** (CLI exposes none; chars/4,
 flagged). GLM price is a seed estimate until confirmed at z.ai (flagged `estimated`).
 
+**Flat-rate backends (agy):** the owner pays a flat Antigravity subscription, so a call to `agy` has
+$0 marginal cost. `models.json` `backends.agy.flat_rate: true` marks this; `run.py` records
+`actual_usd=0` + `cost_model:"subscription_flat"` for those rows and keeps the would-be per-token
+figure in `metered_equiv_usd` so it isn't lost. `saving_usd` for a flat-rate call is the full
+`counterfactual_usd` (what the same work would have cost on Claude), not `counter - metered`.
+zai/kimi stay metered (real per-token quota, `zai_quota_mult`/promo windows can run out) unless
+their own `flat_rate` flag is confirmed later. `--report`/`--analyze` label backends
+flat-rate/metered and print `claude_quota_saved_usd` (sum of `counterfactual_usd` routed to
+flat-rate backends). Old log rows (pre-fix, no `cost_model`) are reinterpreted correctly at
+read time in `aggregate()` from the backend's current `flat_rate` flag, not from stored fields.
+
 - `python3 run.py --report` → savings by task + model, with the flat subscription fees shown as
   context (never folded into per-call cost).
 - Dashboard: `python3 dashboard/server.py` → `localhost:3737` → **"💸 Cost / Savings" tab** reads

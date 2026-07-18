@@ -2,6 +2,7 @@ import json
 import argparse
 import os
 import subprocess
+import sys
 from datetime import datetime, timedelta
 
 CHANNELS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "channels.json")
@@ -17,7 +18,7 @@ def load_channels(client):
 def get_channel_history(channel_id, channel_name, days):
     print(f"\n--- Fetching updates for {channel_name} ({channel_id}) ---")
     cmd = [
-        "python3", SLACK_CLIENT_PATH,
+        sys.executable, SLACK_CLIENT_PATH,
         "--action", "history",
         "--channel", channel_id,
         "--limit", "50"

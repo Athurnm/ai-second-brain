@@ -11,7 +11,7 @@ So you spend your week deciding instead of compiling.
 ![First run 15 minutes](https://img.shields.io/badge/first%20run-15%20minutes-6FB5AC?style=flat-square)
 ![Any agentic harness](https://img.shields.io/badge/core-harness%20agnostic-97A0B0?style=flat-square)
 
-[What it does](#what-it-does-every-day) · [It learns you](#it-learns-you) · [Capabilities](#capability-catalog) · [How it stays cheap](#multi-agent-setup-faster-and-cheaper) · [Get started](#getting-started)
+[What it does](#what-it-does-every-day) · [It learns you](#it-learns-you) · [Capabilities](#capability-catalog) · [How it stays cheap](#multi-agent-setup-faster-and-cheaper) · [Your dashboard](#your-cockpit-the-visual-dashboard) · [Get started](#getting-started)
 
 </div>
 
@@ -311,6 +311,71 @@ Cost discipline is not a one-time setup, so the harness audits itself:
 - The dashboard renders the trend, the current top-3 token hotspots, and the what-changed log; weekly planning picks at most one hotspot to optimize next.
 
 The protocol lives in `.agent/protocols/token_efficiency.md`.
+
+---
+
+## Your Cockpit: the Visual Dashboard
+
+A second brain that only reports over chat still asks you to take its word for it. This repo ships a **local visual dashboard** so you do not have to.
+
+```bash
+python3 dashboard/server.py
+```
+
+Then open **http://localhost:3737**. It is pure Python standard library, no build step, no pip install, and it binds to localhost only. It reads your repo's files live on every request, so it is never stale by more than the last click.
+
+### Six tabs
+
+- **⭐ Today.** The daily landing view: approvals waiting on your decision, today's meetings with prep cards, top tickets, and an SLA-breach escalation strip.
+- **📥 Inbox.** One triage queue for every inbound thread across Slack, Gmail, Google Doc comments, and Jira, with reversible triage (done, ignore, reopen) and an optional AI copilot pass that can draft a reply for your approval.
+- **📋 Work.** The ticket tracker (create, edit, comment on tickets right in the page), the project portfolio by team, a decisions log, commitments, and stakeholders, with a drill-down into any single initiative.
+- **🎥 Meetings.** Live recorder health, recent meetings from the Fathom registry, minutes and notes, and bot activity.
+- **⏱ Hours.** The productivity tracker, described below.
+- **⚙ System.** Harness self-observability: job routines, harness health findings, a live map of the harness, cost and savings, token usage, and the token-efficiency trend, also described below.
+
+Many list panels open a detail drawer when you click a row. Full reference, including which file feeds which panel, lives in `docs/DASHBOARD.md`.
+
+### The Hours tab: a productivity tracker built from digital traces, not a timesheet
+
+This is the most distinctive panel in the dashboard. It reconstructs your working day from Claude Code transcripts, meeting attendance, and git commits, rather than asking you to fill in a timesheet by hand. Per day, and rolled up by week, it shows:
+
+- **Actual hours.** The union of every active minute across all your workstreams, overlaps counted once.
+- **Parallel output.** The sum of per-stream hours, so three workstreams running for one hour count as three hours of output.
+- **Leverage multiplier.** Parallel output divided by actual hours: how much you got done in the time you had.
+- **Streams breakdown.** A per-day timeline of overlapping workstreams by lane (meetings, client work, other AI work), stacked so overlaps are visible, with an accessible table twin.
+- **Weekly trend.** The same figures aggregated by week, so one noisy day does not distort the read.
+
+**The methodology, stated plainly, because this is the number people quote:**
+
+- **Measured, no assumptions:** actual hours, parallel output, and the leverage multiplier. These come straight from transcript timestamps, calendar and meeting records, and git commits.
+- **Assumed, not measured:** the productivity / output multiplier, which converts AI-stream hours into an estimated manual-solo equivalent using an AI-speed factor. The default factor is **2.5**, research-calibrated but still an estimate, and the dashboard UI labels every figure that uses it "assumed." It is overridable per run.
+- **The workday boundary is 04:00, not midnight.** Work that runs past midnight counts to the day it started, so a late-night session does not artificially split across two days.
+- **Overlapping meetings are merged before counting.** You are one person: a double-booked slot, or one recording that spans two calendar events, is never counted twice.
+
+### Cost, savings, and the token-efficiency loop
+
+The System tab keeps the economics visible, not just the activity:
+
+- **Cost & Savings** shows what actually ran through the optional model bridge (see [How It Stays Cheap](#multi-agent-setup-faster-and-cheaper) above) versus what it would have cost on Claude alone, always visible rather than tucked behind a click.
+- **Token usage** shows Claude token consumption from real usage logs.
+- **Token efficiency** renders the weekly trend, the current top-3 token hotspots, and the what-changed log described in [the token-efficiency loop](#it-keeps-getting-cheaper-the-token-efficiency-loop) above, so a cost-saving change shows its **observed** effect, not its promised one.
+
+### It runs on rails: the cron layer
+
+Everything above is fed by automation, not by you remembering to run a script. As of this writing, **56 active cron jobs** keep the harness current, including:
+
+- Ledgers that sweep commitments, waiting-on items, and Slack mentions.
+- An inbox sweep that refreshes the Inbox tab.
+- A command-queue dispatcher that runs headless AI tasks and leaves drafts for your approval.
+- Pre-meeting card generation.
+- Token usage and token-efficiency tracking.
+- Harness health checks.
+- Portfolio sync.
+- The meeting recorder's bot watcher.
+- A dashboard keepalive.
+- The work-hours sweep that keeps the Hours tab current.
+
+Each registered job reports a heartbeat, and a silent overnight failure shows up as a failing row on the System tab instead of going unnoticed. See `.agent/skills/harness-health/` for the health-check layer itself.
 
 ---
 

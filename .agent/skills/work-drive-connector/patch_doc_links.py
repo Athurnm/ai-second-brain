@@ -23,8 +23,12 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.json")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
 
 def timeout_handler(signum, frame):
     print("[ERROR] Timed out after 180 seconds", file=sys.stderr)
@@ -178,6 +182,7 @@ def main():
         documentId=args.doc_id,
         body={"requests": requests},
     ).execute()
+    assert_drive_result(result, 'patch_doc_links batchUpdate')
     print(f"[DONE] Patched {len(updates)} hyperlink(s) in \"{title}\".")
     print(f"       Doc: https://docs.google.com/document/d/{args.doc_id}/edit")
 

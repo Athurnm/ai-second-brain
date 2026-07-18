@@ -20,15 +20,17 @@ Read these before you start, they are your source of truth:
 
 ## Ground rules (hold these the whole way)
 
-1. **Detect your host editor first, and adapt.** You are one of several possible agents. Figure out
-   which, because a few steps differ:
+1. **Detect your host editor first, and adapt.** You are one of several possible agents. Run `bash
+   .agent/scripts/detect_runtime.sh` if it's present in this repo (it prints `RUNTIME=...` among
+   other `KEY=VALUE` lines) to find out which, because a few steps differ:
    - **Claude Code** — the rules file is `CLAUDE.md`; commands live in `.claude/commands/`.
    - **Cursor** — reads `CLAUDE.md` and `AGENTS.md` automatically; custom commands live in
      `.cursor/commands/`; MCP in `.cursor/mcp.json`.
    - **Antigravity** — reads `AGENTS.md`; supports `SKILL.md`-based skills and MCP.
    - Any other agent — the `AGENTS.md` → `CLAUDE.md` pattern below still works.
-   If unsure, just ask the human: "Which editor are you running me in — Cursor, Antigravity, or
-   Claude Code?" It changes only steps 5 and 9.
+   Only ask the human when the script is missing or its `RUNTIME` line comes back `unknown`: "Which
+   editor are you running me in — Cursor, Antigravity, or Claude Code?" It changes only steps 5 and
+   9.
 2. **One topic at a time.** Ask a small batch of related questions, wait, confirm, move on. Never
    dump the whole questionnaire at once. Keep it conversational, like a patient guide, not a form.
 3. **Ask, never assume. Never fabricate.** If the user doesn't know or skips something, leave that
@@ -64,11 +66,13 @@ Read these before you start, they are your source of truth:
    - Has `install.sh` run? If `CLAUDE.md.template` exists but there's no `.env`, offer to run
      `bash install.sh` for them now.
    - Platform: run `bash .agent/scripts/detect_platform.sh` if present, else infer from `uname`.
+   - Runtime: run `bash .agent/scripts/detect_runtime.sh` if present (ground rule 1), so you already
+     know which editor you're in before greeting.
 2. Greet briefly and set expectations: "I'll set up your second brain with you. I'll ask about you,
    your work, and your rules, then connect your tools and do the technical parts myself. About 15
    to 30 minutes, and you can stop anytime."
-3. Confirm which editor you're running in (ground rule 1) and which language to talk in (ground
-   rule 6). Then start Phase 1.
+3. If runtime detection came back unknown, confirm which editor you're running in (ground rule 1).
+   Confirm which language to talk in (ground rule 6). Then start Phase 1.
 
 ## Phase 1 — Who you're helping  → fills "Who You're Helping"
 

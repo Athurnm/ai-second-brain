@@ -12,6 +12,7 @@ Usage: python3 .agent/scripts/enrich_tickets.py
 import json
 import os
 import subprocess
+import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TICKETS = os.path.join(REPO, "journal", "state", "tickets.json")
@@ -32,7 +33,7 @@ def main():
     )
     pf = "/tmp/enrich_prompt.txt"
     open(pf, "w", encoding="utf-8").write(prompt)
-    p = subprocess.run(["python3", BRIDGE, "--task", "draft", "--backend", "zai", "--model", "glm-5.2",
+    p = subprocess.run([sys.executable, BRIDGE, "--task", "draft", "--backend", "zai", "--model", "glm-5.2",
                         "--prompt-file", pf], cwd=REPO, capture_output=True, text=True, timeout=180)
     out = p.stdout.strip()
     s, e = out.find("{"), out.rfind("}")

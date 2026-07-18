@@ -9,7 +9,6 @@ import subprocess
 import datetime
 
 REPO_DIR = "."
-LOG_FILE = os.path.join(REPO_DIR, "scripts/maintenance.log")
 
 # Service Map
 SERVICES = [
@@ -55,8 +54,6 @@ def log(message):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_message = f"[{timestamp}] {message}"
     print(full_message)
-    with open(LOG_FILE, "a") as f:
-        f.write(full_message + "\n")
 
 def run_service_check(service):
     name = service["name"]
@@ -96,15 +93,20 @@ def run_service_check(service):
 
 def main():
     log("=== Google Services Token Refresh Routine Started ===")
-    
+
     success_count = 0
     total_count = len(SERVICES)
-    
+    failed_names = []
+
     for service in SERVICES:
         if run_service_check(service):
             success_count += 1
-            
+        else:
+            failed_names.append(service["name"])
+
     log(f"=== Routine Finished: {success_count}/{total_count} services healthy ===")
+    if failed_names:
+        log(f"Failed services: {', '.join(failed_names)}")
     log("-" * 40)
 
 if __name__ == "__main__":

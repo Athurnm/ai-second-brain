@@ -1,10 +1,51 @@
 import os
+import sys
 import argparse
 import glob
 import time
 from datetime import datetime, timedelta
 import fnmatch
 import platform
+
+def assert_drive_result(result, operation, id_keys=('id', 'documentId', 'fileId', 'spreadsheetId')):
+    """
+    Shared Drive Operation Verification (CLAUDE.md rule): confirm a Drive/Docs
+    write actually produced a file or document identifier before the caller
+    reports success. Call this right before printing the success line, in
+    place of exiting 0 on an unchecked API response.
+
+    `result` accepts three shapes so every writer can pass whatever it
+    already has on hand:
+      - a dict/API response, checked for any key in `id_keys`
+      - a plain id (string/int) the caller already knows is correct
+      - a falsy value (None, {}, '', 0, False), always treated as failure
+
+    On success returns the id that was found (or the passed-through value).
+    On failure prints a clear message to stderr and exits nonzero. This is
+    the single source of truth for the check; it never returns on failure,
+    so callers do not need to branch on the return value unless they want
+    the id for logging.
+    """
+    found = None
+    if isinstance(result, dict):
+        for key in id_keys:
+            val = result.get(key)
+            if val:
+                found = val
+                break
+    elif result:
+        found = result
+
+    if not found:
+        print(
+            f"[ERROR] Drive Operation Verification failed for '{operation}': "
+            "no file/document ID in the result. Treat this as a FAILURE, not "
+            "a success. Verify with a search before assuming the write "
+            "happened.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return found
 
 def get_creation_time(path):
     """

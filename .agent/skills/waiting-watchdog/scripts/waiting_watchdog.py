@@ -255,6 +255,19 @@ def prune(state):
         del state['items'][iid]
     return len(dead)
 
+def needs_escalation(it):
+    """True when an item is breached and hasn't been nudged since the breach -
+    i.e. it's sitting silently past SLA with no action taken. Cleared once
+    last_nudge_at catches up to breached_at (touch), or the item leaves
+    breached status (closed/dropped/reopened)."""
+    if it['status'] != 'breached':
+        return False
+    breached_at = it.get('breached_at')
+    nudge = it.get('last_nudge_at')
+    if not breached_at:
+        return True
+    return not nudge or nudge < breached_at
+
 def cmd_sweep(args):
     state = load_state()
     t0 = time.time()
@@ -265,11 +278,13 @@ def cmd_sweep(args):
 
     for it in state['items'].values():
         if it['status'] not in ('open', 'breached'):
+            it['needs_escalation'] = False
             continue
         if args.check_slack and it.get('source', {}).get('permalink'):
             replied, _ = owner_replied_since(token, it['source'], it['owner'], it['since'])
             if replied:
                 it.update(status='answered', closed_at=time.time(), notes='auto: owner replied in thread')
+                it['needs_escalation'] = False
                 n_answered += 1
                 continue
         hours = age_hours(it['since'])
@@ -277,16 +292,23 @@ def cmd_sweep(args):
             it['status'] = 'breached'
             it['breached_at'] = time.time()
             n_breached += 1
+        it['needs_escalation'] = needs_escalation(it)
 
     n_pruned = prune(state)
     state['last_sweep'] = time.time()
     save_state(state)
     open_items = [i for i in state['items'].values() if i['status'] in ('open', 'breached')]
     breached_now = sum(1 for i in open_items if i['status'] == 'breached')
+    escalations = [i for i in open_items if i.get('needs_escalation')]
     summary = (f'sweep done in {time.time()-t0:.0f}s: +{n_breached} newly breached, '
                f'{n_answered} auto-answered, {n_pruned} pruned -> {len(open_items)} open '
-               f'({breached_now} breached)')
+               f'({breached_now} breached, {len(escalations)} need escalation)')
     print(summary)
+    for it in sorted(escalations, key=lambda x: -age_hours(x['since'])):
+        hours = age_hours(it['since'])
+        esc = f' -> {it["escalate_to"]}' if it.get('escalate_to') else ''
+        print(f'🚨 BREACH NEEDS ESCALATION: {it["id"]} - {it["owner"]} silent '
+              f'{age_str(hours)} (SLA {it["sla_hours"]}h) on {it["what"]}{esc}')
     if os.path.exists(HEARTBEAT):
         os.system(f'{sys.executable} {HEARTBEAT} --job waiting-watchdog --status ok '
                   f'--summary "{summary[:200]}" >/dev/null 2>&1')
@@ -313,8 +335,9 @@ def cmd_report(args):
         path = f' via {it["escalation_path"]}' if it['escalation_path'] else ''
         link = it.get('source', {}).get('permalink')
         linktxt = f' [thread]({link})' if link else ''
+        flag = ' [NEEDS ESCALATION]' if it.get('needs_escalation', needs_escalation(it)) else ' [nudged]'
         print(f'- 🚨 ESCALATE: **{it["owner"]}** silent **{age_str(hours)}** '
-              f'(SLA {it["sla_hours"]}h) on {it["what"]}{esc}{path};{linktxt} {iid}')
+              f'(SLA {it["sla_hours"]}h) on {it["what"]}{esc}{path};{linktxt}{flag} {iid}')
     for iid, it in others:
         hours = age_hours(it['since'])
         left = it['sla_hours'] - hours
@@ -353,7 +376,7 @@ def cmd_close(args):
     it = state['items'].get(args.item_id)
     if not it:
         sys.exit(f'item not found: {args.item_id}')
-    it.update(status='answered', closed_at=time.time())
+    it.update(status='answered', closed_at=time.time(), needs_escalation=False)
     save_state(state)
     print(f'closed: {args.item_id}')
 
@@ -362,7 +385,7 @@ def cmd_drop(args):
     it = state['items'].get(args.item_id)
     if not it:
         sys.exit(f'item not found: {args.item_id}')
-    it.update(status='dropped', closed_at=time.time())
+    it.update(status='dropped', closed_at=time.time(), needs_escalation=False)
     save_state(state)
     print(f'dropped: {args.item_id}')
 
@@ -372,7 +395,7 @@ def cmd_touch(args):
     if not it:
         sys.exit(f'item not found: {args.item_id}')
     now = time.time()
-    it.update(since=now, last_nudge_at=now, status='open', breached_at=None)
+    it.update(since=now, last_nudge_at=now, status='open', breached_at=None, needs_escalation=False)
     save_state(state)
     print(f'touched (nudge sent, SLA clock reset): {args.item_id}')
 
@@ -383,7 +406,7 @@ def cmd_reopen(args):
     it = state['items'].get(args.item_id)
     if not it:
         sys.exit(f'item not found: {args.item_id}')
-    it.update(status='open', closed_at=None, breached_at=None)
+    it.update(status='open', closed_at=None, breached_at=None, needs_escalation=False)
     save_state(state)
     print(f'reopened: {args.item_id}')
 

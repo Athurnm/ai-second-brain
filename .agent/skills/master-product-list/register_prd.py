@@ -4,11 +4,12 @@ import httplib2
 import google_auth_httplib2
 
 # Configure constants
-MASTER_LIST_MD = './Clients/Work/Marketplace/Master_Product_List_Restructured.md'
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
+MASTER_LIST_MD = os.path.join(REPO_ROOT, 'Clients', 'Work', 'Marketplace', 'Master_Product_List_Restructured.md')
 SHEET_ID = '<YOUR_DRIVE_ID>'
 
 # Add work-drive-connector to path for auth
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVE_CONNECTOR_DIR = os.path.join(SCRIPT_DIR, '..', 'work-drive-connector')
 if DRIVE_CONNECTOR_DIR not in sys.path:
     sys.path.append(DRIVE_CONNECTOR_DIR)

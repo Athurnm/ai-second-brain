@@ -114,18 +114,32 @@ def claude_tier_price(tier, cfg):
     tiers = cfg.get("model_prices", {}).get("claude_tiers", {})
     return tiers.get(tier) or tiers.get("main-loop") or [0, 0]
 
-def compute_cost(in_tok, out_tok, ran_model, fallback_tier, cfg):
-    """Return dict of actual / counterfactual / saving USD using per-Mtok rates for ALL."""
+def is_flat_rate(backend, cfg):
+    """True for a subscription backend whose marginal actual_usd is $0 (flat monthly fee,
+    no per-call quota to burn). Only agy is flagged today; zai/kimi are subscriptions too but
+    meter against a real quota (zai_quota_mult, promo windows) so they stay metered here."""
+    return bool(cfg.get("backends", {}).get(backend, {}).get("flat_rate", False))
+
+def compute_cost(in_tok, out_tok, ran_model, fallback_tier, backend, cfg):
+    """Return dict of actual / counterfactual / saving USD.
+    Metered backends: actual_usd = tokens x the ran model's $/Mtok, same as before.
+    Flat-rate backends (see is_flat_rate): actual_usd is the true marginal cost, $0 -- the
+    per-Mtok equivalent is kept in metered_equiv_usd so the figure isn't lost, and saving_usd
+    becomes the full counterfactual (what the same work would have cost on Claude)."""
     ap, est = model_price(ran_model, cfg)
     ap = ap or [0, 0]
     cp = claude_tier_price(fallback_tier, cfg)
-    actual = (in_tok * ap[0] + out_tok * ap[1]) / 1_000_000.0
+    metered = (in_tok * ap[0] + out_tok * ap[1]) / 1_000_000.0
     counter = (in_tok * cp[0] + out_tok * cp[1]) / 1_000_000.0
+    flat = is_flat_rate(backend, cfg)
+    actual = 0.0 if flat else metered
     return {
         "actual_usd": round(actual, 6),
         "counterfactual_usd": round(counter, 6),
         "saving_usd": round(counter - actual, 6),
         "price_estimated": est,
+        "cost_model": "subscription_flat" if flat else "metered",
+        "metered_equiv_usd": round(metered, 6),
     }
 
 # ---------- chain resolution + time routing ----------
@@ -341,11 +355,15 @@ def read_log():
                         pass
     return rows
 
-def aggregate(rows):
-    """Cost/usage summary from log rows (ok answers only carry tokens/cost)."""
-    by_task, by_model, by_day = {}, {}, {}
+def aggregate(rows, cfg):
+    """Cost/usage summary from log rows (ok answers only carry tokens/cost).
+    Flat-rate backends (is_flat_rate) are reinterpreted at read time from `backend`, not from the
+    stored cost_model -- so rows logged before this fix (actual_usd = metered, no cost_model field)
+    still roll up correctly instead of showing agy as a per-call loss."""
+    by_task, by_model, by_day, by_backend = {}, {}, {}, {}
     totals = {"calls": 0, "answers": 0, "in_tok": 0, "out_tok": 0,
-              "actual_usd": 0.0, "counterfactual_usd": 0.0, "saving_usd": 0.0}
+              "actual_usd": 0.0, "counterfactual_usd": 0.0, "saving_usd": 0.0,
+              "metered_equiv_usd": 0.0, "claude_quota_saved_usd": 0.0}
     for r in rows:
         if r.get("task") == "probe":
             continue  # probe rows feed --analyze (latency) only, never the cost report
@@ -353,29 +371,40 @@ def aggregate(rows):
         if not r.get("ok"):
             continue
         totals["answers"] += 1
-        t = r.get("task", "?"); m = f"{r.get('model','?')}[{r.get('backend','?')}]"; d = (r.get("ts_wib", "")[:10] or "?")
-        a, c, s = r.get("actual_usd", 0), r.get("counterfactual_usd", 0), r.get("saving_usd", 0)
+        backend = r.get("backend", "?")
+        flat = is_flat_rate(backend, cfg)
+        c = r.get("counterfactual_usd", 0)
+        metered = r.get("metered_equiv_usd")
+        if metered is None:
+            metered = r.get("actual_usd", 0)  # pre-fix rows: actual_usd WAS the metered figure
+        a = 0.0 if flat else r.get("actual_usd", metered)
+        s = c - a
+        t = r.get("task", "?"); m = f"{r.get('model','?')}[{backend}]"; d = (r.get("ts_wib", "")[:10] or "?")
         it, ot = r.get("input_tokens", 0), r.get("output_tokens", 0)
-        for bucket, key in ((by_task, t), (by_model, m), (by_day, d)):
-            b = bucket.setdefault(key, {"answers": 0, "in_tok": 0, "out_tok": 0,
-                                        "actual_usd": 0.0, "counterfactual_usd": 0.0, "saving_usd": 0.0})
+        for bucket, key in ((by_task, t), (by_model, m), (by_day, d), (by_backend, backend)):
+            b = bucket.setdefault(key, {"answers": 0, "in_tok": 0, "out_tok": 0, "actual_usd": 0.0,
+                                        "counterfactual_usd": 0.0, "saving_usd": 0.0,
+                                        "metered_equiv_usd": 0.0, "flat_rate": flat})
             b["answers"] += 1; b["in_tok"] += it; b["out_tok"] += ot
             b["actual_usd"] += a; b["counterfactual_usd"] += c; b["saving_usd"] += s
-        for k, v in (("in_tok", it), ("out_tok", ot), ("actual_usd", a),
-                     ("counterfactual_usd", c), ("saving_usd", s)):
-            totals[k] += v
-    for bucket in (by_task, by_model, by_day):
+            b["metered_equiv_usd"] += metered
+        totals["in_tok"] += it; totals["out_tok"] += ot
+        totals["actual_usd"] += a; totals["counterfactual_usd"] += c; totals["saving_usd"] += s
+        totals["metered_equiv_usd"] += metered
+        if flat:
+            totals["claude_quota_saved_usd"] += c
+    for bucket in (by_task, by_model, by_day, by_backend):
         for b in bucket.values():
-            for k in ("actual_usd", "counterfactual_usd", "saving_usd"):
+            for k in ("actual_usd", "counterfactual_usd", "saving_usd", "metered_equiv_usd"):
                 b[k] = round(b[k], 4)
             b["saving_pct"] = round(100 * b["saving_usd"] / b["counterfactual_usd"], 1) if b["counterfactual_usd"] else 0.0
-    for k in ("actual_usd", "counterfactual_usd", "saving_usd"):
+    for k in ("actual_usd", "counterfactual_usd", "saving_usd", "metered_equiv_usd", "claude_quota_saved_usd"):
         totals[k] = round(totals[k], 4)
     totals["saving_pct"] = round(100 * totals["saving_usd"] / totals["counterfactual_usd"], 1) if totals["counterfactual_usd"] else 0.0
-    return {"totals": totals, "by_task": by_task, "by_model": by_model, "by_day": by_day}
+    return {"totals": totals, "by_task": by_task, "by_model": by_model, "by_day": by_day, "by_backend": by_backend}
 
 def write_summary(cfg):
-    summary = aggregate(read_log())
+    summary = aggregate(read_log(), cfg)
     summary["subscriptions"] = {k: v for k, v in cfg.get("subscriptions", {}).items() if not k.startswith("_")}
     _, ts = wib_now()
     summary["generated_wib"] = ts
@@ -392,12 +421,21 @@ def cmd_report(cfg):
     print("=== agy-bridge cost / savings ===")
     print(f"calls={t['calls']} answers={t['answers']}  tokens in/out={t['in_tok']}/{t['out_tok']}")
     print(f"actual ${t['actual_usd']}  vs  Claude-counterfactual ${t['counterfactual_usd']}  ->  SAVED ${t['saving_usd']} ({t['saving_pct']}%)")
+    print(f"Claude-quota saved via flat-rate backends: ${t['claude_quota_saved_usd']}  "
+          f"(metered-equivalent if billed per-token: ${t['metered_equiv_usd']})")
+    print("\nby backend:")
+    for k, b in sorted(s["by_backend"].items()):
+        label = "flat-rate (subscription, $0/call)" if b["flat_rate"] else "metered"
+        print(f"  {k:6s} [{label}]  answers={b['answers']:4d}  actual ${b['actual_usd']:<9} "
+              f"counter ${b['counterfactual_usd']:<9} saved ${b['saving_usd']} ({b['saving_pct']}%)"
+              + (f"  metered-equiv ${b['metered_equiv_usd']}" if b["flat_rate"] else ""))
     print("\nby task:")
     for k, b in sorted(s["by_task"].items()):
         print(f"  {k:9s} answers={b['answers']:4d}  actual ${b['actual_usd']:<9} counter ${b['counterfactual_usd']:<9} saved ${b['saving_usd']} ({b['saving_pct']}%)")
     print("\nby model:")
     for k, b in sorted(s["by_model"].items(), key=lambda kv: -kv[1]["saving_usd"]):
-        print(f"  {k:34s} answers={b['answers']:4d}  saved ${b['saving_usd']} ({b['saving_pct']}%)")
+        flag = " [flat-rate]" if b["flat_rate"] else ""
+        print(f"  {k:34s}{flag} answers={b['answers']:4d}  saved ${b['saving_usd']} ({b['saving_pct']}%)")
     subs = s.get("subscriptions", {})
     if subs:
         total = sum(subs.values())
@@ -410,6 +448,18 @@ def cmd_analyze(cfg):
     if not rows:
         print("no telemetry yet. Run some --task calls (or probe.py) first.")
         return
+    econ = aggregate(rows, cfg)
+    backends_seen = sorted({r.get("backend", "?") for r in rows})
+    print("=== backend cost model ===")
+    for b in backends_seen:
+        flat = is_flat_rate(b, cfg)
+        label = "flat-rate (subscription, marginal $0/call)" if flat else "metered (per-token)"
+        print(f"  {b:6s} {label}")
+    t = econ["totals"]
+    print(f"\nClaude-quota saved by routing to flat-rate backends: ${t['claude_quota_saved_usd']}  "
+          f"(sum of counterfactual_usd for calls that would otherwise have run on Claude)")
+    print(f"metered-equivalent of that same flat-rate usage, if it had been billed per-token: "
+          f"${t['metered_equiv_usd']}  -- NOT a real cost, kept for reference only")
     cell = {}  # (backend, hour) -> {lat:[], err:int, n:int}
     for r in rows:
         b = r.get("backend", "?"); h = r.get("wib_hour", -1)
@@ -575,15 +625,17 @@ def main():
         if not ok and backend == "agy" and reason == "auth":
             sys.stderr.write(f"[agy-bridge] {model}[agy]: auth blip, retrying once\n")
             ok, text, reason, meta = run_entry(backend, model, prompt, args.timeout, cfg, known)
-        cost = compute_cost(meta["in_tok"], meta["out_tok"], model, fallback_tier, cfg) if ok else \
-            {"actual_usd": 0, "counterfactual_usd": 0, "saving_usd": 0, "price_estimated": False}
+        cost = compute_cost(meta["in_tok"], meta["out_tok"], model, fallback_tier, backend, cfg) if ok else \
+            {"actual_usd": 0, "counterfactual_usd": 0, "saving_usd": 0, "price_estimated": False,
+             "cost_model": "subscription_flat" if is_flat_rate(backend, cfg) else "metered", "metered_equiv_usd": 0}
         log_call({
             "ts_wib": ts, "wib_hour": hour, "task": args.task, "backend": backend, "model": model,
             "input_tokens": meta["in_tok"] if ok else 0, "output_tokens": meta["out_tok"] if ok else 0,
             "tokens_estimated": meta["tokens_estimated"], "latency_ms": meta["latency_ms"],
             "ok": ok, "reason": reason, "time_routing": mode,
             "quota_mult": zai_quota_mult(backend, hour, ts, cfg),
-            **{k: cost[k] for k in ("actual_usd", "counterfactual_usd", "saving_usd", "price_estimated")},
+            **{k: cost[k] for k in ("actual_usd", "counterfactual_usd", "saving_usd", "price_estimated",
+                                     "cost_model", "metered_equiv_usd")},
         })
         tried.append({"backend": backend, "model": model, "ok": ok, "note": None if ok else f"{reason}: {text}"})
         if ok:

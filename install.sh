@@ -48,6 +48,31 @@ if [ "$MISSING" -eq 1 ]; then
     exit 1
 fi
 
+# 1b. Runtime detection ----------------------------------------------------------
+echo ""
+echo "[1b/4] Detecting your runtime"
+
+if [ -f .agent/scripts/detect_runtime.sh ]; then
+    RUNTIME_OUT="$(bash .agent/scripts/detect_runtime.sh 2>/dev/null || true)"
+    RT_RUNTIME="$(printf '%s\n' "$RUNTIME_OUT" | sed -n 's/^RUNTIME=//p')"
+    RT_MODEL="$(printf '%s\n' "$RUNTIME_OUT" | sed -n 's/^MODEL=//p')"
+    RT_TIER="$(printf '%s\n' "$RUNTIME_OUT" | sed -n 's/^TIER=//p')"
+    RT_SUBAGENTS="$(printf '%s\n' "$RUNTIME_OUT" | sed -n 's/^SUBAGENTS=//p')"
+    if [ -n "$RT_RUNTIME" ] && [ "$RT_RUNTIME" != "unknown" ]; then
+        ok "Runtime: $RT_RUNTIME (model: ${RT_MODEL:-unknown}, tier: ${RT_TIER:-unknown})"
+        if [ "$RT_SUBAGENTS" = "yes" ]; then
+            ok "Subagent delegation available"
+        else
+            warn "No typed subagent support detected, so delegation will run through agy-bridge or inline"
+        fi
+    else
+        warn "Could not identify a specific runtime yet, which is fine, the harness degrades safely."
+        warn "It will detect again once you're inside a session (claude, cursor, antigravity, ...)."
+    fi
+else
+    warn "detect_runtime.sh not found, skipping runtime detection"
+fi
+
 # 2. Your brain file -----------------------------------------------------------
 echo ""
 echo "[2/4] Creating your brain file"

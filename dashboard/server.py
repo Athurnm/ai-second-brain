@@ -9,7 +9,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,6 +21,12 @@ from urllib.parse import urlencode, unquote
 
 PORT = int(os.environ.get('DASHBOARD_PORT', '3737'))
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Backend-agnostic AI runner: resolves Claude when installed, agy-bridge when not,
+# so /api/ai-task degrades instead of 500ing on a machine without the claude CLI.
+sys.path.insert(0, str(BASE_DIR / '.agent' / 'scripts'))
+import ai_call  # noqa: E402  (needs BASE_DIR on sys.path first)
+
 DASHBOARD_PATH = BASE_DIR / 'Dashboard.md'
 PUBLIC_DIR = Path(__file__).resolve().parent / 'public'
 CLIENTS_DIR = BASE_DIR / 'Clients'
@@ -57,10 +62,10 @@ COMMAND_QUEUE_PATH = BASE_DIR / 'journal' / 'state' / 'command_queue.json'
 COMMITMENT_CLI = '.agent/skills/commitment-ledger/scripts/commitment_ledger.py'
 INBOX_PATH = BASE_DIR / 'journal' / 'state' / 'inbox.json'
 INBOX_CLI = '.agent/skills/inbox-hub/scripts/inbox_sweep.py'
-# claude CLI: prefer the WSL-native binary (logged in via the claude.ai
-# subscription). The Windows npm wrapper on /mnt/c reads Windows-side config and
-# shows loggedIn:false under headless auth, so it is never used as a silent
-# fallback — _claude_bin() raises instead when no native binary is found.
+# Model backend: resolved by ai_call.plan(), which prefers the WSL-native claude
+# binary (logged in via the claude.ai subscription), skips the Windows npm wrapper
+# on /mnt/c (it reads Windows-side config and shows loggedIn:false under headless
+# auth), and routes to agy-bridge when no claude is installed at all.
 WIB = timezone(timedelta(hours=7))  # template note: set your timezone offset here
 VEXA_AUTO_LOG = '/tmp/vexa_auto.log'
 
@@ -212,9 +217,10 @@ TOKEN_USAGE_NOTE = ('Claude = API-equivalent estimate (the owner is on a subscri
                     'real offload cost is tracked in agy')
 
 # ═══════════════════════════════════════════
-# AI TASK RUNNER (headless claude CLI, detached)
+# AI TASK RUNNER (headless model CLI, detached; backend via ai_call)
 # ═══════════════════════════════════════════
-# POST /api/ai-task {kind, ref} spawns a DETACHED `claude -p` run whose stdout+stderr
+# POST /api/ai-task {kind, ref} spawns a DETACHED model run (backend picked by
+# ai_call.plan: claude when installed, agy-bridge otherwise) whose stdout+stderr
 # stream to journal/ai_runs/<id>.log; a shell sentinel line 'AI_TASK_DONE rc=N' marks
 # completion so status is derivable from the log alone (no process table needed).
 # Meta lives in journal/ai_runs/<id>.json. Drafts land in journal/ai_drafts/ — the
@@ -227,32 +233,11 @@ AI_TASK_KINDS = ('ping', 'commitment', 'fix-job', 'verify-commitments', 'inbox',
                  'inbox-digest', 'premeeting-enrich')
 OWNER_SLACK_ID = '<SLACK_ID>'  # verified via auth.test 2026-07-09 (commitment_ledger.py)
 
-def _claude_bin():
-    # Prefer the WSL-native claude (logged in via the claude.ai subscription); never the
-    # Windows binary on /mnt/c that `which claude` returns here — it reads Windows-side
-    # config and shows loggedIn:false, so headless auth fails.
-    for c in (os.path.expanduser('~/.npm-global/bin/claude'),
-              os.path.expanduser('~/.local/bin/claude'), '/usr/local/bin/claude'):
-        if os.path.exists(c):
-            return c
-    found = shutil.which('claude')
-    if found and not found.startswith('/mnt/'):
-        return found
-    raise RuntimeError(
-        'no WSL-native claude binary found (checked ~/.npm-global/bin, ~/.local/bin, '
-        '/usr/local/bin, PATH); refusing to fall back to the /mnt/c Windows binary — '
-        'it fails headless auth silently. Install/link a native claude binary.')
-
 def _ai_env():
-    """Child env for claude runs: strip the parent Claude-Code session markers so a
+    """Child env for model runs: strip the parent Claude-Code session markers so a
     dashboard-spawned run never self-identifies as a nested subagent of whatever
     session (re)started the server. Everything else (PATH, HOME, tokens) passes through."""
-    env = dict(os.environ)
-    for k in list(env):
-        if k == 'CLAUDECODE' or k.startswith(('CLAUDE_CODE_', 'CLAUDE_AGENT_',
-                                              'CLAUDE_EFFORT', 'CLAUDE_AUTOCOMPACT')):
-            env.pop(k, None)
-    return env
+    return ai_call.child_env()
 
 def _slack_names_map():
     """UID -> display name from slack_user_names.json + people.json (for the inbox
@@ -3103,9 +3088,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     # ── AI task runner + briefing + progress (E1 dashboard v4, 2026-07-11) ──
 
     def _handle_post_ai_task(self):
-        """POST /api/ai-task {kind, ref} — spawn a DETACHED headless `claude -p` run
+        """POST /api/ai-task {kind, ref} — spawn a DETACHED headless model run
         (stdout+stderr -> journal/ai_runs/<id>.log, sentinel 'AI_TASK_DONE rc=N').
-        Guards: max 2 running; one per (kind,ref). Returns {ok, id} immediately."""
+        Guards: max 2 running; one per (kind,ref). Returns {ok, id} immediately.
+        503 when no model backend is installed at all."""
         try:
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length).decode('utf-8')) if length else {}
@@ -3163,12 +3149,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             # --output-format json: stdout ends with ONE JSON result object carrying
             # usage + total_cost_usd; the finalizer parses it into the meta
             # (tokens_in/tokens_out/cost_usd). Old text runs simply lack the fields.
-            argv = [_claude_bin(), '-p', prompt, '--model', model,
-                    '--output-format', 'json']
-            if tools:
-                argv += ['--allowedTools', tools]
+            # Under the agy-bridge backend stdout is plain text, so those fields are
+            # simply absent, exactly like an old text run.
+            spec = ai_call.plan(prompt, model=model, output_format='json',
+                                allowed_tools=tools or None)
+            if spec['backend'] == 'none':
+                self._send_json(503, json.dumps({
+                    'error': 'no AI backend available on this machine',
+                    'details': spec['note']}))
+                return
             # sentinel via sh wrapper: completion + rc derivable from the log alone
-            shell_cmd = shlex.join(argv) + '; echo AI_TASK_DONE rc=$?'
+            shell_cmd = shlex.join(spec['argv']) + '; echo AI_TASK_DONE rc=$?'
             log_fh = open(log_path, 'w', encoding='utf-8')
             try:
                 proc = subprocess.Popen(
@@ -3181,6 +3172,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             meta = {'id': run_id, 'kind': kind, 'ref': ref, 'status': 'running',
                     'started_wib': datetime.now(WIB).isoformat(timespec='seconds'),
                     'started_epoch': now, 'pid': proc.pid, 'model': model,
+                    'backend': spec['backend'],
                     'allowed_tools': tools, 'expected_result': expected_result,
                     'log': str(log_path.relative_to(BASE_DIR))}
             tmp = str(meta_path) + '.tmp'
@@ -3513,7 +3505,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 tf.write(text)
                 tmp = tf.name
             try:
-                argv = ['python3', slack_cli, '--action', 'post',
+                # --approved: slack_client.py refuses to post without it. The click
+                # that reached this route IS the owner approving the draft he is looking
+                # at, which is exactly the human sign-off the gate asks for.
+                argv = ['python3', slack_cli, '--action', 'post', '--approved',
                         '--channel', it['send_channel'], '--text-file', tmp]
                 if it.get('send_thread_ts'):
                     argv += ['--thread-ts', str(it['send_thread_ts'])]
@@ -3668,7 +3663,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body.encode('utf-8'))
 
     def log_message(self, format, *args):
-        if '/api/' in (args[0] if args else ''):
+        if args and isinstance(args[0], str) and '/api/' in args[0]:
             print(f"  API  {args[0]}")
 
 def main():

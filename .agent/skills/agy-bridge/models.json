@@ -7,7 +7,9 @@
   "_time_routing_note": "off | advisory | on. Now 'on' because the zai/GLM peak window is VERIFIED from the z.ai dashboard (not a guess). It acts ONLY on verified windows: agy's peak_wib is EMPTY (unverified) so agy is never demoted until `--analyze` provides measured data. Soft-demote: an in-peak backend sinks to the back of its chain but is still tried before the Claude fallback.",
   "backends": {
     "agy": {
-      "type": "cli"
+      "type": "cli",
+      "flat_rate": true,
+      "_flat_rate_note": "Antigravity subscription is flat monthly (see subscriptions.antigravity_agy); marginal cost per call is $0. run.py records actual_usd=0 for agy and keeps the per-Mtok figure in metered_equiv_usd so the data isn't lost. zai/kimi stay metered here: both have a real per-token quota (zai_quota_mult, promo_until) that can run out, so their per-call cost still reflects quota consumption, not $0."
     },
     "kimi": {
       "type": "anthropic-compatible",

@@ -13,6 +13,7 @@ import ast
 import json
 import os
 import subprocess
+import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FATHOM = os.path.join(REPO, ".agent/skills/fathom-connector/scripts/fathom_client.py")
@@ -21,7 +22,7 @@ OUT = os.path.join(REPO, "journal", "state", "insights.json")
 BRIDGE = os.path.join(REPO, ".agent/skills/agy-bridge/run.py")
 
 def _fathom_full():
-    p = subprocess.run(["python3", FATHOM, "--action", "list", "--full"],
+    p = subprocess.run([sys.executable, FATHOM, "--action", "list", "--full"],
                        cwd=REPO, capture_output=True, text=True, timeout=120)
     txt = p.stdout
     i = txt.find("[\n")
@@ -69,7 +70,7 @@ def main():
     )
     pf = os.path.join("/tmp", "insights_prompt.txt")
     open(pf, "w", encoding="utf-8").write(prompt)
-    p = subprocess.run(["python3", BRIDGE, "--task", "draft", "--backend", "zai",
+    p = subprocess.run([sys.executable, BRIDGE, "--task", "draft", "--backend", "zai",
                         "--model", "glm-5.2", "--prompt-file", pf],
                        cwd=REPO, capture_output=True, text=True, timeout=180)
     out = p.stdout.strip()

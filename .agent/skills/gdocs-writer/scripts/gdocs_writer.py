@@ -13,8 +13,12 @@ Rules:
 import os, sys, re, argparse, tempfile
 
 SKILL_DIR        = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT        = os.path.abspath(os.path.join(SKILL_DIR, '..', '..', '..', '..'))
 DEFAULT_CRED_DIR = os.path.join(SKILL_DIR, '..', '..', 'work-drive-connector')
 SCOPES           = ['https://www.googleapis.com/auth/drive']
+
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
 
 def authenticate(cred_dir=None):
     from google.auth.transport.requests import Request
@@ -249,8 +253,7 @@ def drive_upload(docx_path, title, share=True, cred_dir=None, parent_id=None):
     file = service.files().create(
         body=metadata, media_body=media, fields='id, webViewLink'
     ).execute()
-
-    file_id = file.get('id')
+    file_id = assert_drive_result(file, 'gdocs_writer upload')
     link    = file.get('webViewLink')
 
     if share:
@@ -277,8 +280,9 @@ def drive_update(file_id, docx_path, cred_dir=None):
         media_body=media,
         fields='id, webViewLink'
     ).execute()
+    updated_id = assert_drive_result(file, 'gdocs_writer update')
 
-    return file.get('id'), file.get('webViewLink')
+    return updated_id, file.get('webViewLink')
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 def main():

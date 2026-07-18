@@ -1,52 +1,29 @@
 #!/usr/bin/env bash
-# PostToolUse hook on Bash: deterministic Drive Operation Verification (CLAUDE.md rule).
-# If a gdocs_create/gdrive_manager create/upload/update ran but returned no file ID or
-# Drive link, block and tell the model to treat it as a FAILURE.
-# Fast-path: grep stdin first - 99% of Bash calls exit here in milliseconds, no python spawn.
-# Contract: always exit 0 on internal failure; never block a session by accident.
+# PostToolUse hook on Bash: formerly the Drive Operation Verification gate.
+#
+# Drive Operation Verification (CLAUDE.md rule) is now enforced INSIDE each
+# Drive writer script via assert_drive_result() in .agent/scripts/file_utils.py.
+# All five writers - gdocs_create.py, gdoc_surgical.py, gdocs_writer.py,
+# gdoc_comment.py, patch_doc_links.py - call it before reporting success, and
+# it exits nonzero with a clear stderr message when a create/update/upload/
+# batchUpdate returns no file or document ID. That is a stronger guarantee
+# than this hook ever gave: it fires on all five writers, not just two, and
+# it looks at the actual API response instead of guessing from text.
+#
+# This hook used to re-check the raw Bash command string for the same
+# signal (script name + create-doc/upload/update) and block the session on a
+# miss. That was a false-positive machine: ANY command whose text merely
+# CONTAINS those substrings trips it, including read-only commands like a
+# `grep -r gdocs_create.py ... update` over this very file, or a `cat`/echo
+# of documentation that mentions the writers. Matching a raw command string
+# cannot distinguish a real invocation from a mention of one, so there is no
+# safe way to keep this as a blocking check - narrowing the regex only moves
+# the false-positive rate, it does not remove it.
+#
+# So this hook is now a deliberate no-op: it never blocks and never inspects
+# tool_response. It stays registered (see .claude/settings.json PostToolUse)
+# only so this note is where the next person will find it. Enforcement lives
+# in the writers now.
 set -u
-
-input="$(cat 2>/dev/null)" || exit 0
-[ -n "$input" ] || exit 0
-
-# Fast-path: only Drive write operations are interesting.
-printf '%s' "$input" | grep -qE 'gdocs_create\.py|gdrive_manager\.py' || exit 0
-printf '%s' "$input" | grep -qE 'create-doc|upload|update' || exit 0
-
-command -v python3 >/dev/null 2>&1 || exit 0
-
-HOOK_INPUT="$input" python3 - <<'PY' 2>/dev/null || exit 0
-import json, os, re, sys
-
-try:
-    d = json.loads(os.environ.get("HOOK_INPUT", "{}"))
-    cmd = str((d.get("tool_input") or {}).get("command") or "")
-    # Confirm the command itself is a Drive write op (stdin grep may have hit the response text).
-    if not re.search(r"(gdocs_create\.py|gdrive_manager\.py)", cmd):
-        sys.exit(0)
-    if not re.search(r"(create-doc|upload|update)", cmd):
-        sys.exit(0)
-
-    resp = d.get("tool_response")
-    if isinstance(resp, dict):
-        text = " ".join(str(v) for v in resp.values())
-    else:
-        text = str(resp or "")
-
-    # Success signals: a Drive/Docs link, or a plausible file ID (25+ chars of ID alphabet).
-    ok = re.search(r"(docs\.google\.com/|drive\.google\.com/)", text) or \
-         re.search(r"\b[-\w]{25,}\b", text)
-    if ok:
-        sys.exit(0)
-
-    print(json.dumps({
-        "decision": "block",
-        "reason": ("Drive operation returned no file ID or Drive link. Per CLAUDE.md Drive Operation "
-                   "Verification: treat this as a FAILURE. Verify with a search before proceeding; "
-                   "do not assume the document was created/updated.")
-    }))
-except Exception:
-    pass
-sys.exit(0)
-PY
+cat >/dev/null 2>&1 || true
 exit 0

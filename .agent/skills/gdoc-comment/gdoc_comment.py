@@ -30,6 +30,9 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parents[2]
 
+sys.path.insert(0, str(REPO_ROOT / '.agent' / 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 ACCOUNT_TOKENS = {
     "work": REPO_ROOT / ".agent/skills/work-drive-connector/token.json",
     "personal": REPO_ROOT / ".agent/skills/personal-drive-connector/token.json",
@@ -165,7 +168,13 @@ def cmd_comment(args):
         ctx.close()
 
     verify(args.doc, args.account, items)
-    return 0 if posted == len(items) else 1
+    # Drive Operation Verification: a comment "write" here means every item
+    # posted successfully. args.doc is a known-good id on success; None forces
+    # assert_drive_result to fail loudly (with the posted/total count) instead
+    # of exiting 0 while comments silently failed to anchor.
+    ok_id = args.doc if posted == len(items) else None
+    assert_drive_result(ok_id, f"gdoc_comment post ({posted}/{len(items)} items posted)")
+    return 0
 
 def verify(doc_id, account, items):
     """Read comments back via Drive API; confirm kix anchors + matching quoted text."""

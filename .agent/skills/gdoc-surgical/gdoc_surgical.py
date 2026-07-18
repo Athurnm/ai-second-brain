@@ -39,6 +39,9 @@ import argparse
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SKILL_DIR, '..', '..', '..'))
 
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 # Account name -> connector dir holding token.json (same map as gdocs-create)
 ACCOUNTS = {
     'work':    os.path.join(REPO_ROOT, '.agent/skills/work-drive-connector'),
@@ -146,6 +149,7 @@ def cmd_replace(docs, args):
             'replaceText': getattr(args, 'with'),
         }
     }])
+    assert_drive_result(result, 'gdoc_surgical replace')
     changed = result['replies'][0].get('replaceAllText', {}).get('occurrencesChanged', 0)
     print(f"[OK] Replaced {changed} occurrence(s). Doc: https://docs.google.com/document/d/{args.id}/edit")
     if changed == 0:
@@ -186,7 +190,8 @@ def cmd_linkify(docs, args):
         sys.exit(2)
     # updateTextStyle never changes text length, so every request's indices stay
     # valid against the original document regardless of batch order.
-    batch(docs, args.id, requests)
+    result = batch(docs, args.id, requests)
+    assert_drive_result(result, 'gdoc_surgical linkify')
     print(f"[OK] Linked {len(requests)} occurrence(s) of {args.find!r} -> {args.url}")
     print(f"Doc: https://docs.google.com/document/d/{args.id}/edit")
 
@@ -215,7 +220,8 @@ def cmd_append(docs, args):
                 'range': seg, 'paragraphStyle': {'namedStyleType': 'NORMAL_TEXT'},
                 'fields': 'namedStyleType'}})
         cursor += len(content)
-    batch(docs, args.id, requests)
+    result = batch(docs, args.id, requests)
+    assert_drive_result(result, 'gdoc_surgical append')
     print(f"[OK] Appended {len(text.splitlines())} line(s). Doc: https://docs.google.com/document/d/{args.id}/edit")
 
 def cmd_list_tables(docs, args):
@@ -251,7 +257,7 @@ def cmd_insert_row(docs, args):
     row_idx = args.row if args.row >= 0 else n_rows - 1  # -1 = insert below last row
 
     # Step 1: insert the empty row
-    batch(docs, args.id, [{
+    insert_result = batch(docs, args.id, [{
         'insertTableRow': {
             'tableCellLocation': {
                 'tableStartLocation': {'index': tbl_el['startIndex']},
@@ -260,6 +266,9 @@ def cmd_insert_row(docs, args):
             'insertBelow': True,
         }
     }])
+    # This is the write that matters; step 2 below can legitimately be a no-op
+    # (all cell values blank), so verify here rather than on the final batch().
+    assert_drive_result(insert_result, 'gdoc_surgical insert-row')
 
     # Step 2: re-fetch (indexes shifted) and fill cells RIGHT-TO-LEFT so earlier
     # insertions don't shift later targets.

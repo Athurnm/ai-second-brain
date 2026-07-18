@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Shared helpers for the local meeting note-taker (recorder / transcribe / watcher).
 
-Platform detection mirrors .agent/scripts/detect_platform.sh:
-Darwin -> macos, Linux -> wsl (the owner's Linux is always WSL), Windows -> windows.
+Platform detection is delegated to .agent/scripts/harness_config.py, which caches
+the output of detect_platform.sh. This file used to keep its own Python copy of
+that table; two implementations of one rule is one too many.
 """
 import json
 import os
@@ -15,6 +16,16 @@ MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(MODULE_DIR)
 CONFIG_PATH = os.path.join(MODULE_DIR, "config.json")
 
+# Appended, not inserted at 0, so this never shadows a module the recorder
+# scripts import from their own directory.
+_AGENT_SCRIPTS = os.path.join(REPO_ROOT, ".agent", "scripts")
+if _AGENT_SCRIPTS not in sys.path:
+    sys.path.append(_AGENT_SCRIPTS)
+try:
+    import harness_config
+except Exception:  # absent or unimportable -> the inline fallback below takes over
+    harness_config = None
+
 # Cron runs with a minimal PATH that excludes ~/.local/bin, so a bare "ffmpeg"
 # in config resolves fine in an interactive shell and dies under cron with
 # FileNotFoundError. Search these before giving up.
@@ -26,11 +37,23 @@ FFMPEG_FALLBACK_DIRS = (
 )
 
 def detect_platform():
+    """Return macos | wsl | windows, matching config.json's `machines` keys.
+
+    Asks harness_config first so there is one platform table in the repo. The
+    inline table stays as a fallback only: the recorder runs under cron and must
+    not fail to pick a machine profile because a helper module moved."""
+    if harness_config is not None:
+        try:
+            plat = harness_config.platform()
+            if plat in ("macos", "wsl", "windows"):
+                return plat
+        except Exception:
+            pass
     sysname = platform.system()
     if sysname == "Darwin":
         return "macos"
     if sysname == "Linux":
-        return "wsl"
+        return "wsl"      # the owner's Linux is always WSL
     return "windows"
 
 def resolve_ffmpeg(value):

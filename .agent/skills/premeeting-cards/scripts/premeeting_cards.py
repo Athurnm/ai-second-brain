@@ -39,6 +39,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -123,8 +124,12 @@ def parse_event_dt(value):
 
 def fetch_calendar_events():
     """timeout-wrapped gcal_manager.py list --json (Work profile), per spec.
-    Tolerates connector auth failure / missing token -> empty list, no crash."""
-    cmd = ['timeout', '180s', sys.executable, GCAL_SCRIPT, 'list',
+    Tolerates connector auth failure / missing token -> empty list, no crash.
+    The `timeout` binary is GNU coreutils and not present on stock macOS, so
+    only prepend it when available; subprocess.run's own timeout still bounds
+    the call either way."""
+    cmd = ([shutil.which('timeout'), '180s'] if shutil.which('timeout') else []) + \
+          [sys.executable, GCAL_SCRIPT, 'list',
            '--days-back', '0', '--days-forward', '1', '--profile', 'work', '--json']
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=190)
