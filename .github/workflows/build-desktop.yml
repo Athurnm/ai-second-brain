@@ -1,0 +1,67 @@
+name: Build desktop installers
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ""
+          - os: macos-latest
+            args: "--target universal-apple-darwin"
+          - os: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Linux webkit deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend deps
+        working-directory: desktop
+        run: npm ci
+
+      # tauri-action builds all 3 platforms (via the matrix above), creates/updates the GitHub
+      # Release for the pushed `desktop-v*` tag, and uploads both the installers AND the signed
+      # `latest.json` the updater plugin polls (bundle.createUpdaterArtifacts: true in
+      # tauri.conf.json is what makes it produce that file + .sig alongside each installer).
+      #
+      # TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD sign those updater
+      # artifacts so the installed app's pubkey (tauri.conf.json plugins.updater.pubkey) can
+      # verify them before installing. Set these as repo secrets from the keypair generated at
+      # /home/brobri/.tauri/asb-updater.key (private, never committed):
+      #   TAURI_SIGNING_PRIVATE_KEY          = contents of asb-updater.key
+      #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "" (empty — the key was generated with no password)
+      - name: Build + release with tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "AI Second Brain ${{ github.ref_name }}"
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
