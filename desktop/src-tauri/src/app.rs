@@ -416,6 +416,8 @@ async fn forward_events(
                 description,
                 suggestions,
                 blocked_path,
+                tool_use_id,
+                display_name,
             } => {
                 let _ = app.emit(
                     EVT_PERMISSION,
@@ -427,6 +429,8 @@ async fn forward_events(
                         "description": description,
                         "suggestions": suggestions,
                         "blockedPath": blocked_path,
+                        "toolUseId": tool_use_id,
+                        "displayName": display_name,
                     }),
                 );
             }

@@ -1354,6 +1354,186 @@ input {
   color: var(--danger);
 }
 
+/* 9b. Permission Card (inline timeline card — primary approval surface, see main.js
+    appendPermissionCard. Gold pulsing left edge so a pending request cannot be missed even if
+    the modal fails to open.)
+   ----------------------------------------------------------------- */
+.perm-card {
+  background-color: var(--bg-surface);
+  border: var(--border-w) solid var(--brand-gold);
+  border-left: 4px solid var(--brand-gold);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-btn);
+  padding: var(--pad-3) var(--pad-4);
+  margin: var(--pad-2) 0;
+  animation: permCardPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes permCardPulse {
+  0%, 100% { border-left-color: var(--brand-gold); box-shadow: var(--shadow-btn); }
+  50% { border-left-color: var(--warning); box-shadow: var(--shadow-btn), 0 0 12px var(--accent-glow); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .perm-card {
+    animation: none;
+  }
+}
+
+.perm-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-icon {
+  color: var(--brand-gold);
+  font-size: var(--fs-small);
+}
+
+.perm-card-title {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-small);
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.perm-card-desc {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-blocked {
+  font-size: var(--fs-micro);
+  color: var(--danger);
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-blocked code {
+  font-family: var(--font-mono);
+  background-color: var(--danger-soft);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.perm-card-input {
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-input summary {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.perm-card-input pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  background-color: var(--bg-inset);
+  border: var(--border-w-hairline) solid var(--border);
+  padding: var(--pad-3);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: var(--pad-2);
+}
+
+.perm-card-timeout-note {
+  font-size: var(--fs-micro);
+  color: var(--warning);
+  font-style: italic;
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-deny-row {
+  margin-bottom: var(--pad-2);
+}
+
+.perm-card-deny-reason {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+  background-color: var(--bg-inset);
+  color: var(--text-primary);
+  border: var(--border-w-hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--pad-2);
+  resize: vertical;
+}
+
+.perm-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pad-2);
+}
+
+.perm-card-resolved {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  animation: none;
+  border-left-width: var(--border-w);
+  padding: var(--pad-2) var(--pad-3);
+}
+
+.perm-card-resolved.allowed {
+  border-color: var(--success);
+}
+
+.perm-card-resolved.denied {
+  border-color: var(--danger);
+}
+
+.perm-card-resolved-icon {
+  font-weight: 700;
+}
+
+.perm-card-resolved.allowed .perm-card-resolved-icon {
+  color: var(--success);
+}
+
+.perm-card-resolved.denied .perm-card-resolved-icon {
+  color: var(--danger);
+}
+
+.perm-card-resolved-text {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--text-primary);
+}
+
+.perm-card-resolved-reason {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Persistent banner above the composer while a permission request is pending. Never auto-hides
+   on its own — only clears via updatePermissionBanner() once the request resolves or the session
+   exits. */
+.permission-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-3);
+  background-color: var(--warning-soft);
+  border: var(--border-w) solid var(--brand-gold);
+  border-radius: var(--radius-md);
+  padding: var(--pad-2) var(--pad-3);
+  margin-bottom: var(--pad-2);
+  font-size: var(--fs-small);
+  color: var(--text-primary);
+}
+
 /* 10. Thinking Block
    ----------------------------------------------------------------- */
 .thinking-block, .thinking-block summary {

@@ -560,7 +560,13 @@ function renderSessionRow(s) {
   top.appendChild(el("span", { class: "session-dot" + (s.meta.live ? " live" : "") }));
   top.appendChild(el("span", { class: "session-title", text: s.meta.title || "New session" }));
   if (s.pendingPermission) {
-    top.appendChild(el("span", { class: "session-warn", text: "!", attrs: { title: "Needs your approval" } }));
+    top.appendChild(
+      el("span", {
+        class: "session-warn",
+        text: "needs you",
+        attrs: { title: `Waiting for your permission — ${s.pendingPermission.toolName}` },
+      })
+    );
   }
   row.appendChild(top);
   row.appendChild(el("div", { class: "session-sub", text: sessionSubtitle(s) }));
@@ -1674,6 +1680,7 @@ function handleExit(payload) {
   if (sessionId === activeSessionId) {
     closePermissionModal();
     closeQuestionModal();
+    updatePermissionBanner();
     updateComposerEnabled();
     updateStatusBar();
     HUD.onSessionExited();
@@ -1729,25 +1736,225 @@ function renderDiagnostics(s) {
 
 let permInputEditing = false;
 
+// How long a permission request can sit unanswered before the inline card grows a "still
+// waiting" note (timeout SAFETY, not a timeout ACTION — nothing auto-answers, ever).
+const PERMISSION_TIMEOUT_NOTE_MS = 90 * 1000;
+
 function handlePermissionRequest(payload) {
   const { sessionId, requestId, toolName, input, description, suggestions, blockedPath } = payload;
   const s = ensureSessionState(sessionId);
-  s.pendingPermission = { requestId, toolName, input, description, suggestions: suggestions || [], blockedPath };
 
-  renderSessionList();
+  // Session-scoped "don't ask again for this tool" — set by the inline card's second button.
+  // Resolve silently: no card, no modal, no banner, same wire path as a manual Allow.
+  if (s.autoAllowTools && s.autoAllowTools.has(toolName)) {
+    resolvePermissionRequest(sessionId, requestId, true, input, null);
+    return;
+  }
+
+  s.pendingPermission = {
+    requestId,
+    toolName,
+    input,
+    description,
+    suggestions: suggestions || [],
+    blockedPath,
+    createdAtMs: Date.now(),
+    resolved: false, // guards double-respond: card and modal both write this, both check it first
+    cardNode: null,
+    cardTimeoutNoteNode: null,
+  };
+
+  // 1) PRIMARY surface: inline card in the timeline. Appended unconditionally, even for a
+  // background session, so it's there waiting the moment the user switches to it — and so it
+  // still exists even if the modal below throws.
+  appendPermissionCard(sessionId, s.pendingPermission);
+  renderSessionList(); // paints the "needs you" rail badge, including for background sessions
+
   if (sessionId === activeSessionId) {
     updateComposerEnabled();
-    openPermissionModal(s);
+    updatePermissionUI(); // secondary surface: modal + banner
     HUD.onPermissionRequest();
   }
 }
 
+// Single resolver for BOTH the inline card and the modal — the one place that talks to the
+// backend, so the "answer the same request id exactly once" guard lives in exactly one spot.
+async function resolvePermissionRequest(sessionId, requestId, allow, updatedInput, denyMessage) {
+  const s = sessions.get(sessionId);
+  if (!s || !s.pendingPermission || s.pendingPermission.requestId !== requestId) return;
+  if (s.pendingPermission.resolved) return; // already answered (or in flight) — ignore
+  const p = s.pendingPermission;
+  p.resolved = true; // set BEFORE invoking, so a near-simultaneous second click is a no-op
+
+  try {
+    await invoke("respond_permission", {
+      sessionId,
+      requestId,
+      allow,
+      updatedInput: allow ? updatedInput : null,
+      denyMessage,
+    });
+  } catch (err) {
+    p.resolved = false; // let the user retry from either surface
+    showToast(`Failed to send ${allow ? "approval" : "denial"}: ${err}`);
+    return;
+  }
+
+  finalizePermissionCard(p, allow, denyMessage);
+  if (s.pendingPermission === p) s.pendingPermission = null;
+  renderSessionList();
+
+  if (sessionId === activeSessionId) {
+    closePermissionModal();
+    updateComposerEnabled();
+    updatePermissionUI();
+    HUD.onPermissionResolved();
+  }
+}
+
+// Builds the inline permission card and appends it to the timeline (same append contract as
+// appendUserMessage / appendSystemCard: push into s.timeline so history replay keeps it, append
+// live only if this is the active session). This card is the PRIMARY approval surface — it works
+// even if openPermissionModal never opens.
+function appendPermissionCard(sessionId, p) {
+  const s = ensureSessionState(sessionId);
+  const card = el("div", { class: "perm-card" });
+
+  const head = el("div", { class: "perm-card-head" });
+  head.appendChild(el("span", { class: "perm-card-icon", text: "⚠" }));
+  head.appendChild(el("span", { class: "perm-card-title", text: `Permission needed — ${p.toolName}` }));
+  card.appendChild(head);
+
+  if (p.description) {
+    card.appendChild(el("div", { class: "perm-card-desc", text: p.description }));
+  }
+  if (p.blockedPath) {
+    const bp = el("div", { class: "perm-card-blocked" });
+    bp.appendChild(el("span", { text: "Blocked path: " }));
+    bp.appendChild(el("code", { text: p.blockedPath }));
+    card.appendChild(bp);
+  }
+
+  const inputDetails = el("details", { class: "perm-card-input" });
+  inputDetails.appendChild(el("summary", { text: "Input" }));
+  inputDetails.appendChild(el("pre", { text: JSON.stringify(p.input, null, 2) }));
+  card.appendChild(inputDetails);
+
+  const timeoutNote = el("div", {
+    class: "perm-card-timeout-note hidden",
+    text: "Still waiting — the session will stay paused until you answer.",
+  });
+  card.appendChild(timeoutNote);
+  p.cardTimeoutNoteNode = timeoutNote;
+
+  const denyRow = el("div", { class: "perm-card-deny-row hidden" });
+  const denyReasonInput = el("textarea", {
+    class: "perm-card-deny-reason",
+    attrs: { rows: "2", placeholder: "Why you're denying this (optional)…" },
+  });
+  denyRow.appendChild(denyReasonInput);
+  card.appendChild(denyRow);
+
+  const actions = el("div", { class: "perm-card-actions" });
+  const allowBtn = el("button", { class: "btn btn-success btn-small", text: "Allow", attrs: { type: "button" } });
+  const allowAlwaysBtn = el("button", {
+    class: "btn btn-ghost btn-small",
+    text: `Allow, don't ask again for ${p.toolName}`,
+    attrs: { type: "button" },
+  });
+  const denyBtn = el("button", { class: "btn btn-danger btn-small", text: "Deny", attrs: { type: "button" } });
+  const denyConfirmBtn = el("button", {
+    class: "btn btn-danger btn-small hidden",
+    text: "Confirm deny",
+    attrs: { type: "button" },
+  });
+
+  allowBtn.addEventListener("click", () => {
+    resolvePermissionRequest(sessionId, p.requestId, true, p.input, null);
+  });
+  allowAlwaysBtn.addEventListener("click", () => {
+    const st = sessions.get(sessionId);
+    if (st) {
+      if (!st.autoAllowTools) st.autoAllowTools = new Set();
+      st.autoAllowTools.add(p.toolName);
+    }
+    resolvePermissionRequest(sessionId, p.requestId, true, p.input, null);
+  });
+  denyBtn.addEventListener("click", () => {
+    denyRow.classList.remove("hidden");
+    denyBtn.classList.add("hidden");
+    denyConfirmBtn.classList.remove("hidden");
+    denyReasonInput.focus();
+  });
+  denyConfirmBtn.addEventListener("click", () => {
+    resolvePermissionRequest(sessionId, p.requestId, false, null, denyReasonInput.value.trim() || null);
+  });
+
+  actions.appendChild(allowBtn);
+  actions.appendChild(allowAlwaysBtn);
+  actions.appendChild(denyBtn);
+  actions.appendChild(denyConfirmBtn);
+  card.appendChild(actions);
+
+  p.cardNode = card;
+  s.timeline.push({ type: "permission", node: card });
+  if (sessionId === activeSessionId) {
+    clearEmptyState();
+    appendToActiveTimeline(card);
+  }
+}
+
+// Replaces a resolved card's contents with a compact resolved state IN PLACE (same node — no
+// remove/re-append, so scroll position and timeline order are untouched).
+function finalizePermissionCard(p, allow, denyMessage) {
+  if (!p.cardNode) return;
+  p.cardNode.className = "perm-card perm-card-resolved" + (allow ? " allowed" : " denied");
+  p.cardNode.innerHTML = "";
+  p.cardNode.appendChild(el("span", { class: "perm-card-resolved-icon", text: allow ? "✓" : "✕" }));
+  p.cardNode.appendChild(el("span", { class: "perm-card-resolved-text", text: `${allow ? "Allowed" : "Denied"} — ${p.toolName}` }));
+  if (!allow && denyMessage) {
+    p.cardNode.appendChild(el("span", { class: "perm-card-resolved-reason", text: denyMessage }));
+  }
+}
+
+// Every 5s, flip on the "still waiting" note for any pending permission that's been sitting
+// unanswered for PERMISSION_TIMEOUT_NOTE_MS — across ALL sessions, not just the active one, since
+// the card exists (and the clock is running) whether or not the user is looking at it.
+setInterval(() => {
+  const now = Date.now();
+  for (const s of sessions.values()) {
+    const p = s.pendingPermission;
+    if (p && !p.resolved && p.cardTimeoutNoteNode && now - p.createdAtMs > PERMISSION_TIMEOUT_NOTE_MS) {
+      p.cardTimeoutNoteNode.classList.remove("hidden");
+    }
+  }
+}, 5000);
+
+// Secondary surfaces for the active session only: the blocking modal, and the persistent banner
+// above the composer. Both point at the SAME s.pendingPermission the inline card already holds.
 function updatePermissionUI() {
   const s = activeSessionId ? sessions.get(activeSessionId) : null;
   if (s && s.pendingPermission) {
-    openPermissionModal(s);
+    // DEFENSIVE: a modal render failure must never take the inline card (already appended in
+    // handlePermissionRequest) down with it — that card is the surface of record.
+    try {
+      openPermissionModal(s);
+    } catch (err) {
+      console.error("openPermissionModal failed; the inline timeline card remains the fallback approval surface", err);
+    }
   } else {
     closePermissionModal();
+  }
+  updatePermissionBanner();
+}
+
+function updatePermissionBanner() {
+  const s = activeSessionId ? sessions.get(activeSessionId) : null;
+  if (s && s.pendingPermission) {
+    dom.permissionBannerText.textContent = `Claude is waiting for your permission to run ${s.pendingPermission.toolName}`;
+    dom.permissionBanner.classList.remove("hidden");
+  } else {
+    dom.permissionBanner.classList.add("hidden");
   }
 }
 
@@ -1828,22 +2035,9 @@ async function respondToPermission(allow) {
     denyMessage = dom.permDenyReason.value.trim() || null;
   }
 
-  try {
-    await invoke("respond_permission", {
-      sessionId: activeSessionId,
-      requestId,
-      allow,
-      updatedInput: allow ? updatedInput : null,
-      denyMessage,
-    });
-    s.pendingPermission = null;
-    closePermissionModal();
-    updateComposerEnabled();
-    renderSessionList();
-    HUD.onPermissionResolved();
-  } catch (err) {
-    showToast(`Failed to send ${allow ? "approval" : "denial"}: ${err}`);
-  }
+  // Delegates to the single resolver shared with the inline card — that's what enforces the
+  // "answer this request id exactly once" guard, whichever surface the user answers from.
+  await resolvePermissionRequest(activeSessionId, requestId, allow, updatedInput, denyMessage);
 }
 
 // ---------------------------------------------------------------------------
@@ -3481,6 +3675,10 @@ function grabDom() {
     permDenyConfirmBtn: document.getElementById("permDenyConfirmBtn"),
     permAllowBtn: document.getElementById("permAllowBtn"),
 
+    permissionBanner: document.getElementById("permissionBanner"),
+    permissionBannerText: document.getElementById("permissionBannerText"),
+    permissionBannerReviewBtn: document.getElementById("permissionBannerReviewBtn"),
+
     questionHintChip: document.getElementById("questionHintChip"),
     questionModal: document.getElementById("questionModal"),
     questionModalTitle: document.getElementById("questionModalTitle"),
@@ -3802,6 +4000,22 @@ function bindStaticListeners() {
   });
   dom.permDenyConfirmBtn.addEventListener("click", () => respondToPermission(false));
   dom.permAllowBtn.addEventListener("click", () => respondToPermission(true));
+
+  // Persistent banner's [Review] — scroll the inline card into view and (re)open the modal, for
+  // whichever secondary path the user prefers. The banner itself never auto-hides; only
+  // resolving the request does that (via updatePermissionUI()).
+  dom.permissionBannerReviewBtn.addEventListener("click", () => {
+    const s = activeSessionId ? sessions.get(activeSessionId) : null;
+    if (!s || !s.pendingPermission) return;
+    if (s.pendingPermission.cardNode) {
+      s.pendingPermission.cardNode.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    try {
+      openPermissionModal(s);
+    } catch (err) {
+      console.error("openPermissionModal failed from Review banner; the inline card is still there", err);
+    }
+  });
 
   dom.questionModalSubmitBtn.addEventListener("click", submitQuestionFreeText);
   dom.questionModalFreeText.addEventListener("keydown", (e) => {

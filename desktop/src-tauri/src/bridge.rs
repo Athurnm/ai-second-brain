@@ -98,6 +98,52 @@ pub fn build_user_content(text: &str, attachments: &[ImageAttachment]) -> Value 
     Value::Array(blocks)
 }
 
+/// Builds the exact `control_response` payload answering a `can_use_tool` `control_request`.
+/// Pure — no process, no I/O — so the wire shape is unit-testable in isolation (see
+/// `wire_protocol_tests` below). Live-verified end-to-end against the real CLI (2.1.207): sending
+/// this exact envelope back on the request's `request_id` makes the CLI resume the gated tool call
+/// (a `tool_result` and, eventually, a final `result` event both follow) rather than hang.
+pub fn build_permission_response_payload(request_id: &str, response: PermissionResponse) -> Value {
+    let response_body = match response {
+        PermissionResponse::Allow { updated_input } => serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": updated_input,
+        }),
+        PermissionResponse::Deny { message } => serde_json::json!({
+            "behavior": "deny",
+            "message": message,
+        }),
+    };
+    serde_json::json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": response_body,
+        }
+    })
+}
+
+/// Builds the exact `control_response` payload answering a non-`can_use_tool` `QuestionRequest`.
+/// Pure, mirroring `build_permission_response_payload`; not independently live-verified (no real
+/// CLI build has been observed to emit a question-shaped `control_request` yet -- see
+/// `QuestionRequest`'s doc comment), but reuses the same envelope shape that respond_permission
+/// depends on, which is verified.
+pub fn build_question_response_payload(request_id: &str, answer: QuestionAnswer) -> Value {
+    let response_body = match answer {
+        QuestionAnswer::Option { value } => serde_json::json!({ "value": value }),
+        QuestionAnswer::FreeText { text } => serde_json::json!({ "text": text }),
+    };
+    serde_json::json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": response_body,
+        }
+    })
+}
+
 #[derive(Debug)]
 pub enum BridgeError {
     /// PATH scan found no executable `claude`.
@@ -198,6 +244,17 @@ pub enum BridgeEvent {
         description: Option<String>,
         suggestions: Vec<Value>,
         blocked_path: Option<String>,
+        /// The tool_use block id this request is approving (verified live on CLI 2.1.207: every
+        /// `can_use_tool` request carries `tool_use_id`, correlating the request to the specific
+        /// assistant `tool_use` content block/timeline card it gates). Previously dropped by this
+        /// parser even though the CLI always sends it -- load-bearing if a session ever has more
+        /// than one tool card of the same name pending (Bash calls in particular carry no
+        /// `description`, so `tool_name` + `description` alone cannot disambiguate them).
+        tool_use_id: Option<String>,
+        /// Human-readable display name for the tool (verified live: usually equal to `tool_name`,
+        /// e.g. "Write", but kept distinct since the CLI sends it as its own field and an MCP
+        /// tool's display name can differ from its raw `tool_name`).
+        display_name: Option<String>,
     },
     /// A `control_request` whose `subtype` is anything other than `can_use_tool` AND whose
     /// payload carries a `question` field (see `parse_generic_control_request`). Not a
@@ -436,29 +493,15 @@ impl ClaudeSession {
     }
 
     /// Writes one NDJSON control_response line answering a `can_use_tool` permission request.
+    /// Wire shape built by `build_permission_response_payload`, live-verified end-to-end against
+    /// the real CLI (2.1.207): this exact envelope, sent back on the request's `request_id`,
+    /// makes the CLI resume the gated tool call and complete the turn (see that function's tests).
     pub async fn respond_permission(
         &self,
         request_id: &str,
         response: PermissionResponse,
     ) -> Result<(), BridgeError> {
-        let response_body = match response {
-            PermissionResponse::Allow { updated_input } => serde_json::json!({
-                "behavior": "allow",
-                "updatedInput": updated_input,
-            }),
-            PermissionResponse::Deny { message } => serde_json::json!({
-                "behavior": "deny",
-                "message": message,
-            }),
-        };
-        let payload = serde_json::json!({
-            "type": "control_response",
-            "response": {
-                "subtype": "success",
-                "request_id": request_id,
-                "response": response_body,
-            }
-        });
+        let payload = build_permission_response_payload(request_id, response);
         self.write_line(&payload).await
     }
 
@@ -472,18 +515,7 @@ impl ClaudeSession {
         request_id: &str,
         answer: QuestionAnswer,
     ) -> Result<(), BridgeError> {
-        let response_body = match answer {
-            QuestionAnswer::Option { value } => serde_json::json!({ "value": value }),
-            QuestionAnswer::FreeText { text } => serde_json::json!({ "text": text }),
-        };
-        let payload = serde_json::json!({
-            "type": "control_response",
-            "response": {
-                "subtype": "success",
-                "request_id": request_id,
-                "response": response_body,
-            }
-        });
+        let payload = build_question_response_payload(request_id, answer);
         self.write_line(&payload).await
     }
 
@@ -945,6 +977,8 @@ fn parse_can_use_tool_request(request_id: String, request: Option<&Value>) -> Ve
         .cloned()
         .unwrap_or_default();
     let blocked_path = request.and_then(|r| opt_str_field(r, "blocked_path"));
+    let tool_use_id = request.and_then(|r| opt_str_field(r, "tool_use_id"));
+    let display_name = request.and_then(|r| opt_str_field(r, "display_name"));
     vec![BridgeEvent::PermissionRequest {
         request_id,
         tool_name,
@@ -952,6 +986,8 @@ fn parse_can_use_tool_request(request_id: String, request: Option<&Value>) -> Ve
         description,
         suggestions,
         blocked_path,
+        tool_use_id,
+        display_name,
     }]
 }
 
@@ -1660,5 +1696,151 @@ mod control_request_tests {
             }
             other => panic!("expected QuestionRequest, got {other:?}"),
         }
+    }
+}
+
+/// Ground-truth regression tests for the manual-permission-mode protocol, captured against a
+/// REAL, logged-in `claude` CLI (native Linux build, `claude-code@2.1.207`) driven exactly the
+/// way `spawn_session` drives it: `build_args` for `PermissionMode::Manual` (which resolves to
+/// `--permission-mode manual --permission-prompt-tool stdio`), a `Write` tool call that genuinely
+/// required approval (not auto-allowed by any settings.json rule), and a real, held-open stdin.
+///
+/// Two things were proven live, end-to-end, not merely inferred from docs:
+///   1. The exact `can_use_tool` `control_request` shape below is what the CLI actually sends
+///      (`request_id` top-level; `request.{subtype,tool_name,display_name,input,description,
+///      permission_suggestions,tool_use_id}`) -- captured verbatim, not hand-written.
+///   2. Sending `build_permission_response_payload`'s exact envelope back on that `request_id`
+///      genuinely unblocks the CLI: the next stdout lines were a matching `tool_result` and then
+///      a final `result` event, in the same live session. No hang, no "no conversation found",
+///      no protocol-shape retry was ever needed -- the first shape tried is the one that worked.
+///
+/// Conclusion this test module encodes: `parse_can_use_tool_request` and `respond_permission`'s
+/// wire shape were NOT the cause of the "manual mode hangs forever" bug report -- both are
+/// correct against the real CLI as of 2.1.207. The one real gap the live capture exposed (fixed
+/// alongside these tests): the CLI's `can_use_tool` request also carries `tool_use_id` and
+/// `display_name`, which this parser used to silently drop.
+#[cfg(test)]
+mod live_capture_tests {
+    use super::*;
+
+    /// Byte-for-byte the `control_request` line captured from real CLI stdout (only the
+    /// session-specific `request_id`, tmp-dir path, and `tool_use_id` are the actual live values;
+    /// nothing here was hand-constructed to fit the parser).
+    fn live_can_use_tool_request() -> Value {
+        serde_json::json!({
+            "type": "control_request",
+            "request_id": "5e185435-5614-4036-8446-d250167c5d34",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "Write",
+                "display_name": "Write",
+                "input": {
+                    "file_path": "/tmp/claude_perm_test_znq5xy0d/write_test_out.txt",
+                    "content": "hello-write-test"
+                },
+                "description": "write_test_out.txt",
+                "permission_suggestions": [
+                    { "type": "setMode", "mode": "acceptEdits", "destination": "session" }
+                ],
+                "tool_use_id": "toolu_01Y7LuNVMpaS5b7aBqryAiB3"
+            }
+        })
+    }
+
+    #[test]
+    fn live_can_use_tool_request_parses_every_field_including_previously_dropped_ones() {
+        let events = parse_stdout_events(live_can_use_tool_request());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BridgeEvent::PermissionRequest {
+                request_id,
+                tool_name,
+                input,
+                description,
+                suggestions,
+                blocked_path,
+                tool_use_id,
+                display_name,
+            } => {
+                assert_eq!(request_id, "5e185435-5614-4036-8446-d250167c5d34");
+                assert_eq!(tool_name, "Write");
+                assert_eq!(input["file_path"], "/tmp/claude_perm_test_znq5xy0d/write_test_out.txt");
+                assert_eq!(input["content"], "hello-write-test");
+                assert_eq!(description.as_deref(), Some("write_test_out.txt"));
+                assert_eq!(suggestions.len(), 1);
+                assert_eq!(suggestions[0]["mode"], "acceptEdits");
+                assert!(blocked_path.is_none());
+                // The two fields this parser used to silently drop -- the actual gap this live
+                // capture exposed and fixed.
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_01Y7LuNVMpaS5b7aBqryAiB3"));
+                assert_eq!(display_name.as_deref(), Some("Write"));
+            }
+            other => panic!("expected PermissionRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allow_response_matches_the_envelope_that_live_unblocked_the_cli() {
+        let updated_input = serde_json::json!({
+            "file_path": "/tmp/claude_perm_test_znq5xy0d/write_test_out.txt",
+            "content": "hello-write-test"
+        });
+        let payload = build_permission_response_payload(
+            "5e185435-5614-4036-8446-d250167c5d34",
+            PermissionResponse::Allow {
+                updated_input: updated_input.clone(),
+            },
+        );
+        // Exactly the line this test harness sent back on stdin, live, right before the CLI's
+        // stdout produced the matching tool_result and then the final `result` event.
+        let expected = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": "5e185435-5614-4036-8446-d250167c5d34",
+                "response": {
+                    "behavior": "allow",
+                    "updatedInput": updated_input,
+                }
+            }
+        });
+        assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn deny_response_uses_the_same_verified_envelope_with_a_deny_body() {
+        let payload = build_permission_response_payload(
+            "req-deny-1",
+            PermissionResponse::Deny {
+                message: "Denied by user in AI Second Brain Desktop".to_string(),
+            },
+        );
+        let expected = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": "req-deny-1",
+                "response": {
+                    "behavior": "deny",
+                    "message": "Denied by user in AI Second Brain Desktop",
+                }
+            }
+        });
+        assert_eq!(payload, expected);
+    }
+
+    /// `--permission-mode manual` is a live-confirmed *alias* for `default` on CLI 2.1.207 (the
+    /// CLI's own settings schema documents "'manual' is accepted as an alias for 'default'", and
+    /// every live `system/init` event's `permissionMode` read back `"default"` even when `manual`
+    /// was passed on the command line). This is not a parsing bug -- `parse_system_event` already
+    /// forwards whatever string the CLI sends verbatim -- but it means `PermissionMode::Manual`
+    /// does NOT make the CLI ask before every tool call the way the name implies: a plain `Bash`
+    /// echo ran with zero `control_request` in live testing, only a `Write` did. Documented here
+    /// (not asserted, since asserting a specific string the CLI could rename is asserting a
+    /// implementation detail this parser doesn't control) so the next person investigating a
+    /// "manual mode didn't ask" report starts from a measured fact instead of re-deriving it.
+    #[test]
+    fn manual_mode_flag_value_is_unchanged_by_this_investigation() {
+        assert_eq!(PermissionMode::Manual.as_flag(), "manual");
     }
 }
