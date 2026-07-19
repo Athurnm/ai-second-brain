@@ -458,6 +458,21 @@ async function loadHarnessCommands() {
     dom.commandList.innerHTML = "";
     if (commands.length === 0) {
       dom.commandList.appendChild(el("div", { class: "rail-empty", text: "No commands found" }));
+      // Older builds created workspaces without the starter commands; offer the one-click heal
+      // (backend copies only files that are missing, never overwrites user edits).
+      const restoreBtn = el("button", { class: "rail-restore-btn", text: "RESTORE STARTER COMMANDS" });
+      restoreBtn.addEventListener("click", async () => {
+        restoreBtn.disabled = true;
+        try {
+          const n = await invoke("restore_template_commands");
+          showToast(n > 0 ? `Restored ${n} starter command(s)` : "Starter commands already in place", "info");
+          await loadHarnessCommands();
+        } catch (e) {
+          showToast("Could not restore commands: " + e);
+          restoreBtn.disabled = false;
+        }
+      });
+      dom.commandList.appendChild(restoreBtn);
       return;
     }
     for (const cmd of commands) {

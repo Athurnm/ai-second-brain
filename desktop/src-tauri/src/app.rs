@@ -1460,6 +1460,71 @@ pub async fn get_workspace_status(app: tauri::AppHandle) -> Result<WorkspaceStat
     Ok(workspace_status_for(&app_data_dir))
 }
 
+/// Resolves the bundled workspace-template directory. The bundle ships `commands/` (not
+/// `.claude/commands/`) because Tauri resource globs and per-OS bundlers are unreliable with
+/// dot-directories; the map-form `resources` entry in tauri.conf.json can land the copy at
+/// either of two spots depending on dev vs. bundled build, so both are probed here.
+fn resolve_template_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let primary = app
+        .path()
+        .resolve("resources/workspace-template", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+    if primary.is_dir() {
+        return Ok(primary);
+    }
+    let fallback = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("workspace-template");
+    if fallback.is_dir() {
+        Ok(fallback)
+    } else {
+        Err(format!(
+            "bundled workspace template not found (tried {} and {})",
+            primary.display(),
+            fallback.display()
+        ))
+    }
+}
+
+/// Copies every bundled template command that is MISSING from the workspace's
+/// `.claude/commands/` into it. Never overwrites an existing file, so user edits are safe.
+/// Returns how many files were copied. This is what heals workspaces created by older builds
+/// (whose template had fewer/no commands) and bare user-chosen folders — without it, the rail
+/// shows "No commands found" forever and slash commands silently do nothing.
+pub fn sync_template_commands(app: &tauri::AppHandle) -> Result<usize, String> {
+    let Some(root) = crate::workspace::root() else {
+        return Ok(0);
+    };
+    let template_dir = resolve_template_dir(app)?;
+    let commands_src = template_dir.join("commands");
+    let commands_dst = root.join(".claude").join("commands");
+    std::fs::create_dir_all(&commands_dst).map_err(|e| e.to_string())?;
+    let mut copied = 0usize;
+    for entry in std::fs::read_dir(&commands_src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let src_path = entry.path();
+        if src_path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let dst_path = commands_dst.join(entry.file_name());
+        if dst_path.exists() {
+            continue;
+        }
+        std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
+/// Frontend-triggered variant of [`sync_template_commands`], wired to the
+/// "Restore starter commands" button in the (empty) command rail.
+#[tauri::command]
+pub async fn restore_template_commands(app: tauri::AppHandle) -> Result<usize, String> {
+    sync_template_commands(&app)
+}
+
 /// Creates a new workspace from the bundled starter template at `path` (or the default
 /// `<app_data_dir>/workspace` if `path` is `None`), then persists it as the configured workspace.
 /// Refuses to write into an existing non-empty directory.
@@ -1484,32 +1549,7 @@ pub async fn create_workspace(
         }
     }
 
-    // The bundle ships `commands/` (not `.claude/commands/`) because Tauri resource globs and
-    // per-OS bundlers are unreliable with dot-directories; the map-form `resources` entry in
-    // tauri.conf.json can land the copy at either of two spots depending on dev vs. bundled build,
-    // so both are probed here.
-    let primary = app
-        .path()
-        .resolve("resources/workspace-template", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| e.to_string())?;
-    let template_dir = if primary.is_dir() {
-        primary
-    } else {
-        let fallback = app
-            .path()
-            .resource_dir()
-            .map_err(|e| e.to_string())?
-            .join("workspace-template");
-        if fallback.is_dir() {
-            fallback
-        } else {
-            return Err(format!(
-                "bundled workspace template not found (tried {} and {})",
-                primary.display(),
-                fallback.display()
-            ));
-        }
-    };
+    let template_dir = resolve_template_dir(&app)?;
 
     std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
 

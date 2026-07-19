@@ -43,6 +43,15 @@ pub fn run() {
 
             let handle = tauri_app.handle();
 
+            // Heal older/bare workspaces: copy any bundled template command the workspace is
+            // missing (never overwrites). Without this, a workspace created by an earlier build
+            // shows "No commands found" forever and slash commands do nothing.
+            match app::sync_template_commands(handle) {
+                Ok(n) if n > 0 => eprintln!("[asb] template sync: copied {n} starter command(s)"),
+                Ok(_) => {}
+                Err(e) => eprintln!("[asb] template sync skipped: {e}"),
+            }
+
             let about_metadata = AboutMetadata {
                 name: Some("AI Second Brain".into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
@@ -111,6 +120,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app::list_harness_commands,
+            app::restore_template_commands,
             app::list_sessions,
             app::new_session,
             app::send_message,
