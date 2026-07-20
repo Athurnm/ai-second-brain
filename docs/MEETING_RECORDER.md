@@ -1,9 +1,13 @@
 # Meeting Recorder (local note-taker)
 
 Record meetings on your own machine, transcribe them locally on your GPU (or via the
-Gemini API), and get a meeting-minutes (MOM) draft automatically. This is a local,
-private alternative to a cloud recorder like Fathom. Use either or both: the recorder
-writes into the same registry Fathom does, so one meeting still produces one MOM.
+Gemini API), and get a meeting-minutes (MOM) draft automatically.
+
+**This is the default way the harness gets meeting notes.** It needs no account, no API
+key, and no per-seat subscription, and the audio never leaves your machine. A cloud
+recorder like Fathom is an optional addition rather than a prerequisite. If you do use
+one, run both: the local recorder writes into the same registry Fathom does, so one
+meeting still produces one MOM.
 
 It lives in `meeting-recorder/`. Everything is plain Python (stdlib) plus `ffmpeg`;
 the local-GPU transcription step is optional.

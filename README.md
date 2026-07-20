@@ -420,14 +420,14 @@ claude
 ```
 
 1. **Fill in `CLAUDE.md`.** Describe yourself, your work contexts, and your rules. `docs/CUSTOMIZING.md` explains each section.
-2. **Connect the tools you actually use** with `docs/SETUP.md`: Google, Slack, calendars, meeting recorders, Jira, step by step. You do not need all of them; there is a section on choosing only the skills you need. Budget 2-4 hours, mostly for Google OAuth.
+2. **Connect the tools you actually use** with `docs/SETUP.md`: Google, Slack, calendars, Jira, step by step. You do not need all of them; there is a section on choosing only the skills you need. Budget 2-4 hours, mostly for Google OAuth. Meeting notes are covered by the built-in local recorder, so there is no meeting tool to sign up for.
 3. **Start talking.** Ask it to organize a file, draft a document, or summarize a meeting.
 
 Deeper references:
 
 - **`docs/SETUP.md`** for the full install and authentication guide.
 - **`docs/CUSTOMIZING.md`** for how to write a strong `CLAUDE.md`.
-- **`docs/MEETING_RECORDER.md`** to record and transcribe meetings locally on your own machine (macOS, Windows, Linux).
+- **`docs/MEETING_RECORDER.md`** for the built-in meeting recorder: records and transcribes on your own machine (macOS, Windows, Linux) and drafts the minutes. This is the default source of meeting notes; a cloud recorder is optional.
 - **`docs/DASHBOARD.md`** to run the local visual dashboard at `http://localhost:3737`.
 - **`docs/ARCHITECTURE.md`** for how the pieces fit together.
 - **`docs/UPDATING.md`** to pull the latest template updates into your fork (or just type `/update-harness`).
