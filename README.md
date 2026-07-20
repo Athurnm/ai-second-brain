@@ -388,9 +388,10 @@ Tauri shell that opens a chat UI over **your own logged-in Claude Code CLI**.
   already have installed and drives it as a subprocess. No API key, no
   separate bill, no credential file of its own.
 - **Bundled starter workspace.** First run offers to create a small
-  markdown-only workspace for you — an inbox, a notes folder, a generic
-  `CLAUDE.md` persona, and a few example commands — or you can point it at
-  a folder you already use, including a fuller harness like this one.
+  markdown-only workspace for you, holding an inbox, a notes folder, a
+  generic `CLAUDE.md` persona, and a few example commands. You can also
+  point it at a folder you already use, including a fuller harness like
+  this one.
 - **Two permission modes only.** Manual and Accept Edits. The "skip every
   prompt" mode that exists in the underlying CLI is intentionally not
   exposed here.
