@@ -77,8 +77,20 @@ pub struct SessionMeta {
     pub supports_images: bool,
 }
 
+/// Deserialization-only fallback for a `sessions.json` entry written before `provider_id` existed.
+/// Stays `claude` forever: back then every session WAS a Claude session, so this is recovering a
+/// historical fact, not expressing a preference. Pointing those sessions at today's default would
+/// silently re-route someone's working history to a provider they never chose.
 fn default_provider_id() -> String {
-    "claude".to_string()
+    crate::providers::KIND_CLAUDE.to_string()
+}
+
+/// Provider a NEW session gets when the caller named none. Mirrors the frontend's
+/// `getDefaultProviderId()`: 9Router, the only provider that works for a user who has not paid for
+/// anything (see `crate::ninerouter`). Deliberately separate from `default_provider_id` above —
+/// same value once, different questions.
+fn default_provider_id_for_new_session() -> String {
+    crate::providers::KIND_9ROUTER.to_string()
 }
 
 /// JSON file store. Missing or corrupt file loads as an empty Vec (never panics). Every
@@ -738,6 +750,39 @@ fn parse_harness_command(name: String, content: &str) -> HarnessCommand {
 }
 
 #[cfg(test)]
+mod provider_default_tests {
+    use super::*;
+
+    /// The two defaults answer different questions and must not be collapsed back into one.
+    /// Legacy sessions predate multi-provider support and were all Claude; re-pointing them at
+    /// today's default would silently move someone's working history onto a proxy they never
+    /// chose and which is probably not even running.
+    #[test]
+    fn legacy_sessions_stay_on_claude_while_new_ones_default_to_9router() {
+        assert_eq!(default_provider_id(), crate::providers::KIND_CLAUDE);
+        assert_eq!(
+            default_provider_id_for_new_session(),
+            crate::providers::KIND_9ROUTER
+        );
+        assert_ne!(default_provider_id(), default_provider_id_for_new_session());
+    }
+
+    /// A `sessions.json` row written before the field existed must deserialize as Claude.
+    #[test]
+    fn session_meta_without_provider_id_deserializes_as_claude() {
+        // Built by round-tripping a default row and dropping the field, rather than hand-writing
+        // the JSON, so adding a future field to SessionMeta can't turn this into a test about
+        // missing fields instead of a test about the provider default.
+        let mut row = serde_json::to_value(SessionMeta::default()).unwrap();
+        row.as_object_mut().unwrap().remove("providerId");
+        assert!(row.get("providerId").is_none());
+
+        let meta: SessionMeta = serde_json::from_value(row).expect("legacy row must still parse");
+        assert_eq!(meta.provider_id, crate::providers::KIND_CLAUDE);
+    }
+}
+
+#[cfg(test)]
 mod parse_harness_command_tests {
     use super::*;
 
@@ -923,7 +968,7 @@ pub async fn new_session(
     let now = now_ms();
     let provider_id = provider_id
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(default_provider_id);
+        .unwrap_or_else(default_provider_id_for_new_session);
     let mut meta = SessionMeta {
         session_id: session_id.clone(),
         title: title.unwrap_or_else(|| "New session".to_string()),

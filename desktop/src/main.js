@@ -4357,11 +4357,15 @@ const OB_STORAGE_KEY = "asb-onboarding";
 // forgotten just because the wizard's own step layout changed.
 const OB_DEFAULT_PROVIDER_KEY = "asb-default-provider";
 
+// 9Router, not Claude, is what a brand-new user falls back to. Everyone can run it — it costs
+// nothing and needs no account — whereas defaulting to Claude means the first thing the app does
+// to someone without a subscription is refuse to work. A stored choice always wins, so anyone who
+// picked their own provider in onboarding keeps it.
 function getDefaultProviderId() {
   try {
-    return localStorage.getItem(OB_DEFAULT_PROVIDER_KEY) || KIND_CLAUDE;
+    return localStorage.getItem(OB_DEFAULT_PROVIDER_KEY) || KIND_9ROUTER;
   } catch (e) {
-    return KIND_CLAUDE;
+    return KIND_9ROUTER;
   }
 }
 
@@ -4404,11 +4408,14 @@ let obAccountState = null;
 let obWorkspaceStatus = null;
 let obCliPollTimer = null;
 let obVerifyPollTimer = null;
+// Polls 9Router's status while step 6 gates Continue on it — see `updateObNineRouterGate`.
+let obNineRouterGateTimer = null;
 let obTourIndex = 0;
 // Provider picked on step 4 ("Which AI do you already have?"). null = not chosen yet this
-// session (e.g. resuming from before step 4 was reached) — treated as "claude" wherever a
-// concrete choice is needed. See `getDefaultProviderId`/`setDefaultProviderId` for the
-// longer-lived, schema-independent copy used by new-session creation.
+// session (e.g. resuming from before step 4 was reached) — treated as 9Router wherever a concrete
+// choice is needed, matching `getDefaultProviderId`, because that is the option that works
+// without anyone having paid for anything. See `getDefaultProviderId`/`setDefaultProviderId` for
+// the longer-lived, schema-independent copy used by new-session creation.
 let obChosenProvider = null;
 // step 6 ("Connect your AI") render state: which block is primary, and whether the optional
 // "I also have a Claude subscription" link has been clicked to reveal the sign-in flow
@@ -4463,6 +4470,10 @@ function obClearStepTimers() {
   if (obVerifyPollTimer) {
     clearInterval(obVerifyPollTimer);
     obVerifyPollTimer = null;
+  }
+  if (obNineRouterGateTimer) {
+    clearInterval(obNineRouterGateTimer);
+    obNineRouterGateTimer = null;
   }
 }
 
@@ -4692,10 +4703,17 @@ async function obPollVerification() {
 // ---- step 4: which AI do you already have (provider choice) ----
 
 const OB_PROVIDER_CHOICE_COPY = {
+  [KIND_9ROUTER]: {
+    title: "Free — nothing to pay",
+    badge: "Start here",
+    blurb:
+      "Uses the free AI accounts you already have. This app sets it up for you. Pick this if you " +
+      "don't pay for an AI subscription, or if you're not sure.",
+  },
   [KIND_CLAUDE]: {
-    title: "Claude subscription",
-    badge: "Recommended",
-    blurb: "The most capable option. Sign in with the Claude account you already pay for — no API key needed.",
+    title: "I have a Claude subscription",
+    badge: "Most capable",
+    blurb: "Sign in with the Claude account you already pay for. No API key needed.",
   },
   [KIND_GLM]: {
     title: "GLM by z.ai",
@@ -4707,20 +4725,18 @@ const OB_PROVIDER_CHOICE_COPY = {
     badge: null,
     blurb: "API key, supports image attachments. No claude.ai sign-in required.",
   },
-  [KIND_9ROUTER]: {
-    title: "9Router",
-    badge: "Free",
-    blurb:
-      "No subscription and no card. Runs on this computer and uses the free AI accounts you " +
-      "already have. This app installs and starts it for you.",
-  },
 };
-// 9Router sits right after Claude: it is the answer for anyone who would otherwise stop at this
-// step because every other option costs money.
-const OB_PROVIDER_CHOICE_ORDER = [KIND_CLAUDE, KIND_9ROUTER, KIND_GLM, KIND_KIMI];
+// 9Router leads. This step is where a user without a subscription would otherwise be stuck, so
+// the first card has to be the one that always works; the paid options follow for people who
+// already have one, and each still gets its own guided setup.
+const OB_PROVIDER_CHOICE_ORDER = [KIND_9ROUTER, KIND_CLAUDE, KIND_GLM, KIND_KIMI];
 
 async function obEnterProviderChoiceStep() {
   await loadProviders();
+  // Show the free option already selected rather than leaving the step blank. Someone who does
+  // not recognise any of these names should be able to press Continue and land somewhere that
+  // works, instead of having to guess which one they are allowed to use.
+  if (!obChosenProvider) obChosenProvider = KIND_9ROUTER;
   renderObProviderChoiceCards();
 }
 
@@ -4817,17 +4833,53 @@ function renderObConnectStep() {
     if (provider) dom.obProviderKeyCard.appendChild(buildProviderCard(provider, false));
     // 9Router has no key to paste — the same step is an install-and-start step for it, so the
     // heading must not tell the user to go find a key that does not exist.
+    const is9Router = !!provider && provider.kind === KIND_9ROUTER;
     if (dom.obProviderKeyIntro) {
-      dom.obProviderKeyIntro.textContent =
-        provider && provider.kind === KIND_9ROUTER
-          ? "Install and start 9Router below, then connect your free accounts in its dashboard."
-          : "Paste your API key below, then test it — no claude.ai sign-in needed.";
+      dom.obProviderKeyIntro.textContent = is9Router
+        ? "Install and start 9Router below, then connect your free accounts in its dashboard."
+        : "Paste your API key below, then test it — no claude.ai sign-in needed.";
     }
+    // Don't let someone walk out of this step with a proxy that was never started: they would
+    // finish onboarding, type their first message, and get a connection error with no idea which
+    // step they skipped. Every other provider stays ungated, since a key can legitimately be
+    // added later from Settings.
+    updateObNineRouterGate(is9Router);
   }
 }
 
+/** Gates onboarding's Continue button on 9Router actually running.
+ *
+ *  Not a nag: the alternative is finishing the wizard, sending a first message, and getting a
+ *  connection error that names nothing the user can act on. Re-checks on a timer because the
+ *  proxy comes up from a button inside the card below, not from anything this function drives. */
+function updateObNineRouterGate(is9Router) {
+  const btn = dom.obProviderKeyContinueBtn;
+  if (!btn) return;
+
+  if (obNineRouterGateTimer) {
+    clearInterval(obNineRouterGateTimer);
+    obNineRouterGateTimer = null;
+  }
+  if (!is9Router) {
+    btn.disabled = false;
+    btn.title = "";
+    btn.textContent = "Continue";
+    return;
+  }
+
+  const paint = () => {
+    const running = !!(nineRouterStatusCache && nineRouterStatusCache.running);
+    btn.disabled = !running;
+    btn.textContent = running ? "Continue" : "Waiting for 9Router…";
+    btn.title = running ? "" : "Click Install, then Start, in the card above.";
+  };
+  paint();
+  refreshNineRouterStatus().then(paint);
+  obNineRouterGateTimer = setInterval(() => refreshNineRouterStatus().then(paint), 3000);
+}
+
 async function obEnterConnectStep() {
-  const chosen = obChosenProvider || KIND_CLAUDE;
+  const chosen = obChosenProvider || KIND_9ROUTER;
   obConnectMode = chosen === KIND_CLAUDE ? "claude" : "key";
   obAlsoClaudeRevealed = false;
   if (!providersCache) await loadProviders(); // resuming straight into step 6 skips step 4's load

@@ -19,14 +19,18 @@ you. Your API key never leaves your machine.
 
 | Provider | How you authenticate | Notes |
 | :--- | :--- | :--- |
-| **Claude Pro or Max** | Official sign-in, no API key | Most capable. The default. |
-| **9Router** | Nothing to pay, nothing to paste | Free. Runs locally, see below. |
+| **9Router** | Nothing to pay, nothing to paste | Free, runs locally. **The default.** |
+| **Claude Pro or Max** | Official sign-in, no API key | Most capable. |
 | **GLM Coding Plan** by z.ai | API key | Cheap. No image attachments. |
 | **Kimi** by Moonshot AI | API key | Supports image attachments. |
 | **Custom endpoint** | Base URL + API key | Anything Anthropic-compatible. |
 
-Pick one during onboarding, or change it per session later from the session
-settings. You can also configure several and switch between them.
+Onboarding starts you on 9Router, because it's the only option that works
+without paying anyone, and a new user shouldn't hit a wall on their first
+screen. If you already subscribe to something, pick it there instead and the
+wizard walks you through connecting it. Either way you can change it per
+session later from the session settings, configure several, and switch
+between them.
 
 ### 9Router: the free option
 
