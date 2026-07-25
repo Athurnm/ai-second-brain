@@ -226,10 +226,24 @@ async fn ensure_session_running(
     // mean nothing to that flag, so the override has to travel via `ANTHROPIC_MODEL` instead —
     // `provider_env_vars_for_session` is what threads `preferred_model` into that env overlay,
     // taking priority over the provider's own persisted default model.
-    let extra_env = provider
+    let mut extra_env = provider
         .as_ref()
         .map(|p| crate::providers::provider_env_vars_for_session(p, preferred_model.as_deref()))
         .unwrap_or_default();
+
+    // Harness runtime vars. Hooks and Python-backed skills must never assume a `python3` on PATH
+    // (there isn't one on stock Windows), so they read the managed interpreter from `ASB_PYTHON`.
+    // Only set when the venv actually exists: an env var pointing at a missing interpreter is
+    // worse than an absent one, because a skill would trust it and fail confusingly.
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        if let Some(python) = crate::runtime::resolved_python(&app_data_dir) {
+            extra_env.set(crate::runtime::ENV_PYTHON, python.to_string_lossy().as_ref());
+        }
+    }
+    extra_env.set(
+        crate::workspace::ENV_WORKSPACE,
+        repo_root.to_string_lossy().as_ref(),
+    );
     let model_flag = if is_claude_provider { preferred_model } else { None };
 
     let opts = crate::bridge::SpawnOptions {
@@ -1592,6 +1606,75 @@ pub async fn create_workspace(
     crate::workspace::set_root(target);
 
     Ok(workspace_status_for(&app_data_dir))
+}
+
+// ---- managed Python runtime ----
+
+/// Reports whether the managed interpreter exists, where `uv` was found, and whether the current
+/// workspace declares dependencies. Cheap enough to poll from the settings panel.
+#[tauri::command]
+pub async fn runtime_status(app: tauri::AppHandle) -> Result<crate::runtime::RuntimeStatus, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let workspace = crate::workspace::root();
+    Ok(crate::runtime::status(&app_data_dir, workspace.as_deref()))
+}
+
+/// Creates the managed virtualenv and installs the workspace's `requirements.txt` into it.
+/// Returns a short human-readable log for the onboarding wizard to display.
+#[tauri::command]
+pub async fn runtime_bootstrap(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let workspace = crate::workspace::root().ok_or_else(|| {
+        "No workspace is configured yet, so there are no dependencies to install.".to_string()
+    })?;
+    crate::runtime::bootstrap(&app_data_dir, &workspace).await
+}
+
+/// Deletes the managed runtime and rebuilds it from scratch. The "repair" path for when a
+/// half-finished install leaves the venv unusable.
+#[tauri::command]
+pub async fn runtime_repair(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    crate::runtime::reset(&app_data_dir)?;
+    let workspace = crate::workspace::root().ok_or_else(|| {
+        "No workspace is configured yet, so there are no dependencies to install.".to_string()
+    })?;
+    crate::runtime::bootstrap(&app_data_dir, &workspace).await
+}
+
+// ---- managed 9Router proxy ----
+
+/// Whether 9Router is installed, running, and ours. Cheap enough for the provider card to poll.
+#[tauri::command]
+pub async fn ninerouter_status() -> Result<crate::ninerouter::NineRouterStatus, String> {
+    Ok(crate::ninerouter::status().await)
+}
+
+/// `npm install -g 9router`. Minutes long on a cold cache, so the frontend must show progress
+/// rather than block.
+#[tauri::command]
+pub async fn ninerouter_install() -> Result<String, String> {
+    crate::ninerouter::install().await
+}
+
+/// Starts the proxy and waits until it answers.
+#[tauri::command]
+pub async fn ninerouter_start() -> Result<String, String> {
+    crate::ninerouter::start().await
+}
+
+/// Model ids the running proxy can route to. Empty-list and not-running both come back as errors
+/// with a next step in them, since the picker has nothing useful to show in either case.
+#[tauri::command]
+pub async fn ninerouter_models() -> Result<Vec<String>, String> {
+    crate::ninerouter::models().await
+}
+
+/// Stops the proxy, but only if this app is the one that started it.
+#[tauri::command]
+pub async fn ninerouter_stop() -> Result<(), String> {
+    crate::ninerouter::stop();
+    Ok(())
 }
 
 /// Best-effort attempt to open the OS's terminal running `claude /login`, for non-technical

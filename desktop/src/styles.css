@@ -3626,6 +3626,69 @@ button.provider-card-toggle:hover {
   align-self: flex-start;
 }
 
+/* 24a-2. 9Router sidecar controls — the install/start strip inside the 9Router provider card.
+   Unlike every other provider, this one is a process the app runs, so the card leads with a
+   live status light instead of a key field. Tones map to what the user can do next: ok = usable,
+   idle = one click away, blocked = needs something we can't install for them. */
+.ninerouter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-1);
+  padding: var(--pad-2);
+  border: var(--border-w-hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+}
+
+.ninerouter-status {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+}
+
+.ninerouter-status-label {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.ninerouter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-tertiary);
+}
+
+.ninerouter-dot.tone-ok {
+  background: var(--accent);
+}
+
+.ninerouter-dot.tone-idle {
+  background: var(--warning);
+}
+
+.ninerouter-dot.tone-blocked {
+  background: var(--danger);
+}
+
+.ninerouter-detail {
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ninerouter-log {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ninerouter-log.is-error {
+  color: var(--danger);
+}
+
 /* 24b. "Which AI do you already have?" onboarding step (step 4) — three big pickable cards,
    one per built-in provider. Distinct from `.provider-card` above (that's the collapsible
    settings/connect-step editor); these are pure selection targets, no expand/collapse. */

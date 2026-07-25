@@ -55,6 +55,7 @@ const ATTACH_MAX_BYTES = 1.5 * 1024 * 1024; // ~1.5MB before downscaling kicks i
 const KIND_CLAUDE = "claude";
 const KIND_GLM = "glm";
 const KIND_KIMI = "kimi";
+const KIND_9ROUTER = "9router";
 const KIND_CUSTOM = "custom";
 
 let providersCache = null; // masked ProviderConfig[] from list_providers, refreshed on every open/save
@@ -89,6 +90,10 @@ const MODEL_OPTIONS_BY_KIND = {
     { value: "kimi-k2-0905-preview", label: "kimi-k2-0905-preview" },
     { value: "kimi-k2-turbo-preview", label: "kimi-k2-turbo-preview" },
   ],
+  // Only "default". Which upstream model answers is 9Router's routing decision, made from the
+  // combos configured in its own dashboard; sending ANTHROPIC_MODEL would override that with a
+  // name the user never picked here.
+  [KIND_9ROUTER]: [{ value: "", label: "routed by 9Router" }],
 };
 
 // Sentinel <option> value that reveals the free-text #modelCustomInput for a KIND_CUSTOM
@@ -2160,7 +2165,12 @@ function findProviderById(id) {
 // login) is never gated here, and an unknown/not-yet-loaded provider degrades to "not blocked"
 // rather than guessing.
 function providerNeedsConnection(p) {
-  return !!p && p.kind !== KIND_CLAUDE && !p.hasKey;
+  if (!p) return false;
+  // 9Router is "connected" when the local proxy is up, not when a key exists — it usually has no
+  // key at all. Gating it on `hasKey` like the others would leave the composer permanently
+  // disabled for exactly the users this provider is meant to serve.
+  if (p.kind === KIND_9ROUTER) return !(nineRouterStatusCache && nineRouterStatusCache.running);
+  return p.kind !== KIND_CLAUDE && !p.hasKey;
 }
 
 // Shows/hides the composer banner for the current provider and returns whether sending should be
@@ -2168,10 +2178,19 @@ function providerNeedsConnection(p) {
 function updateProviderConnectBanner() {
   if (!dom.providerConnectBanner) return false;
   const p = findProviderById(activeOrDefaultProviderId());
+  // The 9Router verdict depends on live process state, so make sure we have some before judging.
+  // One fetch, then repaint — without this the banner would claim "not running" until the user
+  // happened to open Settings.
+  if (p && p.kind === KIND_9ROUTER && nineRouterStatusCache === null) {
+    refreshNineRouterStatus().then(() => updateComposerEnabled());
+  }
   const blocked = providerNeedsConnection(p);
   dom.providerConnectBanner.classList.toggle("hidden", !blocked);
   if (blocked) {
-    dom.providerConnectBannerText.textContent = `${p.label || p.id} is not connected yet — add your API key first`;
+    dom.providerConnectBannerText.textContent =
+      p.kind === KIND_9ROUTER
+        ? `${p.label || p.id} isn't running yet — open Settings and click Start`
+        : `${p.label || p.id} is not connected yet — add your API key first`;
     dom.providerConnectBanner.dataset.providerId = p.id;
   }
   return blocked;
@@ -3164,7 +3183,232 @@ const PROVIDER_GUIDES = {
     linkUrl: "https://platform.moonshot.ai",
     note: null,
   },
+  [KIND_9ROUTER]: {
+    blurb:
+      "Gratis. 9Router runs on this computer and forwards your work to the free AI accounts you " +
+      "already have (Google, GitHub, and others). Nothing is sent to us, and there is no card to add.",
+    steps: [
+      "Klik Install — this app downloads 9Router for you. Only needed once.",
+      "Klik Start, then Open dashboard: connect the free accounts you want to use. Nothing works until at least one is connected.",
+      "Balik ke sini and pick a Model that matches an account you connected. The API key box stays empty unless 9Router gave you one.",
+    ],
+    linkLabel: "What is 9Router? →",
+    linkUrl: "https://github.com/decolua/9router",
+    note: "Which AI answers depends on the accounts you connect, so quality and image support vary.",
+  },
 };
+
+// ---------------------------------------------------------------------------
+// 9Router sidecar controls (the Install → Start → Open dashboard strip)
+// ---------------------------------------------------------------------------
+//
+// Lives inside the 9Router provider card and in onboarding's connect step. The app owns the whole
+// lifecycle (see src-tauri/src/ninerouter.rs) because the target user has no terminal open, so
+// this strip is the only surface where install/start/stop happen.
+
+let nineRouterStatusCache = null;
+
+async function refreshNineRouterStatus() {
+  try {
+    nineRouterStatusCache = await invoke("ninerouter_status");
+  } catch (err) {
+    nineRouterStatusCache = null;
+  }
+  return nineRouterStatusCache;
+}
+
+/** Plain-language state, deliberately not the raw flags — "Not installed" means nothing to
+ *  someone who never installed software from a terminal. */
+function nineRouterStateCopy(st) {
+  if (!st) return { tone: "unknown", label: "Checking…", detail: "" };
+  if (st.running) {
+    return {
+      tone: "ok",
+      label: "Running",
+      detail: st.managed
+        ? "Started by this app. It stops when you close the app."
+        : "Already running on this computer (not started by this app).",
+    };
+  }
+  if (st.installed) {
+    return { tone: "idle", label: "Installed, not running", detail: "Click Start to turn it on." };
+  }
+  if (!st.npmAvailable) {
+    return {
+      tone: "blocked",
+      label: "Needs Node.js first",
+      detail:
+        "9Router is built on Node.js, which isn't on this computer yet. Install the LTS version " +
+        "from nodejs.org, then come back here.",
+    };
+  }
+  return { tone: "idle", label: "Not installed yet", detail: "Click Install — it takes a minute or two." };
+}
+
+/** Builds the control strip. `onChange` re-renders whatever container is hosting it, so the
+ *  card's status chip and the composer's provider banner stay in step with reality. */
+function buildNineRouterControls(onChange) {
+  const wrap = el("div", { class: "ninerouter-controls" });
+  const statusRow = el("div", { class: "ninerouter-status" });
+  const dot = el("span", { class: "ninerouter-dot" });
+  const label = el("span", { class: "ninerouter-status-label" });
+  statusRow.appendChild(dot);
+  statusRow.appendChild(label);
+  wrap.appendChild(statusRow);
+
+  const detail = el("p", { class: "ninerouter-detail" });
+  wrap.appendChild(detail);
+
+  const actions = el("div", { class: "provider-card-actions" });
+  const installBtn = el("button", { class: "btn btn-accent btn-small", text: "Install", attrs: { type: "button" } });
+  const startBtn = el("button", { class: "btn btn-accent btn-small", text: "Start", attrs: { type: "button" } });
+  const stopBtn = el("button", { class: "btn btn-ghost btn-small", text: "Stop", attrs: { type: "button" } });
+  const dashBtn = el("button", {
+    class: "btn btn-ghost btn-small",
+    text: "Open dashboard",
+    attrs: { type: "button" },
+  });
+  actions.appendChild(installBtn);
+  actions.appendChild(startBtn);
+  actions.appendChild(stopBtn);
+  actions.appendChild(dashBtn);
+  wrap.appendChild(actions);
+
+  const log = el("div", { class: "ninerouter-log hidden" });
+  wrap.appendChild(log);
+
+  function paint() {
+    const st = nineRouterStatusCache;
+    const copy = nineRouterStateCopy(st);
+    dot.className = "ninerouter-dot tone-" + copy.tone;
+    label.textContent = copy.label;
+    detail.textContent = copy.detail;
+
+    installBtn.classList.toggle("hidden", !!(st && st.installed));
+    installBtn.disabled = !!(st && !st.npmAvailable);
+    startBtn.classList.toggle("hidden", !st || !st.installed || st.running);
+    // Only ever offer to stop what we started; a proxy the user runs themselves is not ours.
+    stopBtn.classList.toggle("hidden", !st || !st.running || !st.managed);
+    dashBtn.classList.toggle("hidden", !st || !st.running);
+  }
+
+  /** Runs a backend command with the buttons disabled and the outcome shown inline, so a
+   *  multi-minute npm install can't be clicked twice or look frozen. */
+  async function run(btn, busyText, command) {
+    const original = btn.textContent;
+    const siblings = [installBtn, startBtn, stopBtn];
+    siblings.forEach((b) => (b.disabled = true));
+    btn.textContent = busyText;
+    log.classList.remove("hidden");
+    log.classList.remove("is-error");
+    log.textContent = busyText;
+    try {
+      const msg = await invoke(command);
+      log.textContent = typeof msg === "string" && msg ? msg : "Done.";
+    } catch (err) {
+      log.classList.add("is-error");
+      log.textContent = String(err);
+    } finally {
+      btn.textContent = original;
+      siblings.forEach((b) => (b.disabled = false));
+      await refreshNineRouterStatus();
+      paint();
+      if (onChange) onChange();
+    }
+  }
+
+  installBtn.addEventListener("click", () => run(installBtn, "Installing…", "ninerouter_install"));
+  startBtn.addEventListener("click", () => run(startBtn, "Starting…", "ninerouter_start"));
+  stopBtn.addEventListener("click", () => run(stopBtn, "Stopping…", "ninerouter_stop"));
+  dashBtn.addEventListener("click", () => {
+    const url = (nineRouterStatusCache && nineRouterStatusCache.dashboardUrl) || "http://localhost:20128";
+    invoke("plugin:opener|open_url", { url }).catch((err) => showToast("Couldn't open the dashboard: " + err));
+  });
+
+  paint();
+  // Status is fetched lazily so building the card stays synchronous like every other card here.
+  refreshNineRouterStatus().then(paint);
+  return wrap;
+}
+
+/** Model picker for 9Router.
+ *
+ *  Required, not decorative: with no model pinned, the CLI sends its own default name
+ *  ("claude-opus-4-8"), 9Router has no route for it, and every message dies on a 404 naming a
+ *  model the user never chose. The list comes from the running proxy, so it reflects exactly the
+ *  accounts they connected. */
+function buildNineRouterModelPicker(p) {
+  const wrap = el("div", { class: "ninerouter-models" });
+  const select = el("select", { class: "ob-input ninerouter-model-select" });
+  const hint = el("p", { class: "provider-note" });
+  wrap.appendChild(providerFieldRow("Model", select));
+  wrap.appendChild(hint);
+
+  function setPlaceholder(text) {
+    select.innerHTML = "";
+    select.appendChild(el("option", { text, attrs: { value: "" } }));
+    select.disabled = true;
+  }
+  setPlaceholder("Start 9Router to see models…");
+
+  async function load() {
+    if (!(nineRouterStatusCache && nineRouterStatusCache.running)) return;
+    let ids;
+    try {
+      ids = await invoke("ninerouter_models");
+    } catch (err) {
+      setPlaceholder("No models yet");
+      hint.textContent = String(err);
+      return;
+    }
+    select.innerHTML = "";
+    for (const id of ids) select.appendChild(el("option", { text: id, attrs: { value: id } }));
+    select.disabled = false;
+
+    // Auto-adopt the first model when nothing is pinned yet, so a user who just clicked Start and
+    // connected an account can send a message without first understanding what a model id is.
+    // Their own saved choice always wins, even if it is no longer offered — silently switching a
+    // deliberate pick would be worse than showing it as missing.
+    if (p.model && ids.includes(p.model)) {
+      select.value = p.model;
+      hint.textContent = "";
+    } else if (p.model) {
+      select.value = "";
+      hint.textContent = `Saved model "${p.model}" isn't offered right now. Pick another, or reconnect that account in the dashboard.`;
+    } else {
+      // This list is 9Router's catalogue of routable model names, NOT the subset the user has
+      // accounts for — the unauthenticated endpoint cannot tell us which is which. So auto-picking
+      // gets them a working default only if that account happens to be connected, and the hint has
+      // to say so rather than imply everything is ready.
+      select.value = ids[0];
+      hint.textContent =
+        "Picked for you. Whichever model you choose needs its account connected in the 9Router " +
+        "dashboard, otherwise messages come back as 'model not found'.";
+      await persist(ids[0]);
+    }
+  }
+
+  async function persist(model) {
+    try {
+      const current = (providersCache || []).find((x) => x.id === p.id) || p;
+      // Send back the masked key verbatim — upsert_provider treats the "****" sentinel as
+      // "unchanged" and keeps the real key (see providers.rs), so this never clobbers it.
+      await invoke("upsert_provider", { provider: { ...current, model } });
+      await loadProviders();
+    } catch (err) {
+      hint.textContent = "Couldn't save that model: " + err;
+    }
+  }
+
+  select.addEventListener("change", () => {
+    if (!select.value) return;
+    hint.textContent = "";
+    persist(select.value);
+  });
+
+  load();
+  return wrap;
+}
 
 async function loadProviders() {
   try {
@@ -3228,6 +3472,7 @@ function renderProviderSelectOptions() {
 }
 
 function providerStatusLabel(p) {
+  if (p.kind === KIND_9ROUTER) return nineRouterStateCopy(nineRouterStatusCache).label;
   return p.apiKey ? `Key saved (${p.apiKey})` : "Not connected";
 }
 
@@ -3376,11 +3621,22 @@ function buildProviderCard(p, isDraft) {
     }
   }
 
+  // 9Router is a process this app runs, not an account to sign into, so its card leads with the
+  // install/start controls and treats the key as the rare exception rather than the main event.
+  if (p.kind === KIND_9ROUTER) {
+    body.appendChild(buildNineRouterControls(() => renderProviderContainers()));
+    body.appendChild(buildNineRouterModelPicker(p));
+  }
+
   const keyInput = el("input", {
     class: "ob-input provider-key-input",
-    attrs: { type: "password", value: p.apiKey || "", placeholder: "Paste your API key" },
+    attrs: {
+      type: "password",
+      value: p.apiKey || "",
+      placeholder: p.kind === KIND_9ROUTER ? "Usually empty — only if 9Router gave you a key" : "Paste your API key",
+    },
   });
-  body.appendChild(providerFieldRow("API key", keyInput));
+  body.appendChild(providerFieldRow(p.kind === KIND_9ROUTER ? "API key (optional)" : "API key", keyInput));
 
   if (p.kind === KIND_CUSTOM) {
     const imagesRow = el("label", { class: "ob-checkbox-row" });
@@ -3762,6 +4018,7 @@ function grabDom() {
     obStep6BackBtn: document.getElementById("obStep6BackBtn"),
     obOpenLoginBtn: document.getElementById("obOpenLoginBtn"),
     obRecheckAuthBtn: document.getElementById("obRecheckAuthBtn"),
+    obProviderKeyIntro: document.getElementById("obProviderKeyIntro"),
     obProviderKeyContinueBtn: document.getElementById("obProviderKeyContinueBtn"),
 
     // Step 7 — workspace
@@ -4450,8 +4707,17 @@ const OB_PROVIDER_CHOICE_COPY = {
     badge: null,
     blurb: "API key, supports image attachments. No claude.ai sign-in required.",
   },
+  [KIND_9ROUTER]: {
+    title: "9Router",
+    badge: "Free",
+    blurb:
+      "No subscription and no card. Runs on this computer and uses the free AI accounts you " +
+      "already have. This app installs and starts it for you.",
+  },
 };
-const OB_PROVIDER_CHOICE_ORDER = [KIND_CLAUDE, KIND_GLM, KIND_KIMI];
+// 9Router sits right after Claude: it is the answer for anyone who would otherwise stop at this
+// step because every other option costs money.
+const OB_PROVIDER_CHOICE_ORDER = [KIND_CLAUDE, KIND_9ROUTER, KIND_GLM, KIND_KIMI];
 
 async function obEnterProviderChoiceStep() {
   await loadProviders();
@@ -4549,6 +4815,14 @@ function renderObConnectStep() {
     const provider = (providersCache || []).find((p) => p.id === obChosenProvider);
     dom.obProviderKeyCard.innerHTML = "";
     if (provider) dom.obProviderKeyCard.appendChild(buildProviderCard(provider, false));
+    // 9Router has no key to paste — the same step is an install-and-start step for it, so the
+    // heading must not tell the user to go find a key that does not exist.
+    if (dom.obProviderKeyIntro) {
+      dom.obProviderKeyIntro.textContent =
+        provider && provider.kind === KIND_9ROUTER
+          ? "Install and start 9Router below, then connect your free accounts in its dashboard."
+          : "Paste your API key below, then test it — no claude.ai sign-in needed.";
+    }
   }
 }
 

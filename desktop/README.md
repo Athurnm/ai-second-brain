@@ -1,35 +1,79 @@
 # AI Second Brain Desktop
 
-A free, native desktop chat UI over **your own logged-in Claude Code CLI**.
+A free, native desktop chat UI that runs on **your own AI subscription**.
 It's not a standalone chat client and it doesn't talk to any API on your
-behalf — every session it opens is a real `claude` CLI process running on
+behalf. Every session it opens is a real `claude` CLI process running on
 your machine, with a workspace folder of markdown files as its working
 directory, so whatever `CLAUDE.md` and `.claude/commands/` you have there
 load exactly as they would if you ran `claude` in a terminal.
 
-Built with Tauri v2 (Rust shell, vanilla JS frontend — no bundler, no CDN,
-no embedded terminal). Ships as a native binary for Linux, macOS, and
-Windows.
+Built with Tauri v2, a Rust shell with a vanilla JS frontend, no bundler,
+no CDN, no embedded terminal. Ships as a native binary for Linux, macOS,
+and Windows.
 
-## Auth: subscription, not API key
+## Which AI subscription
 
-This app never talks to `api.anthropic.com` directly and never asks you for
-an API key or stores a credential file of its own. It authenticates purely
-by spawning the `claude` CLI binary already installed and logged in on your
-machine, and driving it over stdin/stdout as a subprocess (`stream-json` in,
-`stream-json` out). Usage is billed the same way a terminal session would
-be, against your existing Claude subscription — this app has no separate
-billing relationship with Anthropic and no way to run up a bill you didn't
-already agree to.
+The `claude` CLI is the engine, but it is not locked to Anthropic. It talks
+to any Anthropic-compatible endpoint, so the app lets you pick who bills
+you. Your API key never leaves your machine.
 
-If `claude` isn't installed or isn't logged in, the app doesn't silently
-fall back to some other mode. It walks you through installing and
-authenticating it on first run (see **Onboarding** below), and if that ever
-breaks later, it surfaces an honest error instead of degrading quietly.
+| Provider | How you authenticate | Notes |
+| :--- | :--- | :--- |
+| **Claude Pro or Max** | Official sign-in, no API key | Most capable. The default. |
+| **9Router** | Nothing to pay, nothing to paste | Free. Runs locally, see below. |
+| **GLM Coding Plan** by z.ai | API key | Cheap. No image attachments. |
+| **Kimi** by Moonshot AI | API key | Supports image attachments. |
+| **Custom endpoint** | Base URL + API key | Anything Anthropic-compatible. |
+
+Pick one during onboarding, or change it per session later from the session
+settings. You can also configure several and switch between them.
+
+### 9Router: the free option
+
+[9Router](https://github.com/decolua/9router) is an open-source proxy that
+forwards your work to the free AI accounts you already have, behind one
+Anthropic-compatible endpoint. The app manages it for you: **Install**,
+**Start**, and **Open dashboard** are buttons on its provider card, so you
+never touch a terminal. It needs Node.js on the machine; if that's missing
+the card says so and points at the download, because installing a runtime
+system-wide is the one step the app won't do behind your back.
+
+Details worth knowing:
+
+- It listens on `127.0.0.1:20128` only. Its own default binds every network
+  interface, which would expose a proxy holding your AI accounts to the whole
+  office or cafe network, so the app overrides that.
+- Which AI actually answers depends on the accounts you connect in its
+  dashboard, so quality and image support vary by request.
+- Its process is a child of this app and stops when you close the app. A
+  9Router you started yourself in a terminal is left alone.
+- Its own settings live in `~/.9router` (`%APPDATA%\9router` on Windows).
+
+## Auth: subscription, not API key resale
+
+This app never talks to `api.anthropic.com` on your behalf and has no
+credential store of its own beyond the keys you explicitly paste in. It
+authenticates by spawning the `claude` CLI binary already installed on your
+machine and driving it over stdin/stdout as a subprocess, `stream-json` in
+and `stream-json` out.
+
+On Claude, usage is billed the same way a terminal session would be,
+against your existing subscription. This app has no billing relationship
+with Anthropic and no way to run up a bill you didn't already agree to. On
+the other providers, the app sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`,
+and `ANTHROPIC_MODEL` for that session only, and those keys are stored
+locally and shown masked everywhere in the UI.
+
+If `claude` isn't installed, or your chosen provider isn't configured, the
+app doesn't silently fall back to some other mode. It walks you through
+setup on first run (see **Onboarding** below), and if that ever breaks
+later, it surfaces an honest error instead of degrading quietly.
 
 ## Installing the Claude Code CLI
 
-If you don't already have it:
+The CLI is the engine for **every** provider, not just Claude, so you need
+it installed even if you plan to run on GLM or Kimi. If you don't already
+have it:
 
 **macOS / Linux**
 ```bash
@@ -46,9 +90,10 @@ irm https://claude.ai/install.ps1 | iex
 npm install -g @anthropic-ai/claude-code
 ```
 
-Then run `claude` once in a terminal and complete the login flow. The app
-checks for both of these on first launch and will tell you which step is
-still missing.
+If you're going with Claude, then run `claude` once in a terminal and
+complete the login flow. On the other providers you paste an API key into
+the app instead and skip the sign-in entirely. The app checks all of this
+on first launch and tells you which step is still missing.
 
 ## Onboarding (first run)
 
@@ -75,9 +120,10 @@ describes how you want the assistant to behave, and a `.claude/commands/`
 folder of slash commands that show up in the app's left rail.
 
 On first run, the app offers to create one for you from a small bundled
-starter template — a generic `CLAUDE.md` persona, a README, and four
-example commands (`/daily-review`, `/capture-note`, `/weekly-reflect`,
-`/organize-inbox`). It's markdown only: no scripts, no hooks, nothing that
+starter template — a generic `CLAUDE.md` persona, a README, and eight
+example commands (`/capture-note`, `/connect-tools`, `/daily-review`,
+`/follow-ups`, `/inbox-sweep`, `/meeting-prep`, `/organize-inbox`,
+`/weekly-reflect`). It's markdown only: no scripts, no hooks, nothing that
 runs automatically without you asking for it.
 
 You can also point the app at **any existing folder** instead — including

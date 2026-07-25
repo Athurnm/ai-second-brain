@@ -20,7 +20,18 @@ use crate::bridge::CommandNoWindowExt;
 pub const KIND_CLAUDE: &str = "claude";
 pub const KIND_GLM: &str = "glm";
 pub const KIND_KIMI: &str = "kimi";
+/// Locally-managed 9Router proxy — see `crate::ninerouter`. Unlike the other non-Claude kinds this
+/// one has no account of its own: the accounts live inside 9Router's dashboard, and the app's job
+/// is only to run the process and point sessions at it.
+pub const KIND_9ROUTER: &str = "9router";
 pub const KIND_CUSTOM: &str = "custom";
+
+/// Stand-in `ANTHROPIC_AUTH_TOKEN` for a keyless 9Router. A local 9Router with no endpoint key
+/// configured accepts requests regardless of the token (verified against 0.5.40), but the `claude`
+/// CLI still wants *something* in the variable once a base URL is overridden, and leaving it unset
+/// makes the CLI fall back to subscription auth against a non-Anthropic host. Any user-entered key
+/// takes priority over this.
+const NINEROUTER_PLACEHOLDER_TOKEN: &str = "9router-local";
 
 /// Sentinel prefix `upsert_provider` recognizes as "unchanged" — `list_providers` never returns
 /// a raw key, so the frontend echoes back the masked value it was shown; without this guard a
@@ -121,7 +132,7 @@ fn is_masked_sentinel(key: &Option<String>) -> bool {
 }
 
 pub fn is_builtin_id(id: &str) -> bool {
-    id == KIND_CLAUDE || id == KIND_GLM || id == KIND_KIMI
+    id == KIND_CLAUDE || id == KIND_GLM || id == KIND_KIMI || id == KIND_9ROUTER
 }
 
 fn builtin_defaults() -> Vec<ProviderConfig> {
@@ -154,6 +165,21 @@ fn builtin_defaults() -> Vec<ProviderConfig> {
             api_key: None,
             model: Some("kimi-k2-0905-preview".to_string()),
             supports_images: true,
+            enabled: true,
+        },
+        ProviderConfig {
+            id: KIND_9ROUTER.to_string(),
+            kind: KIND_9ROUTER.to_string(),
+            label: "9Router (free tiers, runs on this computer)".to_string(),
+            // Must carry the `/v1` suffix — see `ninerouter::api_base_url`.
+            base_url: Some(crate::ninerouter::api_base_url()),
+            api_key: None,
+            // No model override: which upstream model serves a request is 9Router's routing
+            // decision, made from the combos the user configured in its dashboard. Pinning
+            // `ANTHROPIC_MODEL` here would fight that.
+            model: None,
+            // Depends entirely on which upstream the user routes to, so promise nothing.
+            supports_images: false,
             enabled: true,
         },
     ]
@@ -336,10 +362,20 @@ pub fn provider_env_vars(provider: &ProviderConfig) -> EnvOverlay {
         if let Some(base_url) = &provider.base_url {
             vars.push(("ANTHROPIC_BASE_URL".to_string(), base_url.clone()));
         }
-        if let Some(api_key) = &provider.api_key {
-            if !api_key.is_empty() {
-                vars.push(("ANTHROPIC_AUTH_TOKEN".to_string(), api_key.clone()));
+        match provider.api_key.as_deref().filter(|k| !k.is_empty()) {
+            Some(api_key) => {
+                vars.push(("ANTHROPIC_AUTH_TOKEN".to_string(), api_key.to_string()));
             }
+            // 9Router is the one provider that is usable before the user has any key at all —
+            // see `NINEROUTER_PLACEHOLDER_TOKEN`. Every other kind stays unset, so a missing key
+            // surfaces as an auth error instead of a confusing routing error.
+            None if provider.kind == KIND_9ROUTER => {
+                vars.push((
+                    "ANTHROPIC_AUTH_TOKEN".to_string(),
+                    NINEROUTER_PLACEHOLDER_TOKEN.to_string(),
+                ));
+            }
+            None => {}
         }
         if let Some(model) = &provider.model {
             vars.push(("ANTHROPIC_MODEL".to_string(), model.clone()));
@@ -375,6 +411,19 @@ pub struct EnvOverlay(Vec<(String, String)>);
 impl EnvOverlay {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Adds a non-provider variable to the overlay. Used for the harness runtime vars
+    /// (`ASB_PYTHON`, `ASB_WORKSPACE`) so every spawned session reaches the CLI through a single
+    /// env path instead of two. Overwrites an existing entry with the same key rather than
+    /// appending a duplicate, since `Command::env` would silently take the last one anyway.
+    pub fn set(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        let key = key.into();
+        let value = value.into();
+        match self.0.iter_mut().find(|(k, _)| *k == key) {
+            Some(slot) => slot.1 = value,
+            None => self.0.push((key, value)),
+        }
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, (String, String)> {
@@ -481,8 +530,20 @@ pub async fn test_provider(
         };
     }
 
-    let Some(api_key) = provider.api_key.clone().filter(|k| !k.is_empty()) else {
-        return Err(format!("no API key set for provider \"{}\"", provider.label));
+    // 9Router: a key is optional (the proxy may run without an endpoint key), but the process has
+    // to actually be up — testing it while it is stopped would otherwise fail with a bare
+    // connection-refused that tells the user nothing about what to do.
+    if provider.kind == KIND_9ROUTER {
+        let status = crate::ninerouter::status().await;
+        if !status.running {
+            return Err("9Router isn't running yet. Start it first, then test again.".to_string());
+        }
+    }
+
+    let api_key = match provider.api_key.clone().filter(|k| !k.is_empty()) {
+        Some(k) => k,
+        None if provider.kind == KIND_9ROUTER => NINEROUTER_PLACEHOLDER_TOKEN.to_string(),
+        None => return Err(format!("no API key set for provider \"{}\"", provider.label)),
     };
 
     let bin = crate::bridge::resolve_claude_bin().map_err(|e| e.to_string())?;
@@ -585,7 +646,9 @@ mod tests {
     fn missing_file_does_not_panic_and_yields_builtin_defaults() {
         let path = temp_path("missing");
         let store = ProviderStore::load(path.clone());
-        assert_eq!(store.list_raw().len(), 3);
+        // Against `builtin_defaults()` rather than a literal count, so adding a preset does not
+        // fail a test that is really about "a missing file yields the built-ins".
+        assert_eq!(store.list_raw().len(), builtin_defaults().len());
         let _ = std::fs::remove_file(&path);
     }
 
@@ -594,7 +657,7 @@ mod tests {
         let path = temp_path("corrupt");
         std::fs::write(&path, "{ not valid json").unwrap();
         let store = ProviderStore::load(path.clone());
-        assert_eq!(store.list_raw().len(), 3);
+        assert_eq!(store.list_raw().len(), builtin_defaults().len());
         let _ = std::fs::remove_file(&path);
     }
 
@@ -695,14 +758,72 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// 9Router is usable before the user has any key, but the CLI still needs a token once a base
+    /// URL override is in play — an empty `ANTHROPIC_AUTH_TOKEN` makes it fall back to
+    /// subscription auth against a non-Anthropic host.
+    #[test]
+    fn ninerouter_gets_a_placeholder_token_when_no_key_is_set() {
+        let p = builtin_defaults()
+            .into_iter()
+            .find(|p| p.id == KIND_9ROUTER)
+            .expect("9router is a built-in");
+        assert!(p.api_key.is_none());
+
+        let vars = provider_env_vars(&p).into_vec();
+        let token = vars
+            .iter()
+            .find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(token, Some(NINEROUTER_PLACEHOLDER_TOKEN));
+
+        let base = vars.iter().find(|(k, _)| k == "ANTHROPIC_BASE_URL").map(|(_, v)| v.as_str());
+        assert_eq!(base, Some(crate::ninerouter::api_base_url().as_str()));
+        assert!(base.unwrap().ends_with("/v1"));
+
+        // Routing is 9Router's job — pinning a model would override the user's combo config.
+        assert!(!vars.iter().any(|(k, _)| k == "ANTHROPIC_MODEL"));
+    }
+
+    /// The placeholder is a fallback, never an override.
+    #[test]
+    fn a_real_ninerouter_key_beats_the_placeholder() {
+        let mut p = builtin_defaults()
+            .into_iter()
+            .find(|p| p.id == KIND_9ROUTER)
+            .unwrap();
+        p.api_key = Some("9r_realkey".to_string());
+        let vars = provider_env_vars(&p).into_vec();
+        assert_eq!(
+            vars.iter().find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN").map(|(_, v)| v.as_str()),
+            Some("9r_realkey")
+        );
+    }
+
+    /// Every other kind must keep failing loudly on a missing key.
+    #[test]
+    fn other_kinds_get_no_placeholder_token() {
+        for id in [KIND_GLM, KIND_KIMI] {
+            let p = builtin_defaults().into_iter().find(|p| p.id == id).unwrap();
+            let vars = provider_env_vars(&p).into_vec();
+            assert!(
+                !vars.iter().any(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN"),
+                "{id} must not get a token it did not configure"
+            );
+        }
+    }
+
     #[test]
     fn builtin_providers_cannot_be_removed() {
         let path = temp_path("protect_builtin");
         let store = ProviderStore::load(path.clone());
-        assert!(store.remove("claude").is_err());
-        assert!(store.remove("glm").is_err());
-        assert!(store.remove("kimi").is_err());
-        assert_eq!(store.list_raw().len(), 3);
+        for def in builtin_defaults() {
+            assert!(
+                store.remove(&def.id).is_err(),
+                "built-in {} must be protected from removal",
+                def.id
+            );
+        }
+        assert_eq!(store.list_raw().len(), builtin_defaults().len());
         let _ = std::fs::remove_file(&path);
     }
 

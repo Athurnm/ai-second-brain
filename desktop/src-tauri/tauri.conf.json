@@ -32,7 +32,10 @@
     ],
     "resources": {
       "resources/workspace-template": "workspace-template"
-    }
+    },
+    "externalBin": [
+      "binaries/uv"
+    ]
   },
   "plugins": {
     "updater": {

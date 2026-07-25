@@ -2,7 +2,9 @@ mod account;
 mod app;
 mod bridge;
 mod dashboard;
+mod ninerouter;
 mod providers;
+mod runtime;
 mod viewer;
 mod workspace;
 
@@ -90,6 +92,28 @@ pub fn run() {
 
             tauri_app.set_menu(menu)?;
 
+            // 9Router: bring the proxy back up for a user who actually depends on it, so their
+            // existing sessions work on the first message instead of failing with a connection
+            // refused. Deliberately keyed on "some session already uses it" rather than on the
+            // provider being enabled — every install has it enabled by default, and starting a
+            // proxy nobody asked for would be a surprise process on their machine.
+            {
+                let uses_9router = tauri_app
+                    .state::<app::AppState>()
+                    .store
+                    .list()
+                    .iter()
+                    .any(|s| s.provider_id == providers::KIND_9ROUTER);
+                if uses_9router {
+                    tauri::async_runtime::spawn(async move {
+                        match ninerouter::start().await {
+                            Ok(msg) => eprintln!("[asb] 9router: {msg}"),
+                            Err(e) => eprintln!("[asb] 9router autostart skipped: {e}"),
+                        }
+                    });
+                }
+            }
+
             // Telemetry: record this launch, then flush immediately (best-effort, never blocks
             // startup) and again on a 5-minute interval for the life of the process.
             account::record_event_internal(handle, "app_open", serde_json::json!({}));
@@ -110,6 +134,14 @@ pub fn run() {
             });
 
             Ok(())
+        })
+        // The managed 9Router child is held in a static, which never drops, so `kill_on_drop`
+        // alone would leave the proxy running after the app quits — holding port 20128 against
+        // the next launch. Kill it when the last window goes away.
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                ninerouter::stop();
+            }
         })
         .on_menu_event(|app, event| {
             if event.id() == "visit-ai-circle" {
@@ -139,6 +171,14 @@ pub fn run() {
             app::create_workspace,
             app::choose_workspace,
             app::open_login_terminal,
+            app::runtime_status,
+            app::runtime_bootstrap,
+            app::runtime_repair,
+            app::ninerouter_status,
+            app::ninerouter_install,
+            app::ninerouter_start,
+            app::ninerouter_stop,
+            app::ninerouter_models,
             viewer::read_workspace_file,
             dashboard::dashboard_summary,
             account::get_account_status,
