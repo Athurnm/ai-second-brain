@@ -33,7 +33,9 @@
         "offpeak_mult_after_promo": 2,
         "promo_until": "2026-09-30",
         "_promo_note": "Off-peak charged 1x (not 2x) through end of Sep 2026; after that set offpeak to 2x. Peak is always 3x."
-      }
+      },
+      "retired": true,
+      "_retired_note": "Subscription ended; retired from all chains 2026-07-27. Kept for cost-history replay and easy restore."
     }
   },
   "known_agy_models": [
@@ -144,25 +146,13 @@
     "_bulk_cheap_note": "OWNER DECISION 2026-07-04: Gemini Flash stays lead for harvest even though the cost log shows GLM is cheaper per-call. Reason: the Gemini (agy) subscription is rarely used otherwise, so subscription utilization outweighs the per-call savings. Do NOT 'optimize' this back to GLM-first based on agy_usage_log alone.",
     "bulk-cheap": [
       "Gemini 3.5 Flash (High)",
-      {
-        "backend": "zai",
-        "model": "glm-5.2"
-      },
       "Gemini 3.1 Pro (Low)"
     ],
     "reasoning": [
-      {
-        "backend": "zai",
-        "model": "glm-5.2"
-      },
       "Gemini 3.1 Pro (High)",
       "GPT-OSS 120B (Medium)"
     ],
     "cross-lineage": [
-      {
-        "backend": "zai",
-        "model": "glm-5.2"
-      },
       "GPT-OSS 120B (Medium)",
       "Gemini 3.1 Pro (High)",
       {
@@ -172,20 +162,15 @@
     ],
     "long-context": [
       "Gemini 3.1 Pro (High)",
-      "Gemini 3.5 Flash (High)",
-      {
-        "backend": "zai",
-        "model": "glm-5.2"
-      }
+      "Gemini 3.5 Flash (High)"
     ],
     "draft": [
-      {
-        "backend": "zai",
-        "model": "glm-5.2"
-      },
+      "Gemini 3.5 Flash (High)",
       "Gemini 3.1 Pro (High)"
     ],
-    "image": "NOT handled by the bridge -> use the gemini-image skill (gemini-3-pro-image / imagen-4.0)."
+    "_draft_flash_note": "OWNER DECISION 2026-07-22: Gemini 3.5 Flash promoted to HEAD of the draft chain (was glm-5.2-first), same rationale as bulk-cheap -> utilize the idle Gemini/agy subscription. glm-5.2 stays fallback #2. reasoning/critic intentionally NOT changed: GLM keeps the lead there for reasoning depth + cross-lineage diversity.",
+    "image": "NOT handled by the bridge -> use the gemini-image skill. Default image model is gemini-3-pro-image ('Nano Banana', pro 3.1 tier; set 2026-07-22); imagen-4.0 only when true aspect-ratio control is needed.",
+    "_zai_retired_note": "z.ai / glm-5.2 REMOVED from every chain 2026-07-27: the GLM Coding Plan subscription is no longer active and live probes return an error, so leaving it in a chain only bought a guaranteed failed attempt before the Gemini fallback answered. Gemini via agy now heads every capability. The zai backend definition is kept under backends.zai so re-subscribing is a one-line restore, but do NOT re-add it to a chain without a passing --doctor probe first."
   },
   "tasks": {
     "harvest": {

@@ -25,6 +25,28 @@ The caller provides: the draft text, the draft type (PRD / MOM / Slack / weekly 
 5. **Slack-specific**: channel target appropriate for the content; Slack permalink included when replying about a specific task.
 6. **Sourcing**: flag any claim that looks inferred rather than sourced (no source file / transcript / message cited). **Quote-the-line gate:** only raise this if you can quote the exact draft sentence at issue. If you cannot point at a specific concrete claim, do not raise a sourcing issue. No vague "some claims seem unsourced" findings.
 
+7. **Invented requirements (PRD / BRD, blocker-level)**: flag every requirement stated as committed scope that cites no source. A source means a Fathom recording URL or ID, a dated meeting with its MOM, or a named decision with the person and the date. "The team agreed", "per discussion", and "as aligned" are not sources.
+
+   **Quote-the-line gate applies.** Quote the exact requirement sentence. If you cannot quote it, do not raise it.
+
+   **Check the PRD's provenance state first.** It is either sourced or it carries `Provenance: NOT AUTHORITATIVE` plus the banner under the title. Neither state present is itself a blocker.
+
+   **High-risk categories.** These are where invented requirements cluster. Treat an unsourced requirement in any of them as a blocker, not a minor:
+
+   - security
+   - compliance
+   - audit trail
+   - biometric
+   - encryption
+   - GDPR
+   - ML or any model-driven scoring
+   - gamification
+   - notifications
+
+   **Precedent, why this is blocker-level.** MBA-237 biometric point protection reached a live sprint as a story generated from an unsourced PRD. Its owner disowned it on 20 Jul 2026. Flag the requirement, but do not assert it is invented without checking a real source first. A sibling CMS audit-trail story was flagged the same way and turned out legitimate, because Work has a compliance owner. Report the missing source, do not pronounce the verdict.
+
+   Report each as: `[blocker] invented-requirement: "<quoted sentence>" - <category>, no cited source.`
+
 ## Output format
 
 ```

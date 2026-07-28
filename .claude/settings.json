@@ -15,8 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session_git_sync.sh\"",
-            "shell": "bash",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session_git_sync.py\"",
             "timeout": 45,
             "statusMessage": "Syncing with GitHub..."
           }
@@ -26,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/dashboard_context.py\"'",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/dashboard_context.py\"",
             "timeout": 10,
             "statusMessage": "Loading dashboard context (trimmed)..."
           }
@@ -36,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/wib_clock.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/wib_clock.py\"",
             "timeout": 5,
             "statusMessage": "Checking WIB clock..."
           }
@@ -46,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/glm_mode.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/glm_mode.py\"",
             "timeout": 5,
             "statusMessage": "Checking GLM mode..."
           }
@@ -56,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/routing_mode.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/routing_mode.py\"",
             "timeout": 5,
             "statusMessage": "Checking routing mode..."
           }
@@ -76,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/upstream_check.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/upstream_check.py\"",
             "timeout": 15,
             "statusMessage": "Checking for harness updates..."
           }
@@ -89,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/slack_send_guard.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/slack_send_guard.py\"",
             "timeout": 10
           }
         ]
@@ -101,7 +100,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/drive_verify.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/drive_verify.py\"",
             "timeout": 10
           }
         ]
@@ -111,7 +110,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/emdash_guard.sh\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/emdash_guard.py\"",
             "timeout": 10
           }
         ]

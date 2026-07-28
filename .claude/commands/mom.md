@@ -12,7 +12,7 @@ MOM workflow (Work):
 4. Before presenting: spawn the `draft-reviewer` subagent (type "MOM"). Fix issues, then present to the owner.
 5. After the owner approves, create the Google Doc:
    `timeout 180s python3 .agent/skills/gdocs-create/gdocs_create.py create-doc --title "..." --file <path> --account work`
-6. If decisions affect active tasks → update `journal/todo.md` (and flag follow-ups for `journal/master_followup_tracker.md`).
+6. If decisions affect active tasks → update `journal/todo.md`. Other people's action items that block the owner go into the waiting-on ledger, not `journal/todo.md` - see step 6b.
 6b. Register the meeting's outcomes in the ledgers (they are the source of truth for later briefings):
    - Every decision surfaced in the meeting → `python3 .agent/skills/decision-log/scripts/decision_log.py add --title "..." --decider "<name>" [--deadline YYYY-MM-DD] [--project "..."] --source <fathom_url> --source-type fathom [--stakeholders "A,B"]`. If it was actually decided in-meeting, follow with `decision_log.py decide <DEC-id> --decision "<what was decided>"`.
    - Every action item where OWNER is the owner → `python3 .agent/skills/commitment-ledger/scripts/commitment_ledger.py add --text "..." --to "<requester>" [--due YYYY-MM-DD] [--project "..."] --source <fathom_url>`.

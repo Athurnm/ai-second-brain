@@ -762,6 +762,19 @@ def _main_logic(mode, dry_run=False):
     else:
         print("[10-11] Plan comparison/GitHub: SKIPPED (morning mode)", flush=True)
 
+    # ── Step 10.6: Followup Tracker Render (both modes) ───────────────
+    # journal/master_followup_tracker.md is a generated view over the PM
+    # ledgers (commitments/waiting_on/decisions), not hand-maintained. This
+    # keeps it mechanically fresh even if the Claude-driven SOP step is
+    # skipped. Cheap (three `report` subprocess calls), safe to run in both
+    # morning and evening mode.
+    print("[10.6] Rendering followup tracker...", flush=True)
+    tracker_script = os.path.join(BASE_DIR, '.agent', 'skills', 'project-tracking-update',
+                                   'scripts', 'render_followup_tracker.py')
+    out = _step("Followup Tracker Render", [sys.executable, tracker_script], timeout=60)
+    sections.append(f"## Followup Tracker Render\n```\n{out}\n```\n")
+    write_output(sections, output_file)
+
     # ── Write morning plan file (Morning only) ───────────────────────
     if is_morning:
         # Extract a summary of priorities from the collected data for plan file

@@ -66,6 +66,16 @@ BOARDS = {
     }
 }
 
+# Each board belongs to exactly ONE of the owner's four portfolios. This map is the
+# mechanical portfolio boundary: a Marketplace sprint review reads board 52 only,
+# never MPS (Platform) or MSP/STOR (E-Commerce Solution).
+PORTFOLIO_BOARDS = {
+    'marketplace': [52],
+    'platform': [76],
+    'b2c': [508],
+    'ecom-solution': [608, 674],
+}
+
 def standardize_status(status_name):
     """Maps custom Jira status names to a standard set for clear reporting."""
     s = status_name.upper().strip()
@@ -98,15 +108,24 @@ def fetch_board_active_sprint_and_issues(board_id, info):
         sprint_name = sprint["name"]
         end_date = sprint.get("endDate", "N/A")[:10]
         
-        # Query issues for the active sprint
-        issues_url = f"https://{domain}/rest/agile/1.0/sprint/{sprint_id}/issue?maxResults=100&fields=summary,status,assignee,issuetype,parent"
-        issues_resp = requests.get(issues_url, headers=HEADERS, auth=AUTH, timeout=25)
-        if issues_resp.status_code != 200:
-            return {"error": f"Sprint Issues API Error {issues_resp.status_code}"}
-            
-        issues_data = issues_resp.json()
-        issues = issues_data.get("issues", [])
-        
+        # Query issues for the active sprint. Paginate: a busy board runs past
+        # the 100-issue page cap and a truncated board silently understates the
+        # sprint. `updated` is required for the staleness check downstream.
+        fields = "summary,status,assignee,issuetype,parent,updated"
+        issues, start_at = [], 0
+        while True:
+            issues_url = (f"https://{domain}/rest/agile/1.0/sprint/{sprint_id}/issue"
+                          f"?startAt={start_at}&maxResults=100&fields={fields}")
+            issues_resp = requests.get(issues_url, headers=HEADERS, auth=AUTH, timeout=25)
+            if issues_resp.status_code != 200:
+                return {"error": f"Sprint Issues API Error {issues_resp.status_code}"}
+            issues_data = issues_resp.json()
+            page = issues_data.get("issues", [])
+            issues.extend(page)
+            start_at += len(page)
+            if not page or start_at >= issues_data.get("total", 0):
+                break
+
         return {
             "sprint_name": sprint_name,
             "end_date": end_date,
@@ -115,6 +134,66 @@ def fetch_board_active_sprint_and_issues(board_id, info):
         }
     except Exception as e:
         return {"error": f"Connection exception: {str(e)}"}
+
+def sprint_status(portfolio, stale_before=None):
+    """Active-sprint snapshot for ONE portfolio, as JSON-able data.
+
+    Consumed by premeeting_cards.py so a sprint-review card carries real ticket
+    status instead of only ledger items. Returns counts, the open (not-done)
+    issues, assignee concentration, and issues untouched since `stale_before`
+    (YYYY-MM-DD) so a reviewer can see what is parked rather than moving.
+    """
+    board_ids = PORTFOLIO_BOARDS.get(portfolio)
+    if not board_ids:
+        return {"error": f"unknown portfolio {portfolio!r}", "portfolio": portfolio}
+
+    boards = []
+    for bid in board_ids:
+        info = BOARDS.get(bid)
+        if not info:
+            continue
+        data = fetch_board_active_sprint_and_issues(bid, info)
+        if data.get("error"):
+            boards.append({"board_id": bid, "name": info["name"], "error": data["error"]})
+            continue
+
+        by_status, by_assignee, open_issues, stale = {}, {}, [], []
+        done = 0
+        for issue in data.get("issues", []):
+            f = issue.get("fields", {})
+            status = (f.get("status") or {}).get("name", "Unknown")
+            std = standardize_status(status)
+            by_status[status] = by_status.get(status, 0) + 1
+            if std == "DONE":
+                done += 1
+                continue
+            who = ((f.get("assignee") or {}).get("displayName")) or "UNASSIGNED"
+            by_assignee[who] = by_assignee.get(who, 0) + 1
+            updated = (f.get("updated") or "")[:10]
+            row = {"key": issue.get("key"), "summary": f.get("summary", ""),
+                   "status": status, "assignee": who, "updated": updated}
+            open_issues.append(row)
+            if stale_before and updated and updated < stale_before:
+                stale.append(row)
+
+        total = len(data.get("issues", []))
+        boards.append({
+            "board_id": bid,
+            "name": info["name"],
+            "project_key": info["project_key"],
+            "domain": info["domain"],
+            "sprint_name": data.get("sprint_name"),
+            "end_date": data.get("end_date"),
+            "total": total,
+            "done": done,
+            "open": len(open_issues),
+            "by_status": by_status,
+            "by_assignee": dict(sorted(by_assignee.items(), key=lambda kv: -kv[1])),
+            "open_issues": open_issues,
+            "stale": sorted(stale, key=lambda r: r["updated"]),
+        })
+
+    return {"portfolio": portfolio, "boards": boards}
 
 def verify_all_connections():
     """Runs a quick pre-flight connectivity verification for all configured boards."""
@@ -278,6 +357,15 @@ def main():
     elif action == "daily-digest":
         digest = generate_daily_digest()
         print(digest)
+    elif action == "sprint-status":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--portfolio", required=True,
+                            choices=sorted(PORTFOLIO_BOARDS.keys()))
+        parser.add_argument("--stale-before", default=None,
+                            help="YYYY-MM-DD; flag open issues not updated since")
+        args = parser.parse_args(sys.argv[2:])
+        print(json.dumps(sprint_status(args.portfolio, args.stale_before), indent=2))
     elif action == "create-issue":
         import argparse
         parser = argparse.ArgumentParser()

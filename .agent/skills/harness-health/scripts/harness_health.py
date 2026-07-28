@@ -80,10 +80,19 @@ CRON_REGISTRY = [
         'log_file': os.path.join(BASE_DIR, '.agent', 'scripts', 'dashboard_keepalive.log'),
     },
     {
+        # Meeting-recorder cron. Job id stays 'vexa-auto' (heartbeat rows + the
+        # dashboard job map key off it), but since the Jul-2026 cutover the
+        # client it runs drives *meetbot* (Rust, :8060), not vexa-lite; the
+        # backend is set by MEETBOT=/VEXA_API_BASE= on the cron line itself.
+        # Script path and log path are unchanged by the cutover, so this match
+        # still resolves -- verified against the live crontab 19 Jul 2026.
         'job': 'vexa-auto',
         'match': 'meeting-recorder/vexa_bots.py',
         'cadence_minutes': 5,
-        'signal_cadence_minutes': 60,   # quiet runs emit no output; idle heartbeat is hourly
+        # Was 60: quiet cycles used to print nothing, so the log only moved on
+        # the hourly idle heartbeat. cmd_auto now writes one trace line EVERY
+        # cycle, so the signal cadence is the real cron cadence again and a
+        # silent cron is caught in ~15min instead of ~3h.
         'heartbeat_job': 'vexa-auto',
         'log_file': '/tmp/vexa_auto.log',
     },

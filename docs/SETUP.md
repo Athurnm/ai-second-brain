@@ -524,8 +524,45 @@ Two things worth knowing before you start:
 - **Local GPU transcription is optional.** With a whisper.cpp build the transcription runs on your
   own GPU. Without one, leave `whispercpp_bin` empty and it falls back to the Gemini API.
 
-Full guide including engines, daily use, the Vexa auto-join bot, and troubleshooting:
+Full guide including engines, daily use, the auto-join bot, and troubleshooting:
 **`docs/MEETING_RECORDER.md`**.
+
+### 10.2 Auto-join bot (optional, for meetings you cannot attend)
+
+The recorder above covers meetings you sit in. `meetbot/` covers the ones you miss: a small
+Rust service that reads your calendar, joins the call in a headless browser, captures the
+audio, and feeds it to the same transcription + minutes pipeline. It replaced a 1.25 GB
+Docker stack and idles at a few MB.
+
+It is optional and strictly more work than the local recorder, so set it up only once that
+one is working. Requires Rust and a Chromium build (Playwright's is fine).
+
+```bash
+cd meetbot
+cp config.example.toml config.toml     # then edit the paths + set admin_token
+cargo build --release
+./target/release/meetbot doctor <a-meet-code>   # dry-runs the join, names any broken step
+```
+
+Then install `meetbot.service` as a systemd user unit and point the recorder's cron line at
+it with `MEETBOT=1 VEXA_API_BASE=http://localhost:8060`.
+
+The thing that decides whether this works at all: **the bot must be signed in to a real
+Google account.** Anonymous guests are auto-declined by Meet's bot check about 1.5 seconds
+after knocking. Seed a Chrome profile once, by hand, with a visible browser:
+
+```bash
+<chromium> --user-data-dir=<meetbot>/data/bot-profile https://accounts.google.com/
+```
+
+Sign in, close the window, and point `profile_template` at that directory. Each session then
+gets a *copy* of it, because Chrome locks a profile directory and a session must never be
+able to invalidate your stored login.
+
+Read `.agent/skills/meetbot/SKILL.md` before debugging a join failure. It documents the
+landmines that are genuinely hard to rediscover — automation fingerprints Google rejects,
+one error string that means two different failures, and a control that ejects *you* from
+your own meeting if the selector priority is wrong.
 
 ---
 

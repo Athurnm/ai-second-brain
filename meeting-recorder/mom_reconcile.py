@@ -279,6 +279,24 @@ def resolve_coverage(rec_id, entry, registry, claimed=None):
     if direct:
         return direct, "own"
 
+    # Authoritative content backlink: the recording_id / call_id that every MOM
+    # writer stamps into the file header. The registry mom_path backlink and the
+    # calendar-resolved title are BOTH routinely absent for impromptu meetings
+    # (matched_meeting=None, no mom_path), so those fall through to filename
+    # fuzzy matching, which cannot work when the placeholder title "Impromptu
+    # Google Meet Meeting" shares no tokens with the real MOM_<Title> filename.
+    # The source recording is always in the file, so match on it directly.
+    id_index = _mom_id_index_for_date(entry.get("date_wib") or "")
+    call_id = ""
+    m = re.search(r"/calls/(\d+)", entry.get("fathom_url") or "")
+    if m:
+        call_id = m.group(1)
+    for key in (str(rec_id), call_id):
+        if key and key in id_index:
+            p = id_index[key]
+            if not (claimed and p in claimed):
+                return p, "content-id"
+
     for rid in entry.get("related_recordings") or []:
         rel = registry.get(str(rid)) or registry.get(rid)
         if rel:
@@ -302,6 +320,30 @@ def resolve_coverage(rec_id, entry, registry, claimed=None):
     if p:
         return p, "filename"
     return None, ""
+
+def _mom_id_index_for_date(date, _cache={}):
+    """Map every Fathom recording_id and call_id stamped inside a MOM header to
+    that MOM's path, for `date`. Both id forms appear across writers: the auto
+    pipeline writes `Source: ... /calls/<call_id> (id <recording_id>)`, hand or
+    /mom-written minutes may carry only the `/calls/<call_id>` link. Indexing
+    both makes the content backlink authoritative regardless of which writer
+    produced the file. Only the header (first 4000 bytes) is scanned so a call
+    id quoted deep in the body cannot create a spurious mapping."""
+    if date in _cache:
+        return _cache[date]
+    index = {}
+    for p in _mom_files_for_date(date):
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+        except OSError:
+            continue
+        ids = set(re.findall(r"/calls/(\d+)", head))
+        ids |= set(re.findall(r"\bid[:\s]+(\d+)", head))
+        for i in ids:
+            index.setdefault(i, p)
+    _cache[date] = index
+    return index
 
 def slug_tokens(title):
     return [t for t in re.split(r"[^a-z0-9]+", (title or "").lower()) if len(t) > 2]

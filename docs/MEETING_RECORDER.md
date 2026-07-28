@@ -17,6 +17,7 @@ the local-GPU transcription step is optional.
 - [Quick start](#quick-start)
 - [Transcription engines](#transcription-engines)
 - [Daily use](#daily-use)
+- [Advanced: auto-join bot (meetbot)](#advanced-auto-join-bot-meetbot)
 - [Advanced: Vexa auto-join bot](#advanced-vexa-auto-join-bot)
 - [Troubleshooting](#troubleshooting)
 
@@ -141,6 +142,70 @@ Each processed meeting writes:
 
 To wire it to your calendar and MOM template, see the paths in `meeting-recorder/watcher.py`
 (it invokes your calendar connector to match a recording to a calendar event).
+
+---
+
+## Advanced: auto-join bot (meetbot)
+
+`meetbot/` is a single Rust service that joins your Google Meet (and Teams) calls on its
+own, captures the call audio in the browser, and pushes it through the same transcription
+and minutes pipeline as the local recorder. It exposes the same HTTP API as the Vexa stack
+below, so `vexa_bots.py` drives either one and you switch with a single environment
+variable.
+
+It replaced a 1.25 GB always-on Docker stack (app + Postgres + object storage) with a
+process that idles at a few MB and only spends memory while a bot is actually in a call.
+
+```
+calendar → vexa_bots.py auto (cron */5) → POST /bots → meetbot
+                                                        ├─ headless Chromium joins the call
+                                                        ├─ in-page WebAudio tap → PCM
+                                                        ├─ chunks → your whisper server
+                                                        └─ segments → SQLite → GET /transcripts
+```
+
+### Setup
+
+Requires Rust and a Chromium build (Playwright's works). See `docs/SETUP.md` section 10.2
+for the commands. Two things decide whether it works at all:
+
+**The bot needs a real Google identity.** Meet runs a bot check on the knock itself and
+auto-declines anonymous guests roughly 1.5 seconds later. Seed a Chrome profile by signing
+in once with a visible browser, then point `profile_template` at it. Each session gets a
+*copy*, because Chrome locks a profile directory and a session must never be able to
+invalidate the stored login.
+
+**Automation has to be invisible to Google.** Two signals are independently fatal: a
+`HeadlessChrome` User-Agent token, and `navigator.webdriver` being true (CDP libraries
+often add `--enable-automation` themselves, so the disabling flag is mandatory). Either one
+produces the same symptom — refused in about five seconds, with no name field and no join
+button rendered at all.
+
+### Running it
+
+```bash
+systemctl --user status meetbot.service
+journalctl --user -u meetbot.service -f      # watch a live join
+./target/release/meetbot doctor <meet-code>  # dry-run the join, name the broken step
+```
+
+`doctor` is the tool to reach for first when a join breaks: it walks the whole dance and
+tells you which selector stopped matching. Google changes the Meet UI a few times a year,
+and every selector lives in one table at the top of `src/meet.rs` for exactly that reason.
+
+### Known sharp edges
+
+- **If you sign the bot in as yourself and you are already in the call**, Meet offers both
+  `Join here too` and `Switch here`. The second one *moves* your session to the bot and
+  drops you. Selector priority is what keeps the bot on the safe one.
+- **`Join here too` is hidden** inside a collapsed `Other ways to join` disclosure, and
+  collapsed elements are invisible to a size-based matcher. It has to be expanded first.
+- **One error string means two different failures.** `You can't join this video call`
+  covers both "refused before the green room" and "your knock was declined". The only way
+  to tell them apart is whether a join click was logged first.
+
+A fuller list, including the failure modes that cost the most time to diagnose, is in
+`.agent/skills/meetbot/SKILL.md`.
 
 ---
 

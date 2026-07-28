@@ -573,11 +573,52 @@
     return String(Math.round(v));
   }
 
+  /* current period/date filter for the Token Usage card. days=null + no
+     start/end == the cached default 30d view; days=N == trailing N days;
+     start&end == an explicit inclusive WIB-date range. */
+  let tuRange = { days: null, start: null, end: null };
+
+  function tuRangeQS() {
+    if (tuRange.start && tuRange.end) return `?start=${tuRange.start}&end=${tuRange.end}`;
+    if (tuRange.days && tuRange.days !== 30) return `?days=${tuRange.days}`;
+    return '';
+  }
+
+  /* the period segmented control + custom date range, reflecting tuRange so
+     the active button/inputs survive a re-render */
+  function tuControls() {
+    const isDefault = !tuRange.start && (tuRange.days == null || tuRange.days === 30);
+    const active = d => (!tuRange.start && String(tuRange.days ?? 30) === String(d)) ||
+      (d === 30 && isDefault) ? ' active' : '';
+    const seg = [7, 14, 30, 90]
+      .map(d => `<button class="tu-range-btn${active(d)}" data-tu-days="${d}">${d}d</button>`).join('');
+    return `<div class="tu-controls">` +
+      `<div class="tu-seg">${seg}</div>` +
+      `<div class="tu-daterange">` +
+      `<input type="date" class="tu-start" value="${tuRange.start || ''}" aria-label="start date">` +
+      `<span class="tu-sep">→</span>` +
+      `<input type="date" class="tu-end" value="${tuRange.end || ''}" aria-label="end date">` +
+      `<button class="tu-apply" data-tu-apply>Apply</button>` +
+      `</div></div>`;
+  }
+
+  /* re-fetch the token-usage endpoint with the current filter and swap just the
+     Token Usage card in place (the delegated listeners live on #tab-system so
+     they survive the outerHTML replacement) */
+  async function refreshTokenCard() {
+    const card = document.querySelector('#tab-system details.card[data-key="token-usage"]');
+    let tuR;
+    try { tuR = { status: 'fulfilled', value: await U.fetchJSON('/api/token-usage' + tuRangeQS()) }; }
+    catch (reason) { tuR = { status: 'rejected', reason }; }
+    const html = tokenUsageSection(tuR);
+    if (card) { const tmp = document.createElement('div'); tmp.innerHTML = html; card.replaceWith(tmp.firstElementChild); }
+  }
+
   function tokenUsageEmpty(hint) {
     return Comp.card({
       key: 'token-usage', icon: '🧮', title: 'Token Usage (Claude)',
-      body: Comp.emptyState({ icon: '🧮', title: 'Belum ada data token', hint }),
-      open: false,
+      body: tuControls() + Comp.emptyState({ icon: '🧮', title: 'Belum ada data token', hint }),
+      open: true,
     });
   }
 
@@ -599,7 +640,9 @@
     const refreshingSuffix = d.refreshing ? ' · ⏳ refreshing' : '';
     const totalTok = (totals.input_tokens ?? 0) + (totals.output_tokens ?? 0) +
       (totals.cache_read_tokens ?? 0) + (totals.cache_write_tokens ?? 0);
-    const count = `${fmtCompact(totalTok)} tokens · ${fmtUsd(totals.est_cost_usd)} est · ${windowDays}d${refreshingSuffix}`;
+    const rangeLabel = d.range_start && d.range_end
+      ? `${d.range_start} → ${d.range_end}` : `${windowDays}d`;
+    const count = `${fmtCompact(totalTok)} tokens · ${fmtUsd(totals.est_cost_usd)} est · ${rangeLabel}${refreshingSuffix}`;
 
     /* top strip: cost-share distBar (top 6 + Other) + a 14-of-30-day cost miniBars */
     const sortedByCost = byType.slice().sort((a, b) => (b.total_cost_usd ?? 0) - (a.total_cost_usd ?? 0));
@@ -612,10 +655,11 @@
     const distHtml = Comp.distBar(distItems, { label: 'Cost share by task type' });
 
     const dayPoints = byDay.slice(-14).map(p => ({ label: p.date, value: p.est_cost_usd ?? 0 }));
-    const barsHtml = Comp.miniBars(dayPoints, { w: 200, h: 36, kind: 'cat-1', label: 'Est cost — last 14d' });
+    const dayLabel = `Est cost — last ${dayPoints.length}d`;
+    const barsHtml = Comp.miniBars(dayPoints, { w: 200, h: 36, kind: 'cat-1', label: dayLabel });
     const topStrip = `<div class="two-col">` +
       `${distHtml || Comp.emptyState({ icon: '📊', title: 'No cost-share data yet' })}` +
-      `<div class="stack"><div class="section-label">Est cost · last 14d</div>` +
+      `<div class="stack"><div class="section-label">${dayLabel}</div>` +
       `${barsHtml || Comp.emptyState({ icon: '📉', title: 'No daily data yet' })}</div></div>`;
 
     /* the main table: per task type, sorted by total cost desc — type badge
@@ -653,7 +697,7 @@
       ? `<div class="row-subtext">${U.esc(d.note)} — <a class="prep-link" href="#system">offload cost riil → Cost & Savings di atas</a></div>`
       : '';
 
-    const body = topStrip +
+    const body = tuControls() + topStrip +
       `<div class="section-label">By task type</div>` +
       `<div class="rows">${typeRows.join('') || Comp.emptyState({ icon: '🧮', title: 'No task-type data yet' })}</div>` +
       perModelCard + footer;
@@ -813,7 +857,23 @@
     const sevBtn = e.target.closest('#tab-system .sev-chip-btn');
     if (sevBtn) { e.preventDefault(); openHarnessFindings(); return; }
     const mapNode = e.target.closest('#tab-system .map-node');
-    if (mapNode) { e.preventDefault(); onMapNodeClick(mapNode); }
+    if (mapNode) { e.preventDefault(); onMapNodeClick(mapNode); return; }
+    const tuBtn = e.target.closest('#tab-system .tu-range-btn');
+    if (tuBtn) {
+      e.preventDefault();
+      tuRange = { days: Number(tuBtn.dataset.tuDays), start: null, end: null };
+      refreshTokenCard();
+      return;
+    }
+    const tuApply = e.target.closest('#tab-system .tu-apply');
+    if (tuApply) {
+      e.preventDefault();
+      const box = tuApply.closest('.tu-controls');
+      const s = box?.querySelector('.tu-start')?.value;
+      const en = box?.querySelector('.tu-end')?.value;
+      if (s && en) { tuRange = { days: null, start: s, end: en }; refreshTokenCard(); }
+      else Comp.toast('Pick both start and end dates', false);
+    }
   });
 
   /* An AI-solve run (kind:'fix-job') finished — re-render so its row picks up

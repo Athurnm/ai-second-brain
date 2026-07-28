@@ -141,6 +141,8 @@ def list_events(days_back=7, days_forward=7, profile='default', as_json=False):
             'start': start,
             'end': event['end'].get('dateTime', event['end'].get('date')) if event.get('end') else None,
             'summary': summary,
+            # Authoritative cancellation signal. Slack prose is a guess; this is not.
+            'status': event.get('status', ''),
             'description': event.get('description', ''),
             'hangoutLink': event.get('hangoutLink', ''),
             'location': event.get('location', ''),

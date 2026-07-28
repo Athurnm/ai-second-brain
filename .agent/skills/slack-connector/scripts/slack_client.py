@@ -532,6 +532,43 @@ def post_message(token, channel_id, text, thread_ts=None, unfurl=False):
             print(f"Permalink: {pl.get('permalink')}")
     return True
 
+def update_message(token, channel_id, message_ts, text, unfurl=False):
+    """
+    Edits an existing message the owner authored (chat.update, requires the xoxp
+    user token). Applies the same mention self-healing as post_message.
+    Prints the permalink on success.
+    """
+    import re
+
+    text = re.sub(r'&lt;([@#!][A-Z0-9]+(?:\|[^&]*?)?)&gt;', r'<\1>', text)
+    text = re.sub(r'&lt;(![a-z]+(?:\^[A-Z0-9]+)?(?:\|[^&]*?)?)&gt;', r'<\1>', text)
+    text = re.sub(r'<@([A-Z0-9]+)\|[^>]*>', r'<@\1>', text)
+
+    mentions = re.findall(r'(?<!<)@([a-zA-Z0-9\._-]+)', text)
+    for name in mentions:
+        user_id = lookup_user_by_name(token, name, channel_id)
+        if user_id:
+            text = text.replace(f'@{name}', f'<@{user_id}>')
+            print(f"Resolved @{name} to <@{user_id}>")
+        else:
+            print(f"Warning: Could not resolve @{name}")
+
+    params = {"channel": channel_id, "ts": message_ts, "text": text}
+    if not unfurl:
+        params["unfurl_links"] = "false"
+        params["unfurl_media"] = "false"
+    response = make_slack_request("chat.update", token, params)
+    if not response.get("ok"):
+        print(f"Error updating message: {response.get('error')}", file=sys.stderr)
+        return False
+    print("Message updated successfully")
+    ch = response.get("channel", channel_id)
+    ts = response.get("ts", message_ts)
+    pl = make_slack_request("chat.getPermalink", token, {"channel": ch, "message_ts": ts})
+    if pl.get("ok"):
+        print(f"Permalink: {pl.get('permalink')}")
+    return True
+
 def invite_user(token, channel_id, user_ids):
     """
     Invites users to a specific channel.
@@ -571,7 +608,7 @@ def leave_channel(token, channel_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Slack Connector Helper")
-    parser.add_argument("--action", required=True, choices=["list_channels", "list_joined_channels", "history", "list_users", "user_info", "channel_members", "search", "channel_info", "file_info", "download", "upload", "post", "lookup", "invite", "join", "leave"], help="Action to perform")
+    parser.add_argument("--action", required=True, choices=["list_channels", "list_joined_channels", "history", "list_users", "user_info", "channel_members", "search", "channel_info", "file_info", "download", "upload", "post", "update", "lookup", "invite", "join", "leave"], help="Action to perform")
     parser.add_argument("--token", help="Explicit Slack token. Default for all actions is SLACK_USER_TOKEN (xoxp, the owner's), falling back to SLACK_BOT_TOKEN. Use --bot to force the bot token.")
     parser.add_argument("--channel", help="Channel ID for history, channel_members, upload, post, lookup, invite, join, and leave actions")
     parser.add_argument("--user", help="User ID/Name for user_info or lookup action")
@@ -587,6 +624,7 @@ def main():
     parser.add_argument("--as-user", dest="as_user", action="store_true", help="Post as the owner using SLACK_USER_TOKEN (no Claude-bot footer). This is the default for the post action.")
     parser.add_argument("--bot", action="store_true", help="Force the bot token (xoxb) for post instead of the user token.")
     parser.add_argument("--thread-ts", dest="thread_ts", help="Parent message ts to reply in-thread (post action).")
+    parser.add_argument("--ts", dest="message_ts", help="Timestamp of the message to edit (update action).")
     parser.add_argument("--text-file", dest="text_file", help="Read post text from a file instead of --text (avoids shell escaping).")
     parser.add_argument("--unfurl", action="store_true", help="Enable link/media unfurling on post (default: off).")
     parser.add_argument("--approved", action="store_true", help="Confirm the owner has explicitly approved this specific send before it goes out. Required for post/upload/invite; there is no environment override.")
@@ -707,6 +745,16 @@ def main():
             sys.exit(1)
         require_send_approval("post a Slack message", args.approved)
         post_message(token, args.channel, text, thread_ts=args.thread_ts, unfurl=args.unfurl)
+    elif args.action == "update":
+        text = args.text
+        if args.text_file:
+            with open(args.text_file) as _tf:
+                text = _tf.read().strip()
+        if not args.channel or not args.message_ts or not text:
+            print("Error: --channel, --ts and (--text or --text-file) are required for update action.", file=sys.stderr)
+            sys.exit(1)
+        require_send_approval("edit an existing Slack message", args.approved)
+        update_message(token, args.channel, args.message_ts, text, unfurl=args.unfurl)
     elif args.action == "invite":
         if not args.channel or not args.users:
             print("Error: --channel and --users are required for invite action.", file=sys.stderr)

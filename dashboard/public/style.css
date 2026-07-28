@@ -2159,3 +2159,80 @@ a.ticket-chip:hover { border-color: var(--border-active); color: var(--text-acce
 /* hours week view: clickable day rows */
 .hours-day-link { cursor: pointer; }
 .hours-day-link:hover td, .hours-day-link:focus-visible td { background: var(--bg-hover); }
+
+/* ── header quick-find (ticket / ledger lookup) ── */
+.quickfind {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 8px; margin-right: 10px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.quickfind:focus-within {
+  border-color: var(--border-active);
+  box-shadow: 0 0 0 3px hsla(var(--h-violet), 60%, 60%, 0.12);
+}
+.quickfind-icon { font-size: 12px; opacity: .7; }
+.quickfind-input {
+  background: transparent; border: 0; outline: 0; color: var(--text-primary);
+  font-size: var(--fs-xs); width: 240px; max-width: 44vw;
+}
+.quickfind-input::placeholder { color: var(--text-muted); }
+.quickfind-kbd {
+  font: 600 10px/1 ui-monospace, monospace; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 5px; padding: 2px 5px;
+}
+.qf-jira {
+  font-size: var(--fs-xs); color: var(--text-secondary);
+  padding: 8px 10px; margin-bottom: 10px;
+  background: var(--work-bg); border: 1px solid var(--work-border);
+  border-radius: var(--radius-xs);
+}
+@media (max-width: 720px) { .quickfind-input { width: 150px; } .quickfind-kbd { display: none; } }
+
+/* ── quick-find result detail (expandable card) ── */
+.qf-detail { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); }
+.qf-d-context {
+  color: var(--text-primary); line-height: 1.45; margin-bottom: 6px;
+  white-space: pre-wrap;
+}
+.qf-d-line { display: flex; gap: 8px; align-items: baseline; }
+.qf-d-key {
+  flex: 0 0 108px; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .03em; font-size: 10px;
+}
+.qf-d-val { color: var(--text-primary); }
+.qf-d-breach .qf-d-val { color: var(--danger, #ef6d6d); font-weight: 600; }
+.qf-d-notes { margin-top: 6px; }
+.qf-d-note {
+  color: var(--text-secondary); line-height: 1.4; margin-top: 2px;
+  padding-left: 4px;
+}
+.qf-d-src { margin-top: 8px; }
+
+/* ── token-usage period / date filter ── */
+.tu-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.tu-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; }
+.tu-range-btn {
+  background: transparent; border: 0; border-right: 1px solid var(--border);
+  color: var(--text-secondary); font-size: var(--fs-xs); padding: 5px 11px;
+  cursor: pointer; transition: background .12s ease, color .12s ease;
+}
+.tu-range-btn:last-child { border-right: 0; }
+.tu-range-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.tu-range-btn.active { background: hsla(var(--h-violet), 60%, 60%, 0.18); color: var(--text-accent); }
+.tu-daterange { display: inline-flex; align-items: center; gap: 6px; }
+.tu-daterange input[type="date"] {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-xs);
+  color: var(--text-primary); font-size: var(--fs-xs); padding: 4px 7px;
+  color-scheme: dark;
+}
+.tu-daterange .tu-sep { color: var(--text-muted); }
+.tu-apply {
+  background: var(--bg-card-hover); border: 1px solid var(--border-active);
+  color: var(--text-primary); font-size: var(--fs-xs); border-radius: var(--radius-xs);
+  padding: 5px 11px; cursor: pointer;
+}
+.tu-apply:hover { border-color: var(--text-accent); }

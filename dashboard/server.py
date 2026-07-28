@@ -19,7 +19,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode, unquote
+from urllib.parse import urlencode, unquote, urlsplit, parse_qs
 
 PORT = int(os.environ.get('DASHBOARD_PORT', '3737'))
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -455,18 +455,50 @@ def _ai_task_spec(kind, ref, instruction=None):
         return prompt, 'Read,Grep,Glob,Write', 'sonnet', draft_rel
 
     if kind == 'fix-job':
-        if ref in ('vexa-auto', 'vexa-bots'):
+        if ref in ('vexa-auto', 'vexa-bots', 'meetbot'):
             gw = _default_gateway_ip() or '<default-gateway>'
-            prompt = (
-                f"Work in {repo}. Diagnose the vexa meeting-bot stack: check containers via "
-                f"`sg docker -c 'docker ps'` (expect vexa-lite / postgres / minio), tail "
-                f"{VEXA_AUTO_LOG}, probe whisper at http://{gw}:8083/ (curl), and check "
-                f"meeting-recorder/vexa_state.json recent statuses. You MAY restart the vexa "
-                f"docker containers (`sg docker -c 'docker restart vexa-lite'` etc.) and "
-                f"re-run `python3 meeting-recorder/vexa_bots.py auto --dry-run`. Do NOT send "
-                f"any Slack/email/external message and do NOT edit repo files. Write findings "
-                f"+ actions taken + current status to stdout."
+            backend, why = _active_recorder_backend()
+            common = (
+                f"Work in {repo}. The meeting-recorder cron job is failing. The ACTIVE "
+                f"recorder backend is '{backend}' (detected: {why}) — confirm that yourself "
+                f"with `crontab -l | grep vexa_bots` before touching anything, and remediate "
+                f"ONLY that backend. Also: tail {VEXA_AUTO_LOG} (cmd_auto writes one "
+                f"heartbeat line per 5-min cycle, so an old last line means the cron itself "
+                f"stopped), probe whisper at http://{gw}:8083/ (curl), and check "
+                f"meeting-recorder/vexa_state.json recent statuses. "
             )
+            if backend == 'meetbot':
+                prompt = common + (
+                    "meetbot is a Rust systemd USER unit on 127.0.0.1:8060. Diagnose with "
+                    "`systemctl --user status meetbot.service`, `journalctl --user -u "
+                    "meetbot.service -n 100`, and `curl -s http://localhost:8060/`. You MAY "
+                    "run `systemctl --user restart meetbot.service`. "
+                    "HARD RULE: do NOT start, restart, stop or otherwise touch the vexa-lite / "
+                    "vexa-postgres / vexa-minio docker containers. They are the dormant "
+                    "ROLLBACK path; resurrecting vexa-lite behind meetbot's back would put two "
+                    "recorders on the same meetings. If meetbot cannot be recovered, do NOT "
+                    "roll back yourself — report that the rollback procedure is to remove "
+                    "`MEETBOT=1 VEXA_API_BASE=http://localhost:8060` from the vexa_bots.py "
+                    "crontab line and bring the vexa containers back up, and leave that to the owner. "
+                    "Re-run `python3 meeting-recorder/vexa_bots.py auto --dry-run` to verify. "
+                )
+            elif backend == 'vexa':
+                prompt = common + (
+                    "vexa-lite is the docker stack on :8056. Check containers via "
+                    "`sg docker -c 'docker ps'` (expect vexa-lite / postgres / minio). You MAY "
+                    "restart them (`sg docker -c 'docker restart vexa-lite'`). Do NOT start "
+                    "meetbot.service — it is not the active backend. Re-run "
+                    "`python3 meeting-recorder/vexa_bots.py auto --dry-run` to verify. "
+                )
+            else:
+                prompt = common + (
+                    "The active backend could NOT be determined, so DIAGNOSE ONLY: do not "
+                    "restart, start or stop meetbot.service and do not touch any vexa docker "
+                    "container. Report what the crontab actually says and what is listening on "
+                    ":8060 and :8056 so a human can decide. "
+                )
+            prompt += ("Do NOT send any Slack/email/external message and do NOT edit repo "
+                       "files. Write findings + actions taken + current status to stdout.")
             return prompt, 'Read,Grep,Glob,Bash', 'sonnet', None
         entry = JOB_LOG_MAP.get(ref)
         if not entry:
@@ -586,35 +618,62 @@ def _ai_task_spec(kind, ref, instruction=None):
                         f'Bash(python3 {INBOX_CLI}:*)'), 'opus', draft_rel
 
     if kind == 'inbox-digest':
-        # the periodic brain: read every open reply-needed conversation, research
-        # repo context, and write SUBSTANTIVE drafts (answer the ask, not an ack)
+        # The periodic brain, restructured 23 Jul 2026: GENERATION is offloaded to
+        # GLM via inbox_digest_agy.py (Python filters the ~8 items needing a draft,
+        # resolves names + hunts docs, drafts each via GLM, persists them). Claude
+        # only does a LIGHT review over THIS script's printed output, never the
+        # 810KB inbox.json. Cuts the run from ~1.7M input tokens to a few tens of k.
+        # Same division of labour as premeeting-enrich (enrich_cards_agy.py):
+        # Python gathers, GLM writes, Claude verifies. See [[reference_agy_bridge]].
+        digest_script = '.agent/skills/inbox-hub/scripts/inbox_digest_agy.py'
+        # Review runs on haiku (23 Jul 2026): generation is fully on GLM now, so the
+        # Claude pass is a bounded FACT-CHECK, not authoring — haiku does it at ~1/4
+        # the sonnet token price. The prompt is a tight checklist to keep turns (and
+        # thus cached-context re-reads, the real cost driver) low.
+        #
+        # GUARD: escalate the review to sonnet only when this batch cites hard facts
+        # (tickets, docs, links, numbers, dates) — the class where a GLM draft is most
+        # likely to invent a specific-but-wrong fact and haiku is weakest at catching
+        # it. The digest script decides the tier from the SELECTED items (fast, pure
+        # Python, no GLM), so we can pick the model at spawn. Fail-open to haiku.
+        review_model = 'haiku'
+        try:
+            tier = subprocess.run(
+                [sys.executable, digest_script, '--review-tier'],
+                cwd=repo, capture_output=True, text=True, timeout=20)
+            out = (tier.stdout or '').strip()
+            if tier.returncode == 0 and out in ('sonnet', 'haiku'):
+                review_model = out
+        except Exception as e:
+            print(f'[inbox-digest] review-tier probe failed, defaulting haiku: {e}', file=sys.stderr)
         prompt = (
-            f"Work in {repo}. You are the owner's inbox digest agent. Read "
-            f"journal/state/inbox.json and select up to 8 OPEN items with "
-            f"triage='reply' whose draft_source is null or 'glm' (GLM placeholders "
-            f"need upgrading), highest priority_hi first then newest ts. For EACH "
-            f"conversation: read its full messages[] log, then research what it "
-            f"actually asks — grep Clients/*/ (PRDs, MOMs, transcripts), "
-            f"journal/state/ ledgers (tickets, commitments, waiting_on, decisions), "
-            f"Dashboard.md — BOUNDED: a few greps per item, don't spiral. Then write "
-            f"a reply draft that SOLVES it: answer the question with the real answer "
-            f"from the repo when derivable (cite the doc/ticket in prose); when not "
-            f"derivable, commit to a concrete next step (who the owner will check with, "
-            f"by when) — never a contentless acknowledgement. Voice: the owner's plain "
-            f"flowing prose, no emoji, no bullet lists, English, 2-6 sentences, real "
-            f"names only (resolve UIDs via journal/state/slack_user_names.json + "
-            f"people.json). Save each draft via: write the text to /tmp/ibxd.txt "
-            f"then `python3 {INBOX_CLI} set-draft '<item id>' --file /tmp/ibxd.txt "
-            f"--source claude`. ALSO: for every item you process (and any other open "
-            f"reply item you can match confidently), find its tracker ticket in "
-            f"journal/state/tickets.json (match by topic/people/project; only when "
-            f"clearly the same work) and link it: `python3 {INBOX_CLI} link "
-            f"'<item id>' --ticket <T-id>`. Skip the link when no ticket clearly "
-            f"matches — never guess. NEVER send anything — no Slack posts, no "
-            f"emails; drafts only, the owner approves on the dashboard. Finish by "
-            f"printing a one-line-per-item summary of what each draft does."
+            f"Work in {repo}. Run `python3 {digest_script}` and read ONLY its printed "
+            f"output (it already filtered the reply items, drafted each via GLM, and "
+            f"persisted the drafts). Do NOT read journal/state/inbox.json. Your ONLY job "
+            f"is a bounded fact-check of each printed draft. For a given draft, act ONLY "
+            f"when it states a checkable claim, a specific document, ticket id, number, "
+            f"date, or a commitment the printed conversation does not support. In that "
+            f"case run AT MOST ONE grep to confirm, and if the claim is wrong or "
+            f"unverifiable, correct the draft via `python3 {INBOX_CLI} set-draft "
+            f"'<item id>' --file /tmp/ibxd.txt --source claude`. Do NOT touch drafts that "
+            f"read fine, do NOT rewrite for style, do NOT re-research. Where a draft "
+            f"clearly maps to a tracker ticket in journal/state/tickets.json (same work, "
+            f"by topic/people/project only, never guess), link it: `python3 {INBOX_CLI} "
+            f"link '<item id>' --ticket <T-id>`. "
+            f"FALLBACK: if the script output contains `GLM_OUTAGE` (the GLM backend is "
+            f"down and it drafted nothing), switch to drafting the items yourself this "
+            f"once: read journal/state/inbox.json, take up to 8 OPEN items with "
+            f"triage='reply' and draft_source null or 'glm', and for EACH write a reply "
+            f"in the owner's plain flowing prose (no emoji, no bullet lists, English, 2 to 6 "
+            f"sentences, real names) that answers the ask or commits to a concrete next "
+            f"step, persisting via `python3 {INBOX_CLI} set-draft '<item id>' --file "
+            f"/tmp/ibxd.txt --source claude`. This degraded path is ONLY for GLM_OUTAGE. "
+            f"NEVER send anything. Finish with a one-line-per-item summary noting only "
+            f"the drafts you changed (and whether you hit the GLM_OUTAGE fallback)."
         )
-        return prompt, f'Read,Grep,Glob,Write,Bash(python3 {INBOX_CLI}:*)', 'sonnet', None
+        return prompt, (f'Read,Grep,Glob,Write,'
+                        f'Bash(python3 {digest_script}:*),'
+                        f'Bash(python3 {INBOX_CLI}:*)'), review_model, None
 
     if kind == 'premeeting-enrich':
         # card enrichment ALWAYS goes through the dedicated agy/GLM script -- never
@@ -839,9 +898,22 @@ def _norm_mom_title(title):
     return s
 
 # ═══════════════════════════════════════════
-# VEXA BOT LIVE HEALTH (real-time service probe)
+# MEETING-RECORDER LIVE HEALTH (real-time service probe)
+#
+# Two recorder backends exist. `meetbot` (Rust, systemd user unit, :8060) is the
+# live one since the Jul-2026 cutover; the vexa-lite docker stack (:8056) stays
+# installed as the rollback path. Probing the wrong one is the whole failure mode
+# this function exists to avoid, so the backend is DETECTED, never assumed, and a
+# probe that cannot tell what it is monitoring reports 'unknown' -- never green.
 # ═══════════════════════════════════════════
 _VEXA_CACHE = {'ts': 0.0, 'data': None}
+
+MEETBOT_PORT = 8060
+MEETBOT_URL = 'http://localhost:8060/'
+MEETBOT_UNIT = 'meetbot.service'
+VEXA_PORT = 8056
+# 3 missed */5 cron cycles before the log is called stale.
+CRON_STALE_MIN = 16
 
 def _http_ok(url, timeout=4):
     """True + status if a URL responds at all (any HTTP code = reachable)."""
@@ -852,16 +924,138 @@ def _http_ok(url, timeout=4):
         code = getattr(e, 'code', None)
         return (code is not None), code
 
-def _probe_vexa():
-    """Live Vexa health, cached ~15s so dashboard polling stays cheap."""
+def _active_recorder_backend():
+    """Which recorder is actually in charge -> ('meetbot'|'vexa'|'unknown', why).
+
+    Ground truth is the crontab line that actually runs the recorder, because
+    that is the process doing the recording -- not what happens to be installed
+    or listening. We parse MEETBOT= / VEXA_API_BASE= off that line and apply the
+    exact same precedence as vexa_bots.meetbot_mode(): explicit MEETBOT wins,
+    else the port named by VEXA_API_BASE, else legacy vexa.
+
+    Deliberately NOT inferred from "which port answers": both can be up at once
+    (vexa is the rollback path), so liveness cannot identify the owner.
+    """
+    try:
+        r = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return 'unknown', f'crontab -l failed (rc={r.returncode})'
+        lines = [l for l in r.stdout.splitlines()
+                 if 'vexa_bots.py' in l and not l.lstrip().startswith('#')]
+    except Exception as e:
+        return 'unknown', f'cannot read crontab: {e}'
+
+    if not lines:
+        return 'unknown', 'no active vexa_bots.py line in crontab'
+    if len(lines) > 1:
+        return 'unknown', f'{len(lines)} conflicting vexa_bots.py cron lines'
+
+    line = lines[0]
+    m = re.search(r'\bMEETBOT=(\S+)', line)
+    if m:
+        flag = m.group(1).strip('"\'').lower()
+        if flag in ('1', 'true', 'yes', 'on'):
+            return 'meetbot', 'cron sets MEETBOT=1'
+        if flag in ('0', 'false', 'no', 'off'):
+            return 'vexa', f'cron sets MEETBOT={flag}'
+        return 'unknown', f'cron has unparseable MEETBOT={flag!r}'
+
+    m = re.search(r'\bVEXA_API_BASE=(\S+)', line)
+    if m:
+        try:
+            port = urlsplit(m.group(1).strip('"\'')).port
+        except ValueError:
+            return 'unknown', f'cron has malformed VEXA_API_BASE={m.group(1)!r}'
+        if port == MEETBOT_PORT:
+            return 'meetbot', f'cron VEXA_API_BASE on :{MEETBOT_PORT}'
+        return 'vexa', f'cron VEXA_API_BASE on :{port or VEXA_PORT}'
+
+    return 'vexa', 'cron sets neither MEETBOT nor VEXA_API_BASE (legacy default)'
+
+def _gateway_whisper_check():
+    """Whisper ASR on the Windows host — valid under BOTH backends."""
+    gw = ''
+    try:
+        r = subprocess.run(['sh', '-c', "ip route | awk '/default/{print $3; exit}'"],
+                           capture_output=True, text=True, timeout=5)
+        gw = r.stdout.strip()
+    except Exception:
+        pass
+    ok, code = _http_ok(f'http://{gw}:8083/') if gw else (False, None)
+    return {'ok': ok, 'label': 'Whisper :8083',
+            'detail': (f'HTTP {code}' if code else 'no response') + (f' @ {gw}' if gw else ' (no gateway)')}
+
+def _cron_freshness_check():
+    """Staleness of /tmp/vexa_auto.log. cmd_auto writes one heartbeat line per
+    cycle, so an old mtime now genuinely means the cron stopped running."""
     import time
-    now = time.time()
-    if _VEXA_CACHE['data'] is not None and (now - _VEXA_CACHE['ts']) < 15:
-        return _VEXA_CACHE['data']
+    try:
+        age_min = (time.time() - os.path.getmtime(VEXA_AUTO_LOG)) / 60
+    except Exception:
+        return {'ok': False, 'label': 'Cron freshness', 'detail': 'log missing'}, ''
+    try:
+        with open(VEXA_AUTO_LOG, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = [l.strip() for l in f if l.strip()]
+        last = lines[-1][:200] if lines else ''
+    except Exception:
+        last = ''
+    if not last:
+        return ({'ok': False, 'label': 'Cron freshness',
+                 'detail': 'log empty — cannot distinguish "ran quietly" from "never ran"'}, '')
+    ok = age_min <= CRON_STALE_MIN
+    return ({'ok': ok, 'label': 'Cron freshness',
+             'detail': f'last run {age_min:.0f}m ago' + ('' if ok else f' (> {CRON_STALE_MIN}m — stale)')},
+            last)
 
-    out = {'checked_wib': datetime.now(WIB).isoformat(), 'checks': {}}
+def _last_meeting():
+    try:
+        vpath = RECORDER_DIR / 'vexa_state.json'
+        if vpath.exists():
+            meetings = json.loads(vpath.read_text(encoding='utf-8')).get('meetings', {})
+            if meetings:
+                _k, m = max(meetings.items(), key=lambda kv: kv[1].get('sent_at', ''))
+                st = str(m.get('status', ''))
+                return {'title': m.get('title', '(untitled)'), 'sent_at': m.get('sent_at', ''),
+                        'status': st, 'ok': 'fail' not in st.lower()}
+    except Exception:
+        pass
+    return None
 
-    # One combined docker call: container state + storage backend + recent storage errors
+def _probe_meetbot(out):
+    """meetbot (Rust, :8060) checks. No docker/minio/STORAGE_BACKEND here — those
+    describe vexa-lite, which is not recording anything in this mode."""
+    unit_state = ''
+    try:
+        r = subprocess.run(['systemctl', '--user', 'is-active', MEETBOT_UNIT],
+                           capture_output=True, text=True, timeout=10)
+        unit_state = r.stdout.strip() or r.stderr.strip()
+    except Exception as e:
+        unit_state = f'probe error: {e}'
+    out['checks']['service'] = {
+        'ok': unit_state == 'active', 'state': unit_state or 'unknown',
+        'label': f'systemd {MEETBOT_UNIT}', 'detail': unit_state or 'unknown'}
+
+    api_ok, api_code = _http_ok(MEETBOT_URL)
+    out['checks']['api'] = {'ok': api_ok, 'label': f'meetbot API :{MEETBOT_PORT}',
+                            'detail': f'HTTP {api_code}' if api_code else 'no response'}
+
+    out['checks']['whisper'] = _gateway_whisper_check()
+    cron, last = _cron_freshness_check()
+    out['checks']['cron'] = cron
+    out['last_cron'] = last
+
+    core_ok = out['checks']['service']['ok'] and out['checks']['api']['ok']
+    if not core_ok:
+        out['overall'] = 'down'
+    elif out['checks']['whisper']['ok'] and cron['ok']:
+        out['overall'] = 'ok'
+    else:
+        out['overall'] = 'degraded'
+    return out
+
+def _probe_vexa_stack(out):
+    """Legacy vexa-lite docker stack (:8056) — kept so a rollback restores
+    correct monitoring rather than pointing at a service nobody is using."""
     container_state = health = backend = ''
     store_errs = None
     try:
@@ -871,8 +1065,7 @@ def _probe_vexa():
              'echo "@@B@@"; docker exec vexa-lite printenv STORAGE_BACKEND 2>/dev/null; '
              'echo "@@E@@"; docker logs vexa-lite --since 4m 2>&1 | grep -c "storage list failed"'],
             capture_output=True, text=True, timeout=25)
-        raw = probe.stdout
-        seg = raw.split('@@B@@')
+        seg = probe.stdout.split('@@B@@')
         if seg and '|' in seg[0]:
             container_state, health = (seg[0].strip().split('|', 1) + [''])[:2]
         if len(seg) > 1:
@@ -886,76 +1079,74 @@ def _probe_vexa():
     except Exception:
         pass
 
-    running = container_state == 'running'
     out['checks']['container'] = {
-        'ok': running, 'state': container_state or 'unknown', 'health': health or 'n/a',
-        'label': 'Container', 'detail': f'{container_state or "?"}' + (f' / {health}' if health else ''),
-    }
-    api_ok, api_code = _http_ok('http://localhost:8056/')
-    out['checks']['api'] = {'ok': api_ok, 'label': 'API gateway :8056',
+        'ok': container_state == 'running', 'state': container_state or 'unknown',
+        'health': health or 'n/a', 'label': 'Container',
+        'detail': f'{container_state or "?"}' + (f' / {health}' if health else '')}
+    api_ok, api_code = _http_ok(f'http://localhost:{VEXA_PORT}/')
+    out['checks']['api'] = {'ok': api_ok, 'label': f'API gateway :{VEXA_PORT}',
                             'detail': f'HTTP {api_code}' if api_code else 'no response'}
+    out['checks']['whisper'] = _gateway_whisper_check()
 
-    # whisper.cpp transcription backend on the Windows host (gateway IP:8083)
-    gw = ''
-    try:
-        r = subprocess.run(['sh', '-c', "ip route | awk '/default/{print $3; exit}'"],
-                           capture_output=True, text=True, timeout=5)
-        gw = r.stdout.strip()
-    except Exception:
-        pass
-    wh_ok, wh_code = _http_ok(f'http://{gw}:8083/') if gw else (False, None)
-    out['checks']['whisper'] = {'ok': wh_ok, 'label': 'Whisper :8083',
-                                'detail': (f'HTTP {wh_code}' if wh_code else 'no response') + (f' @ {gw}' if gw else '')}
-
-    store_ok = (backend == 'local') or (backend == 's3') or (backend == 'minio' and store_errs == 0)
-    if backend == 'minio' and (store_errs is None or store_errs > 0):
-        store_ok = False
+    store_ok = backend in ('local', 's3') or (backend == 'minio' and store_errs == 0)
     sdetail = backend or 'unknown'
     if store_errs:
         sdetail += f' · {store_errs} storage err/4m'
     out['checks']['storage'] = {'ok': bool(store_ok), 'label': 'Storage backend', 'detail': sdetail}
-
-    # MinIO object store — only relevant when backend=minio (persists browser-session + recordings)
     if backend == 'minio':
         mo_ok, mo_code = _http_ok('http://localhost:9000/minio/health/live')
         out['checks']['minio'] = {'ok': mo_ok, 'label': 'MinIO :9000',
-                                  'detail': (f'HTTP {mo_code}' if mo_code else 'no response')}
+                                  'detail': f'HTTP {mo_code}' if mo_code else 'no response'}
 
-    # Last cron activity + last/live meeting from vexa_state.json
-    last_cron = ''
-    try:
-        with open(VEXA_AUTO_LOG, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = [l.strip() for l in f.readlines() if l.strip()]
-        if lines:
-            last_cron = lines[-1][:200]
-    except Exception:
-        pass
-    out['last_cron'] = last_cron
+    cron, last = _cron_freshness_check()
+    out['checks']['cron'] = cron
+    out['last_cron'] = last
 
-    last_meeting = None
-    try:
-        vpath = RECORDER_DIR / 'vexa_state.json'
-        if vpath.exists():
-            meetings = json.loads(vpath.read_text(encoding='utf-8')).get('meetings', {})
-            if meetings:
-                k, m = max(meetings.items(), key=lambda kv: kv[1].get('sent_at', ''))
-                st = str(m.get('status', ''))
-                last_meeting = {'title': m.get('title', '(untitled)'), 'sent_at': m.get('sent_at', ''),
-                                'status': st, 'ok': 'fail' not in st.lower()}
-    except Exception:
-        pass
-    out['last_meeting'] = last_meeting
-
-    checks = out['checks']
-    core_ok = (checks['container']['ok'] and checks['api']['ok'] and checks['storage']['ok']
-               and checks.get('minio', {}).get('ok', True))
-    if core_ok and checks['whisper']['ok']:
-        out['overall'] = 'ok'
-    elif core_ok:
-        out['overall'] = 'degraded'  # core up but transcription backend unreachable
-    else:
+    c = out['checks']
+    core_ok = (c['container']['ok'] and c['api']['ok'] and c['storage']['ok']
+               and c.get('minio', {}).get('ok', True))
+    if not core_ok:
         out['overall'] = 'down'
+    elif c['whisper']['ok'] and cron['ok']:
+        out['overall'] = 'ok'
+    else:
+        out['overall'] = 'degraded'
+    return out
 
+def _probe_vexa():
+    """Live meeting-recorder health for whichever backend is actually recording,
+    cached ~15s so dashboard polling stays cheap.
+
+    Name kept for the existing /api/vexa-health callers; see
+    _active_recorder_backend() for how the target is chosen.
+    """
+    import time
+    now = time.time()
+    if _VEXA_CACHE['data'] is not None and (now - _VEXA_CACHE['ts']) < 15:
+        return _VEXA_CACHE['data']
+
+    backend, why = _active_recorder_backend()
+    out = {'checked_wib': datetime.now(WIB).isoformat(),
+           'backend': backend, 'backend_detected_by': why,
+           'checks': {}, 'last_cron': ''}
+    out['checks']['backend'] = {
+        'ok': backend != 'unknown',
+        'label': 'Active recorder',
+        'detail': f'{backend} ({why})'}
+
+    if backend == 'meetbot':
+        _probe_meetbot(out)
+    elif backend == 'vexa':
+        _probe_vexa_stack(out)
+    else:
+        # Cannot identify the recorder -> refuse to render a verdict about it.
+        # Anything else here is a false-clean monitor.
+        cron, last = _cron_freshness_check()
+        out['checks']['cron'] = cron
+        out['last_cron'] = last
+        out['overall'] = 'unknown'
+
+    out['last_meeting'] = _last_meeting()
     _VEXA_CACHE['ts'] = now
     _VEXA_CACHE['data'] = out
     return out
@@ -1323,7 +1514,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_get_slack_harvest()
         elif self.path == '/api/recorder':
             self._handle_get_recorder()
-        elif self.path == '/api/vexa-health':
+        # /api/vexa-health is the legacy name (other callers use it); the alias
+        # is backend-neutral because the probe now follows whichever recorder
+        # is actually in charge.
+        elif self.path in ('/api/vexa-health', '/api/recorder-health'):
             self._handle_get_vexa_health()
         elif self.path == '/api/metrics':
             self._handle_get_metrics()
@@ -1349,8 +1543,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_get_overview()
         elif self.path.startswith('/api/ai-task'):
             self._handle_get_ai_task()
-        elif self.path == '/api/token-usage':
+        elif self.path.split('?')[0] == '/api/token-usage':
             self._handle_token_usage()
+        elif self.path.split('?')[0] == '/api/ledger-find':
+            self._handle_ledger_find()
         elif self.path == '/api/token-efficiency':
             self._handle_get_token_efficiency()
         elif self.path == '/api/work-hours':
@@ -3485,10 +3681,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def _handle_token_usage(self):
         """GET /api/token-usage — the aggregate block of journal/state/token_usage.json
-        (30d token+cost estimates per task type, by model, by day). State missing →
+        (token+cost estimates per task type, by model, by day). State missing →
         {note} graceful. Last sweep older than 6h → trigger a detached background
         sweep (flock-guarded, same lock as the cron line) and serve the stale
-        aggregate with refreshing:true."""
+        aggregate with refreshing:true.
+
+        Period + date filter (both optional):
+          ?days=N              trailing N WIB days ending today (e.g. 7, 14, 90)
+          ?start=YYYY-MM-DD&end=YYYY-MM-DD   explicit inclusive WIB-date range
+        Any range other than the default 30d is recomputed LIVE off the stored
+        per-file summaries (no transcript reparse — milliseconds), so the whole
+        history stays queryable without a fresh sweep. The plain no-param call
+        keeps serving the cached 30d aggregate."""
         try:
             if not TOKEN_USAGE_PATH.exists():
                 self._send_json(200, json.dumps({
@@ -3496,6 +3700,31 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     'error': 'no token_usage.json yet — run token_usage.py sweep'}))
                 return
             state = json.loads(TOKEN_USAGE_PATH.read_text(encoding='utf-8'))
+
+            q = parse_qs(urlsplit(self.path).query)
+            start_date, end_date, range_err = self._parse_token_range(q)
+            if range_err:
+                self._send_json(400, json.dumps({'error': range_err}))
+                return
+
+            if start_date is not None or end_date is not None:
+                # custom period/date range → live recompute from file summaries
+                agg = self._token_aggregate_for_range(state, start_date, end_date)
+                if agg is None:
+                    self._send_json(500, json.dumps({
+                        'error': 'token-usage recompute unavailable (tracker import failed)'}))
+                    return
+                payload = {
+                    **agg,
+                    'note': TOKEN_USAGE_NOTE,
+                    'last_sweep': state.get('last_sweep'),
+                    'sweep_seconds': state.get('sweep_seconds'),
+                    'aggregate': agg,
+                    'custom_range': True,
+                }
+                self._send_json(200, json.dumps(payload))
+                return
+
             # Flatten the aggregate to top level: the UI contract expects
             # window_days/totals/by_task_type/by_model/by_day as top-level keys
             # (keep 'aggregate' too for any other consumer).
@@ -3523,6 +3752,201 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, json.dumps({'error': 'token-usage failed',
                                              'details': str(e)}))
+
+    @staticmethod
+    def _parse_token_range(q):
+        """(start_date, end_date, err). All None → default cached 30d view.
+        ?days=N → trailing N days ending today. ?start/?end → explicit range.
+        Caps N at 365 and rejects malformed dates."""
+        from datetime import date as _date
+        WIB = timezone(timedelta(hours=7))
+        today = datetime.now(WIB).date()
+
+        def _pd(s):
+            try:
+                return _date.fromisoformat(s)
+            except (ValueError, TypeError):
+                return None
+
+        start = q.get('start', [None])[0]
+        end = q.get('end', [None])[0]
+        days = q.get('days', [None])[0]
+
+        if start or end:
+            sd = _pd(start) if start else None
+            ed = _pd(end) if end else today
+            if start and sd is None:
+                return None, None, f'bad start date: {start}'
+            if end and ed is None:
+                return None, None, f'bad end date: {end}'
+            if sd is None:
+                sd = ed - timedelta(days=29)
+            return sd, ed, None
+
+        if days:
+            try:
+                n = max(1, min(365, int(days)))
+            except (ValueError, TypeError):
+                return None, None, f'bad days value: {days}'
+            if n == 30:
+                return None, None, None   # identical to the cached default
+            return today - timedelta(days=n - 1), today, None
+
+        return None, None, None
+
+    def _token_aggregate_for_range(self, state, start_date, end_date):
+        """Recompute the aggregate for an arbitrary WIB-date range off the stored
+        per-file summaries by importing the tracker's own build_aggregate — same
+        code path as the cron sweep, so filtered views can never drift from the
+        30d view. Returns None if the module can't be imported."""
+        try:
+            script_dir = str(TOKEN_TRACKER_SCRIPT.parent)
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            import token_usage as _tu
+            files = state.get('files') or {}
+            return _tu.build_aggregate(files, time.time(),
+                                       start_date=start_date, end_date=end_date)
+        except Exception:
+            return None
+
+    # ── ledger quick-find (GET /api/ledger-find?q=…) ──
+    def _handle_ledger_find(self):
+        """GET /api/ledger-find?q=… — fuzzy ticket/ledger lookup across the three
+        JSON ledgers (commitments COM-*, waiting_on WAIT-*, decisions DEC-*).
+        Matches an exact/prefix ID first, then free-text across the item's
+        text/what/title/owner/to/project/notes. A Jira-style key that isn't a
+        ledger item (MBA-/MSP-/STOR-/MPS-/MP-…) resolves to a Work Jira browse
+        deep-link so any ticket ID typed in the box goes somewhere useful.
+        Read-only, best-effort: a missing/broken ledger file is skipped, never
+        fatal."""
+        try:
+            q = (parse_qs(urlsplit(self.path).query).get('q', [''])[0] or '').strip()
+            if not q:
+                self._send_json(200, json.dumps({'query': q, 'results': [], 'jira': None}))
+                return
+            ql = q.lower()
+            results = []
+            now_wib = datetime.now(WIB)
+
+            def _fmt_ts(v):
+                """Epoch (or ISO) -> ('2026-07-22', '3d ago' / 'today'). ('','') if absent."""
+                if v in (None, ''):
+                    return '', ''
+                try:
+                    ts = float(v)
+                    dt = datetime.fromtimestamp(ts, WIB)
+                except (TypeError, ValueError):
+                    try:
+                        dt = datetime.fromisoformat(str(v))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=WIB)
+                    except ValueError:
+                        return '', ''
+                days = (now_wib.date() - dt.date()).days
+                if days <= 0:
+                    ago = 'today'
+                elif days == 1:
+                    ago = '1d ago'
+                else:
+                    ago = f'{days}d ago'
+                return dt.strftime('%Y-%m-%d'), ago
+
+            def _notes(raw):
+                """Coerce a notes field (list of str/dict, or str) to a list of strings."""
+                if not raw:
+                    return []
+                if isinstance(raw, str):
+                    return [raw]
+                out = []
+                for n in raw if isinstance(raw, list) else []:
+                    if isinstance(n, str):
+                        out.append(n)
+                    elif isinstance(n, dict):
+                        out.append(str(n.get('text') or n.get('note') or n.get('body') or n))
+                return out
+
+            # per-ledger timeline field map: (context_field, start_field, followup_field)
+            ledgers = [
+                ('commitments', 'COM', BASE_DIR / 'journal' / 'state' / 'commitments.json',
+                 ('text',), ('to', 'project', 'notes'),
+                 ('text', 'first_seen', 'last_nudge')),
+                ('waiting_on', 'WAIT', BASE_DIR / 'journal' / 'state' / 'waiting_on.json',
+                 ('what',), ('owner', 'escalate_to', 'notes'),
+                 ('what', 'since', 'last_nudge_at')),
+                ('decisions', 'DEC', BASE_DIR / 'journal' / 'state' / 'decisions.json',
+                 ('title', 'decision'), ('decider', 'project', 'notes'),
+                 ('decision', 'created_at', 'updated_at')),
+            ]
+            for kind, prefix, path, title_fields, extra_fields, tl in ledgers:
+                try:
+                    data = json.loads(path.read_text(encoding='utf-8'))
+                except Exception:
+                    continue
+                items = data.get('items') or {}
+                for iid, it in items.items():
+                    if not isinstance(it, dict):
+                        continue
+                    title = next((str(it.get(f)) for f in title_fields if it.get(f)), '')
+                    hay = ' '.join(str(it.get(f) or '') for f in title_fields + extra_fields)
+                    hay = (iid + ' ' + hay).lower()
+                    id_hit = ql in iid.lower()
+                    if not (id_hit or ql in hay):
+                        continue
+                    owner = it.get('owner') or it.get('to') or it.get('decider') or ''
+                    link = it.get('permalink')
+                    src = it.get('source') or {}
+                    if not link and isinstance(src, dict):
+                        link = src.get('permalink') or src.get('ref') or src.get('url')
+                    if not link and it.get('sources'):
+                        s0 = it['sources'][0] if isinstance(it['sources'], list) and it['sources'] else {}
+                        link = s0.get('url') if isinstance(s0, dict) else None
+                    ctx_field, start_field, followup_field = tl
+                    created_wib, created_ago = _fmt_ts(it.get(start_field))
+                    if not created_wib:  # fall back to first_seen for any ledger
+                        created_wib, created_ago = _fmt_ts(it.get('first_seen'))
+                    followup_wib, followup_ago = _fmt_ts(it.get(followup_field))
+                    breached_wib, breached_ago = _fmt_ts(it.get('breached_at'))
+                    nudges = it.get('nudge_count')
+                    results.append({
+                        'id': iid, 'kind': kind, 'prefix': prefix,
+                        'title': title, 'status': it.get('status') or '',
+                        'owner': owner,
+                        'due': it.get('due') or it.get('deadline') or '',
+                        'project': it.get('project') or '',
+                        'priority': bool(it.get('priority')),
+                        'link': link,
+                        'id_hit': id_hit,
+                        # enriched detail (surfaced in the expandable card)
+                        'context': str(it.get(ctx_field) or title or ''),
+                        'created_wib': created_wib, 'created_ago': created_ago,
+                        'followup_wib': followup_wib, 'followup_ago': followup_ago,
+                        'breached_wib': breached_wib, 'breached_ago': breached_ago,
+                        'nudge_count': nudges if isinstance(nudges, int) else None,
+                        'notes': _notes(it.get('notes')),
+                    })
+
+            # rank: exact-id match first, then id-prefix hits, then text hits;
+            # inside each, open items before closed, then id desc (newest first)
+            def _rank(r):
+                exact = r['id'].lower() == ql
+                open_ = 0 if (r['status'] or '').lower() in ('open', 'breached', '') else 1
+                return (0 if exact else (1 if r['id_hit'] else 2), open_, )
+            results.sort(key=lambda r: (_rank(r), r['id']))
+            results = results[:40]
+
+            # Jira deep-link for a bare ticket key (Work board)
+            jira = None
+            m = re.match(r'^([A-Za-z]{2,5})-(\d+)$', q)
+            if m and not any(r['id'].lower() == ql for r in results):
+                key = f'{m.group(1).upper()}-{m.group(2)}'
+                jira = {'key': key,
+                        'url': f'https://yourcompany.atlassian.net/browse/{key}'}
+
+            self._send_json(200, json.dumps({'query': q, 'results': results, 'jira': jira},
+                                            ensure_ascii=False))
+        except Exception as e:
+            self._send_json(500, json.dumps({'error': 'ledger-find failed', 'details': str(e)}))
 
     def _handle_get_token_efficiency(self):
         """GET /api/token-efficiency — read-only: journal/state/token_efficiency.json

@@ -353,13 +353,39 @@ def parse_file(path, rel, pricing, ai_runs):
 
 # ── aggregate ────────────────────────────────────────────────────────────────
 
-def build_aggregate(files, now):
-    cutoff = now - WINDOW_DAYS * 86400
+def _summary_in_range(s, start_str, end_str):
+    """A file summary counts toward a [start_str, end_str] WIB-date window when
+    any of its per-day activity keys fall inside the range. Falls back to the
+    file's last_epoch WIB date for older summaries that predate the `days` map.
+    Whole-file attribution (tokens/task-type/model) matches the original 30d
+    semantics — the by_day rows below stay exact per day."""
+    days = s.get('days') or {}
+    if days:
+        return any(start_str <= d <= end_str for d in days)
+    last = s.get('last_epoch')
+    return bool(last) and start_str <= _wib_date(last) <= end_str
+
+def build_aggregate(files, now, start_date=None, end_date=None):
+    """Aggregate over a WIB-date window. Default (no dates) = the trailing
+    WINDOW_DAYS ending today, preserving the cron/sweep contract. Pass
+    start_date/end_date (datetime.date) for an arbitrary custom range; the
+    dashboard uses this to serve period + date-filtered views live off the
+    stored per-file summaries (no transcript reparse)."""
+    today = datetime.now(WIB).date()
+    if end_date is None:
+        end_date = today
+    if start_date is None:
+        start_date = end_date - timedelta(days=WINDOW_DAYS - 1)
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
+    window_days = (end_date - start_date).days + 1
+
     in_window = []
     for rel, ent in files.items():
         s = ent.get('summary') or {}
-        last = s.get('last_epoch')
-        if last and last >= cutoff and s.get('tokens', {}).get('reqs'):
+        if s.get('tokens', {}).get('reqs') and _summary_in_range(s, start_str, end_str):
             in_window.append(s)
 
     totals = {'sessions': len(in_window), 'input_tokens': 0, 'output_tokens': 0,
@@ -434,18 +460,19 @@ def build_aggregate(files, now):
             'share_cost_pct': round(100.0 * g['cost'] / grand_cost, 1) if grand_cost else 0.0,
         })
 
-    # by_day: exactly the last 30 WIB dates, zero-filled
-    today = datetime.now(WIB).date()
+    # by_day: exactly the WIB dates in [start, end], zero-filled
     day_rows = []
-    for i in range(WINDOW_DAYS - 1, -1, -1):
-        d = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+    for i in range(window_days - 1, -1, -1):
+        d = (end_date - timedelta(days=i)).strftime('%Y-%m-%d')
         v = by_day.get(d, {'total_tokens': 0, 'est_cost_usd': 0.0})
         day_rows.append({'date': d, 'total_tokens': v['total_tokens'],
                          'est_cost_usd': round(v['est_cost_usd'], 4)})
 
     totals['est_cost_usd'] = round(totals['est_cost_usd'], 2)
     return {
-        'window_days': WINDOW_DAYS,
+        'window_days': window_days,
+        'range_start': start_str,
+        'range_end': end_str,
         'totals': totals,
         'by_task_type': by_task_type,
         'by_model': [{'model': m, 'runs': g['runs'], 'total_tokens': g['total_tokens'],

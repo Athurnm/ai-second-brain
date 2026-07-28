@@ -71,13 +71,20 @@ ACK_PHRASES = [
 NOISE_AUTHORS = {
     'USLACKBOT',
     '<SLACK_ID>',   # Google Calendar app
+    'system health grafana alert',   # Grafana alerts bot (posts w/o bot_id)
 }
 
-def is_noise(text, is_bot, author=None):
+# Channels that are pure automated-alert firehoses: every message is noise,
+# the owner never replies. Items from these are auto-dismissed on sweep.
+NOISE_CHANNELS = {
+    '<SLACK_ID>',   # system-health-grafana-alerts
+}
+
+def is_noise(text, is_bot, author=None, channel=None):
     """True only for bot/notifier messages or short pure-acknowledgment closers.
     Never fires on questions, links-only, or bare '^' pings (those may need
     attention). Keeps false-dismiss risk near zero."""
-    if is_bot or author in NOISE_AUTHORS:
+    if channel in NOISE_CHANNELS or is_bot or author in NOISE_AUTHORS:
         return True
     t = (text or '').lower()
     t = re.sub(r'<[^>]+>', ' ', t)          # drop <@U..> mentions and <http..> links
@@ -163,7 +170,7 @@ def new_item(state, channel_id, channel_name, ts, author, text, permalink, kind,
     item_id = f'{channel_id}:{ts}'
     if item_id in state['items']:
         return
-    noise = is_noise(text, is_bot or str(author).startswith('B'), author)
+    noise = is_noise(text, is_bot or str(author).startswith('B'), author, channel_id)
     state['items'][item_id] = {
         'channel': channel_id, 'channel_name': channel_name, 'ts': ts,
         'thread_ts': thread_ts, 'author': author, 'text': text[:600],
@@ -422,7 +429,7 @@ def sweep_noise_backlog(state):
     for it in state['items'].values():
         if it['status'] != 'open':
             continue
-        if is_noise(it['text'], str(it['author']).startswith('B'), it['author']):
+        if is_noise(it['text'], str(it['author']).startswith('B'), it['author'], it.get('channel')):
             it.update(status='dismissed', answered_by='auto_noise',
                       answered_at=time.time())
             n += 1

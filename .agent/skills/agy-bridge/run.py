@@ -553,6 +553,8 @@ def doctor(cfg):
 def main():
     ap = argparse.ArgumentParser(description="agy-bridge: GLM/Gemini/GPT-OSS co-processor + cost telemetry")
     ap.add_argument("--task", choices=["harvest", "critic", "research", "draft"])
+    ap.add_argument("--label", help="free-form bucket label for telemetry (e.g. inbox-digest); "
+                                     "token_efficiency buckets by this when present, else by --task")
     ap.add_argument("--prompt")
     ap.add_argument("--prompt-file")
     ap.add_argument("--model", help="force a single model id")
@@ -629,7 +631,9 @@ def main():
             {"actual_usd": 0, "counterfactual_usd": 0, "saving_usd": 0, "price_estimated": False,
              "cost_model": "subscription_flat" if is_flat_rate(backend, cfg) else "metered", "metered_equiv_usd": 0}
         log_call({
-            "ts_wib": ts, "wib_hour": hour, "task": args.task, "backend": backend, "model": model,
+            "ts_wib": ts, "wib_hour": hour, "task": args.task,
+            **({"label": args.label} if args.label else {}),
+            "backend": backend, "model": model,
             "input_tokens": meta["in_tok"] if ok else 0, "output_tokens": meta["out_tok"] if ok else 0,
             "tokens_estimated": meta["tokens_estimated"], "latency_ms": meta["latency_ms"],
             "ok": ok, "reason": reason, "time_routing": mode,

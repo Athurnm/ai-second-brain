@@ -396,8 +396,8 @@ Tauri shell that opens a chat UI over **your own logged-in Claude Code CLI**.
   prompt" mode that exists in the underlying CLI is intentionally not
   exposed here.
 
-See [DOWNLOAD.md](DOWNLOAD.md) to install it. The app is developed in a
-separate private repo; this one holds the harness it runs on.
+See `desktop/README.md` for what it does, how auth works, and how to build
+it yourself.
 
 ---
 
@@ -448,7 +448,7 @@ Deeper references:
 meeting-recorder/   Record + transcribe meetings locally (macOS, Windows, Linux)
 meetbot/            Rust bot that auto-joins Meet/Teams calls and transcribes them
 dashboard/          Local visual dashboard web app (http://localhost:3737)
-DOWNLOAD.md         Get the free desktop app (built from a separate repo)
+desktop/            Free native chat UI over your own Claude Code CLI
 docs/               Setup, customizing, and architecture guides
 CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 ```
