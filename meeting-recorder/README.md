@@ -72,8 +72,9 @@ pernah otomatis jatuh ke CPU; `engine: "cpu"` hanya kalau diset manual.
 
 Double-click **"Record Meeting"** di Desktop (shortcut ke `gui_win.pyw`, jalan
 tanpa terminal):
-1. Ketik nama meeting -> **Start Recording** (window kecil always-on-top,
-   timer jalan di title bar).
+1. Pilih meeting dari kalender **atau ketik nama sendiri** (lihat "Meeting
+   sendiri (ad-hoc)" di bawah) -> **Start Recording** (window kecil
+   always-on-top, timer jalan di title bar).
 2. Selesai meeting -> **Stop Recording**.
 3. Dengan "Auto-process after stop" tercentang (default), GUI langsung
    menjalankan `watcher.py --once` di WSL secara background: mix audio ->
@@ -88,11 +89,36 @@ folder dipantau terus-menerus (mis. file audio yang ditaruh manual).
 tercatat sebagai `video_path` di registry entry; transcript tetap dari audio.
 Untuk meeting yang the owner hadiri sendiri, video sudah ada di Fathom.
 
+## Meeting sendiri (ad-hoc, tidak ada di kalender)
+
+Slack huddle, telepon, atau meeting dadakan tidak perlu event kalender. Bikin
+meeting-nya sendiri:
+
+- **GUI**: ketik judul sendiri di combobox. Begitu judulnya bukan salah satu
+  kandidat kalender, checkbox **"Ad-hoc meeting (not on calendar)"** ikut
+  tercentang otomatis. Bisa juga dicentang manual sebelum ketik.
+- **CLI**: `recorder.py "Teammate x the owner: OC pricing" --ad-hoc`
+
+Yang berubah kalau ad-hoc aktif: watcher **melewati calendar match sepenuhnya**.
+Tanpa ini, sebuah huddle jam 21:36 akan menempel ke event kalender yang kebetulan
+overlap, lalu MOM-nya keluar dengan judul, attendee, dan dedupe key milik meeting
+lain (kejadian 29 Jul 2026: huddle Teammate masuk sebagai "Design review STOR-115").
+
+**Attendees (opsional)**: isi nama dipisah koma di GUI, atau `--attendees "the owner
+Arfi you, Teammate"` di CLI. Nama-nama itu dikirim ke prompt harvest + draft
+supaya `Speaker 1/2` bisa dipetakan ke orang asli, dan ikut tercatat di
+`participants` registry. Mapping hanya dilakukan kalau transkripnya tidak
+ambigu, jadi tidak melanggar aturan "jangan menebak nama".
+
 ## Pemakaian harian (CLI)
 
 ```bash
 # 1. Rekam meeting (mesin mana pun)
 python(.exe) recorder.py "OC Finance Sign-off"
+
+# Meeting ad-hoc yang tidak ada di kalender
+python(.exe) recorder.py "Teammate x the owner: OC pricing" --ad-hoc \
+    --attendees "Your Name, Teammate"
 
 # 2. Watcher memproses otomatis (kalau jalan), atau manual:
 python3 meeting-recorder/watcher.py --once

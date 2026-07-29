@@ -36,7 +36,11 @@ CHUNK = 1024
 def now_stamp():
     return datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
 
-def write_sidecar(base, title, start, parts, plat):
+def write_sidecar(base, title, start, parts, plat, ad_hoc=False, attendees=None):
+    """ad_hoc=True marks a meeting the owner created himself (Slack huddle, phone
+    call, anything not on the calendar). The watcher then skips the calendar
+    match entirely, so the recording cannot inherit the title, attendees, or
+    MOM dedupe key of whatever calendar event happened to overlap it."""
     end = datetime.datetime.now(datetime.timezone.utc)
     meta = {
         "title": title,
@@ -44,6 +48,8 @@ def write_sidecar(base, title, start, parts, plat):
         "end_utc": end.isoformat(timespec="seconds"),
         "duration_sec": int((end - start).total_seconds()),
         "platform": plat,
+        "ad_hoc": bool(ad_hoc),
+        "attendees": [a.strip() for a in (attendees or []) if a.strip()],
         "parts": [os.path.basename(p) for p in parts],
     }
     with open(base + ".json", "w", encoding="utf-8") as f:
@@ -220,6 +226,13 @@ def main():
     ap.add_argument("--system-only", action="store_true")
     ap.add_argument("--video", action="store_true",
                     help="also screen-record to <base>.mp4 (Windows, needs ffmpeg)")
+    ap.add_argument("--ad-hoc", action="store_true",
+                    help="meeting not on the calendar (Slack huddle, phone call). "
+                         "Skips calendar matching so the title you type is the title "
+                         "that sticks")
+    ap.add_argument("--attendees", default="",
+                    help="comma-separated names, used to resolve Speaker 1/2 labels "
+                         "in the MOM draft")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -259,7 +272,9 @@ def main():
             video = screen.stop()
             if video:
                 parts = list(parts) + [video]
-        write_sidecar(base, args.title, start, parts, plat)
+        write_sidecar(base, args.title, start, parts, plat,
+                      ad_hoc=args.ad_hoc,
+                      attendees=args.attendees.split(","))
     finally:
         if os.path.exists(marker):
             os.remove(marker)

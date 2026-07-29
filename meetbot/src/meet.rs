@@ -2795,7 +2795,7 @@ fn teams_stage_failure(
 /// call site in [`MeetSession::launch`].
 async fn set_accept_language(page: &Page) -> Result<()> {
     use chromiumoxide::cdp::browser_protocol::network::{
-        EnableParams, Headers, SetExtraHttpHeadersParams,
+        DisableParams, EnableParams, Headers, SetExtraHttpHeadersParams,
     };
 
     // `Network.setExtraHTTPHeaders` requires the Network domain to be enabled.
@@ -2806,6 +2806,25 @@ async fn set_accept_language(page: &Page) -> Result<()> {
     page.execute(SetExtraHttpHeadersParams::new(headers))
         .await
         .map_err(|e| anyhow!("could not set Accept-Language: {e}"))?;
+
+    // Then disable the Network domain again. CONFIRMED ROOT CAUSE of the
+    // 2026-07-22 nav-timeout regression (verified 29 Jul by on-demand dummy
+    // joins: with the enable left in, every join died at chromiumoxide's 30s
+    // request_timeout; with this disable added, navigation succeeds and the
+    // join proceeds to the green-room step): with Network enabled, chromiumoxide's
+    // single Handler stream must demux a `Network.*` event for every resource
+    // the page fetches. `page.goto()` is `execute(Page.navigate).await`, which
+    // waits for the navigate command's RESPONSE to route back through that same
+    // Handler; when the event volume from a heavy page (Meet grew its request
+    // count around that date) saturates the demux, the response is starved past
+    // chromiumoxide's 30s request_timeout and every join dies with
+    // `failed to navigate ... Request timed out`. Reproduced on demand via a
+    // dummy /bots join; a raw-CDP probe that drains events in a tight loop never
+    // hit it, which is exactly the Handler-throughput difference. The extra
+    // header persists in the browser's network state after the domain is
+    // disabled, so Teams' Accept-Language is unaffected; disabling only stops
+    // the event stream we never consume.
+    let _ = page.execute(DisableParams::default()).await;
     Ok(())
 }
 

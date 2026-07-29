@@ -332,8 +332,10 @@ def _strip_narration(text):
         idx = idx + 1 if idx != -1 else -1
     return text[idx:].strip() if idx > 0 else text
 
-def draft_mom(transcript_md, title, start_wib, matched, scratch, cfg=None):
+def draft_mom(transcript_md, title, start_wib, matched, scratch, cfg=None,
+              attendees=None):
     cfg = cfg or {}
+    roster = ", ".join(attendees) if attendees else ""
     with open(transcript_md, encoding="utf-8") as f:
         transcript = f.read()
     with open(MOM_TEMPLATE, encoding="utf-8") as f:
@@ -345,7 +347,12 @@ def draft_mom(transcript_md, title, start_wib, matched, scratch, cfg=None):
                 "context), topics discussed with key points, decisions made with "
                 "rationale, action items with owner and deadline if stated, notable "
                 "quotes. Do NOT synthesize or prioritize; facts only. Keep the "
-                "original language of quotes.\n\n=== TRANSCRIPT ===\n" + transcript,
+                "original language of quotes.\n"
+                + (f"Known attendees, in no particular order: {roster}. Map the "
+                   "speaker labels onto these names ONLY where the transcript "
+                   "makes the mapping unambiguous; otherwise keep the raw label.\n"
+                   if roster else "")
+                + "\n=== TRANSCRIPT ===\n" + transcript,
                 scratch)
     if facts is None:
         return None
@@ -356,7 +363,9 @@ def draft_mom(transcript_md, title, start_wib, matched, scratch, cfg=None):
               "template structure (replace placeholders, keep the section order and "
               "table formats). No em-dashes anywhere. Meeting: "
               f"{meeting_line}. Date: {start_wib.strftime('%Y-%m-%d')}, start "
-              f"{start_wib.strftime('%H:%M')} WIB.\n\n=== TEMPLATE ===\n{template}\n\n"
+              f"{start_wib.strftime('%H:%M')} WIB."
+              + (f" Attendees: {roster}." if roster else "")
+              + f"\n\n=== TEMPLATE ===\n{template}\n\n"
               "=== EXTRACTED FACTS ===\n" + facts,
               scratch,
               model=cfg.get("draft_model"), backend=cfg.get("draft_backend"))
@@ -378,9 +387,23 @@ def process(audio_path, cfg, state):
 
     duration = meta.get("duration_sec", 0)
     rec_id, start_wib = register_recording(audio_path, meta, None, duration)
-    matched = calendar_match(start_wib, cfg)
-    if matched:
-        update_registry_entry(rec_id, matched_meeting=matched, confidence="high")
+    ad_hoc = bool(meta.get("ad_hoc"))
+    attendees = meta.get("attendees") or []
+    if ad_hoc:
+        # the owner created this meeting himself; the typed title is authoritative.
+        # Matching it to an overlapping calendar event would rename the MOM,
+        # brief the wrong room, and dedupe it against an unrelated recording.
+        matched = None
+        update_registry_entry(rec_id, matched_meeting=title, confidence="high",
+                              match_source="local-recorder-adhoc",
+                              participants=attendees)
+        print(f"[watcher] ad-hoc meeting, calendar match skipped: {title}")
+    else:
+        matched = calendar_match(start_wib, cfg)
+        if matched:
+            update_registry_entry(rec_id, matched_meeting=matched, confidence="high")
+        if attendees:
+            update_registry_entry(rec_id, participants=attendees)
     video = base + ".mp4"
     if os.path.exists(video):
         update_registry_entry(rec_id, video_path=video)
@@ -399,7 +422,8 @@ def process(audio_path, cfg, state):
         scratch = os.path.join(MODULE_DIR, "scratch")
         os.makedirs(scratch, exist_ok=True)
         try:
-            mom = draft_mom(transcript_md, title, start_wib, matched, scratch, cfg)
+            mom = draft_mom(transcript_md, title, start_wib, matched, scratch, cfg,
+                            attendees=attendees)
         except RuntimeError as e:
             print(f"[watcher] draft failed: {e}", file=sys.stderr)
             mom = None
