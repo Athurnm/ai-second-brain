@@ -41,6 +41,7 @@ ACTIVE_PROJECTS_PATH = BASE_DIR / 'journal' / 'active_projects.md'
 TICKETS_PATH = BASE_DIR / 'journal' / 'state' / 'tickets.json'
 INITIATIVES_PATH = BASE_DIR / 'journal' / 'state' / 'initiatives.json'
 PORTFOLIO_PATH = BASE_DIR / 'journal' / 'state' / 'portfolio.json'
+WORK_TREE_PATH = BASE_DIR / 'journal' / 'state' / 'work_tree.json'
 ACTIONS_QUEUE = BASE_DIR / 'journal' / 'queue' / 'actions.jsonl'
 ROUTINES_PATH = BASE_DIR / 'journal' / 'state' / 'routines.json'
 INSIGHTS_PATH = BASE_DIR / 'journal' / 'state' / 'insights.json'
@@ -1492,6 +1493,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_get_initiatives()
         elif self.path == '/api/portfolio':
             self._handle_get_portfolio()
+        elif self.path == '/api/work-tree':
+            self._handle_get_work_tree()
         elif self.path.startswith('/api/initiative/'):
             self._handle_get_initiative_detail()
         elif self.path.startswith('/api/job-log'):
@@ -2058,6 +2061,47 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(200, json.dumps({'teams': teams, 'updated_wib': data.get('updated_wib')}))
         except Exception as e:
             self._send_json(500, json.dumps({'error': 'Failed to read portfolio', 'details': str(e)}))
+
+    def _handle_get_work_tree(self):
+        """Domain-first work hierarchy for the Work tab.
+
+        Structure validated by the owner 30 Jul 2026: Domain > World > Client (optional)
+        > Drop/Initiative > Item > Thread. Depth is deliberately not fixed. Serves
+        journal/state/work_tree.json as-is, plus a computed roll-up per node so the
+        UI never has to walk the tree twice.
+        """
+        try:
+            if not WORK_TREE_PATH.exists():
+                self._send_json(200, json.dumps({
+                    'roots': [], 'note': 'No work_tree.json yet.'}))
+                return
+            data = json.loads(WORK_TREE_PATH.read_text(encoding='utf-8'))
+
+            def roll(node):
+                r = {'threads': 0, 'attn': 0, 'blocked': 0, 'moved': 0, 'owner': 0}
+                if node.get('kind') == 'thread':
+                    r['threads'] = 1
+                if node.get('owner') or node.get('status') == 'critical':
+                    r['attn'] = 1
+                if node.get('status') == 'critical':
+                    r['blocked'] = 1
+                if node.get('moved'):
+                    r['moved'] = 1
+                if node.get('owner'):
+                    r['owner'] = 1
+                for c in node.get('children', []):
+                    cr = roll(c)
+                    for k in r:
+                        r[k] += cr[k]
+                node['roll'] = r
+                return r
+
+            for root in data.get('roots', []):
+                roll(root)
+            self._send_json(200, json.dumps(data))
+        except Exception as e:
+            self._send_json(500, json.dumps(
+                {'error': 'Failed to read work tree', 'details': str(e)}))
 
     def _handle_get_initiative_detail(self):
         """GET /api/initiative/<id> — Portfolio drill-down join: initiative meta from
@@ -4403,7 +4447,7 @@ def main():
     # HTTPServer hung all tabs when one connection blocked).
     server = ThreadingHTTPServer(('0.0.0.0', PORT), DashboardHandler)
     server.daemon_threads = True
-    print(f"\n  🚀 Dashboard running at http://localhost:{PORT}\n")
+    print(f"\n  [Dashboard] running at http://localhost:{PORT}\n")
     print(f"  Reading from: {DASHBOARD_PATH}")
     print(f"  Calendar:     {'✅ token found' if TOKEN_FILE.exists() else '❌ no token'}")
     print(f"  Projects:     {CLIENTS_DIR}")

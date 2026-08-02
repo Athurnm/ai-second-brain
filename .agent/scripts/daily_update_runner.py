@@ -231,7 +231,7 @@ class HarvestAccumulator:
 # Timeouts (seconds)
 FILE_SCAN_TIMEOUT = 15
 CALENDAR_TIMEOUT = 20
-SLACK_LIST_TIMEOUT = 15
+SLACK_LIST_TIMEOUT = 120  # raised from 15: listing now paginates im/mpim and sweeps users.list for DM names
 SLACK_HISTORY_TIMEOUT = 20   # per channel; threads can be slow
 SLACK_HISTORY_TIMEOUT_MORNING = 12  # faster for morning mode
 BACKLOG_TIMEOUT = 10
@@ -299,11 +299,22 @@ def git_sync(sections):
             subprocess.run(["git", "commit", "-m", msg], cwd=BASE_DIR, capture_output=True)
             print("✓")
 
-        # 3. Pull with rebase to integrate remote changes
-        print("      Pulling remote changes...", end=" ", flush=True)
+        # 3. Pull with rebase to integrate remote changes.
+        #    Always operate on the CHECKED-OUT branch. This used to hardcode
+        #    'main', which rebased whatever feature branch was checked out onto
+        #    origin/main, rewriting every one of its SHAs and leaving the branch
+        #    permanently diverged from its own remote. Fixed 29 Jul 2026.
+        branch_res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                    cwd=BASE_DIR, capture_output=True, text=True)
+        branch = branch_res.stdout.strip() or "main"
+        if branch == "HEAD":
+            print("      ⚠ detached HEAD, skipping sync")
+            sections.append("## GitHub Sync Status\n> [!WARNING]\n> Detached HEAD, sync skipped.\n")
+            return
+        print(f"      Pulling remote changes ({branch})...", end=" ", flush=True)
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
-        pull_res = subprocess.run(["git", "pull", "--rebase", "origin", "main"], 
+        pull_res = subprocess.run(["git", "pull", "--rebase", "origin", branch],
                                   cwd=BASE_DIR, env=env, capture_output=True, text=True)
         
         if pull_res.returncode != 0:
@@ -314,12 +325,12 @@ def git_sync(sections):
         print("✓")
 
         # 4. Push
-        print("      Pushing to origin...", end=" ", flush=True)
-        push_res = subprocess.run(["git", "push", "origin", "main"], 
+        print(f"      Pushing to origin ({branch})...", end=" ", flush=True)
+        push_res = subprocess.run(["git", "push", "origin", branch],
                                   cwd=BASE_DIR, capture_output=True, text=True)
         if push_res.returncode == 0:
             print("✓")
-            sections.append("## GitHub Sync Status\n✓ Successfully pushed latest local changes to origin/main.\n")
+            sections.append(f"## GitHub Sync Status\n✓ Successfully pushed latest local changes to origin/{branch}.\n")
         else:
             print("❌ FAILED")
             sections.append(f"## GitHub Sync Status\n> [!ERROR]\n> Push failed: {push_res.stderr}\n")
@@ -571,7 +582,8 @@ def _main_logic(mode, dry_run=False):
     else:
         out = run_step("Work Slack Channels", [
             sys.executable, work_slack_script,
-            '--action', 'list_joined_channels', '--token', work_token or ""
+            '--action', 'list_joined_channels', '--token', work_token or "",
+            '--include-dms'
         ], timeout=SLACK_LIST_TIMEOUT)
     sections.append(f"## Slack: Work (Married)\n```\n{out}\n```\n")
     write_output(sections, output_file)
@@ -583,13 +595,26 @@ def _main_logic(mode, dry_run=False):
             try:
                 name = line.split('- ')[1].split(' (ID:')[0].strip()
                 cid = line.split('(ID: ')[1].split(')')[0].strip()
-                work_channels.append((name, cid))
+                is_dm = '[DM' in line
+                dm_updated = 0
+                if is_dm and 'updated=' in line:
+                    dm_updated = int(line.split('updated=')[1].split(']')[0].strip() or 0)
+                work_channels.append((name, cid, is_dm, dm_updated))
             except: continue
 
     if work_channels:
-        # Filter for relevant channels
-        keywords = ['market', 'portal', 'b2c', 'ExampleProgram', 'oms', 'pim', 'standup', 'work', 'general', 'announcement', 'sync', 'priority', 'YourManager', 'product', 'platform', 'ecom', 'ExampleClient', 'seller', 'urgent', 'liveops']
-        filtered_work = [c for c in work_channels if any(k in c[0].lower() for k in keywords)]
+        # Filter for relevant channels. DMs bypass the keyword list entirely:
+        # the owner's most actionable traffic arrives there and a keyword list
+        # cannot match a person's name. No recency prefilter is possible here,
+        # because users.conversations returns `updated` as the conversation's
+        # creation time, not its last message.
+        # No keyword filter. It used to gate channels on a hardcoded word list,
+        # which silently dropped 29 live channels on 29 Jul 2026, among them
+        # ksa-2026-ExampleVendor, new-biz-ExampleVendor, exampleco-tech-ops and
+        # 2026-offers-redemption-journey-saib, all carrying open the owner items
+        # that day. the owner is only in ~92 conversations, so sweeping all of them
+        # costs ~45s and removes a whole class of silent blind spot.
+        filtered_work = work_channels
 
         # Morning mode: all channels but fewer messages (5 per channel)
         # Evening mode: filtered channels with more messages (10 per channel)
@@ -597,12 +622,21 @@ def _main_logic(mode, dry_run=False):
         history_timeout = SLACK_HISTORY_TIMEOUT_MORNING if is_morning else SLACK_HISTORY_TIMEOUT
 
         print(f"      Fetching history for {len(filtered_work)} channels ({msg_limit} msg/ch, mode={mode})...", flush=True)
-        for name, cid in filtered_work:
-            out = _step(f"Work #{name}", [
+        n_dms = sum(1 for c in filtered_work if c[2])
+        print(f"      [scope] {len(filtered_work) - n_dms} channels + {n_dms} DMs", flush=True)
+
+        for name, cid, is_dm, _updated in filtered_work:
+            # Channels expand thread replies; DMs do not, since DM threads are
+            # rare and the mention ledger already tracks them statefully. That
+            # keeps the added DM sweep to roughly 1.5s per conversation.
+            cmd = [
                 sys.executable, work_slack_script,
                 '--action', 'history', '--channel', cid,
-                '--token', work_token or "", '--limit', msg_limit, '--replies'
-            ], timeout=history_timeout)
+                '--token', work_token or "", '--limit', msg_limit, '--full'
+            ]
+            if not is_dm:
+                cmd.append('--replies')
+            out = _step(f"Work #{name}", cmd, timeout=history_timeout)
             harvest.add_slack_channel(name, out)
             sections.append(f"### Work: #{name}\n```\n{out}\n```\n")
             write_output(sections, output_file)

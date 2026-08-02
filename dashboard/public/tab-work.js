@@ -27,6 +27,10 @@ window.Tabs = window.Tabs || {};
     aiRuns: null, aiRunsError: null,
     stakeholders: null, stakeholdersError: null,
     initiativeId: null, initiativeDetail: null, initiativeDetailError: null,
+    workTree: null, workTreeError: null,
+    wtOpen: new Set(['root-ecom', 'old', 'exampleprogram', 'd2', 'root-b2c']),
+    wtSelected: 'root-ecom',
+    wtFilter: 'all',
   };
 
   const JIRA_KEY_RE = /^[A-Z]+-\d+$/;
@@ -352,6 +356,254 @@ window.Tabs = window.Tabs || {};
       key: 'portfolio', icon: '🗂', title: 'Portfolio',
       count: `${teams.length} teams · ${atRisk} at risk`, status, body, open: false,
     });
+  }
+
+  /* ══ Work Tree (domain-first hierarchy, /api/work-tree) ══════════════
+     Structure validated 30 Jul 2026: Domain > World > Client (optional) >
+     Drop/Initiative > Item > Thread. Depth is deliberately NOT fixed, so
+     everything here recurses on `children` and never assumes a level count.
+     Left = persistent outline, right = detail for the selected node. Every
+     fact carries its provenance: `refs` auto-link by prefix, `sources` are
+     explicit meeting/doc/Slack links. */
+
+  const WT_STATUS_KIND = { critical: 'serious', risk: 'warn', ok: 'good', plan: 'muted' };
+  const WT_STATUS_LABEL = { critical: 'blocked', risk: 'at risk', ok: 'on track', plan: 'planning' };
+  const WT_FILTERS = [
+    { key: 'all', label: 'All' },
+    { key: 'owner', label: 'Needs the owner' },
+    { key: 'blocked', label: 'Blocked' },
+    { key: 'moved', label: 'Moved' },
+  ];
+
+  /* ledger IDs have no URL — they deep-link into quickfind instead */
+  const WT_LEDGER_RE = /^(WAIT|COM|DEC|CR)-\d+$/;
+  function wtRefUrl(ref) {
+    if (WT_LEDGER_RE.test(ref)) return null;
+    if (/^(MP|MPS)-\d+$/.test(ref)) return `https://yourcompany.atlassian.net/browse/${ref}`;
+    if (/^(MSP|MBA|STOR)-\d+$/.test(ref)) return `https://examplevendor.atlassian.net/browse/${ref}`;
+    return null;
+  }
+
+  function wtRefChips(refs) {
+    if (!refs || !refs.length) return '';
+    return refs.map(r => {
+      const url = wtRefUrl(r);
+      if (url) return `<a class="wt-ref" href="${U.esc(url)}" target="_blank" rel="noopener">${U.esc(r)}</a>`;
+      return `<button type="button" class="wt-ref wt-ref-ledger" data-wt-find="${U.esc(r)}" title="Find ${U.esc(r)}">${U.esc(r)}</button>`;
+    }).join(' ');
+  }
+
+  function wtSourceChips(sources) {
+    if (!sources || !sources.length) return '';
+    const icon = { fathom: '🎥', slack: '💬', doc: '📄', jira: '🎫', mom: '📝' };
+    return `<div class="wt-sources"><span class="wt-sources-label">Source</span>${sources.map(s =>
+      `<a class="wt-src" href="${U.esc(s.url)}" target="_blank" rel="noopener">${icon[s.kind] || '🔗'} ${U.esc(s.label)}</a>`
+    ).join('')}</div>`;
+  }
+
+  function wtIndex() {
+    const nodes = {}, parent = {};
+    (function walk(list, p) {
+      (list || []).forEach(n => {
+        nodes[n.id] = n; parent[n.id] = p;
+        walk(n.children, n.id);
+      });
+    })((state.workTree && state.workTree.roots) || [], null);
+    return { nodes, parent };
+  }
+
+  function wtMatch(n) {
+    const f = state.wtFilter;
+    if (f === 'all') return true;
+    if (f === 'owner') return !!n.owner;
+    if (f === 'blocked') return n.status === 'critical';
+    if (f === 'moved') return !!n.moved;
+    return true;
+  }
+  function wtVisible(n) {
+    if (state.wtFilter === 'all') return true;
+    if (n.kind === 'thread') return wtMatch(n);
+    return (n.children || []).some(wtVisible);
+  }
+
+  function wtTreeRows(list, depth) {
+    return (list || []).filter(wtVisible).map(n => {
+      const kids = (n.children || []).filter(wtVisible);
+      const isOpen = state.wtOpen.has(n.id);
+      const r = n.roll || { threads: 0, attn: 0 };
+      const badge = n.kind === 'thread'
+        ? (n.owner ? '<span class="wt-attn">B</span>' : '')
+        : (r.attn ? `<span class="wt-attn">${r.attn}</span>`
+          : (r.threads ? `<span class="wt-cnt">${r.threads}</span>` : ''));
+      return `<div class="wt-node">
+        <button type="button" class="wt-row${state.wtSelected === n.id ? ' is-sel' : ''}"
+            data-wt-go="${U.esc(n.id)}" style="padding-left:${8 + depth * 13}px">
+          <span class="wt-twist${kids.length ? (isOpen ? ' is-open' : '') : ' is-leaf'}"
+                data-wt-tw="${U.esc(n.id)}">▶</span>
+          <span class="wt-dot wt-${U.esc(n.status || 'plan')}"></span>
+          <span class="wt-label">${U.esc(n.label)}</span>
+          ${badge}
+        </button>
+        ${kids.length && isOpen ? `<div class="wt-kids">${wtTreeRows(kids, depth + 1)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function wtCrumbs(id, parent, nodes) {
+    const chain = []; let c = id;
+    while (c) { chain.unshift(c); c = parent[c]; }
+    return chain.map((cid, i) => i === chain.length - 1
+      ? `<span class="wt-crumb-here">${U.esc(nodes[cid].label)}</span>`
+      : `<button type="button" class="wt-crumb" data-wt-go="${U.esc(cid)}">${U.esc(nodes[cid].label)}</button><span class="wt-crumb-sep">/</span>`
+    ).join(' ');
+  }
+
+  function wtThreadRow(t) {
+    const badges = [
+      Comp.badge(WT_STATUS_KIND[t.status] || 'muted', WT_STATUS_LABEL[t.status] || t.status),
+      t.owner ? '<span class="wt-badge-b">Needs the owner</span>' : '',
+      t.moved ? '<span class="wt-moved">↑ moved</span>' : '',
+    ].filter(Boolean).join(' ');
+    return `<tr class="wt-trow">
+      <td><div class="wt-th-name"><b>${U.esc(t.label)}</b><span class="wt-th-tags">${badges}${wtRefChips(t.refs)}</span></div></td>
+      <td>${U.esc(t.problem || '')}${t.branch ? `<div class="wt-branch">↳ ${U.esc(t.branch)}</div>` : ''}</td>
+      <td>${U.esc(t.progress || '')}</td>
+      <td class="${t.blocker ? 'wt-blocked' : 'wt-clear'}">${t.blocker ? U.esc(t.blocker) : 'None'}</td>
+      <td>${U.esc(t.next || '')}${wtSourceChips(t.sources)}</td>
+    </tr>`;
+  }
+
+  function wtKidCards(kids) {
+    return `<div class="wt-kids-grid">${kids.map(k => {
+      const r = k.roll || { threads: 0, attn: 0 };
+      return `<button type="button" class="wt-kid" data-wt-go="${U.esc(k.id)}">
+        <span class="wt-kid-top">${Comp.badge(WT_STATUS_KIND[k.status] || 'muted', WT_STATUS_LABEL[k.status] || k.status)}
+          <span class="wt-kind">${U.esc(k.kind)}</span></span>
+        <span class="wt-kid-name">${U.esc(k.label)}</span>
+        ${k.summary ? `<span class="wt-kid-sum">${U.esc(k.summary)}</span>` : ''}
+        <span class="wt-kid-foot">${r.threads ? `${r.threads} threads` : 'no threads'}${r.attn ? ` · <b>${r.attn} need attention</b>` : ''}</span>
+      </button>`;
+    }).join('')}</div>`;
+  }
+
+  function wtDetail(nodes, parent) {
+    const n = nodes[state.wtSelected] || nodes['root-ecom'];
+    if (!n) return '';
+    const kids = (n.children || []).filter(wtVisible);
+    const threads = kids.filter(k => k.kind === 'thread');
+    const groups = kids.filter(k => k.kind !== 'thread');
+    let body = '';
+
+    if (n.kind === 'thread') {
+      body = `<div class="wt-fields">
+        <div class="wt-field"><span class="wt-flabel wt-f-problem">Problem</span><span>${U.esc(n.problem || '')}</span></div>
+        <div class="wt-field"><span class="wt-flabel wt-f-blocker">Blocker</span><span class="${n.blocker ? 'wt-blocked' : 'wt-clear'}">${n.blocker ? U.esc(n.blocker) : 'None'}</span></div>
+        <div class="wt-field"><span class="wt-flabel wt-f-progress">Progress this week</span><span>${U.esc(n.progress || '')}</span></div>
+        <div class="wt-field"><span class="wt-flabel wt-f-next">Next</span><span>${U.esc(n.next || '')}</span></div>
+      </div>${n.branch ? `<div class="wt-branch">↳ ${U.esc(n.branch)}</div>` : ''}`;
+    } else {
+      const parts = [];
+      if (groups.length) parts.push(`<div class="wt-sec-label">Inside this ${U.esc(n.kind)} · ${groups.length}</div>${wtKidCards(groups)}`);
+      if (threads.length) parts.push(`<div class="wt-sec-label">Threads · ${threads.length}</div>
+        <div class="wt-tablewrap"><table class="wt-table">
+          <thead><tr><th>Thread</th><th>Problem</th><th>Progress this week</th><th>Blocker</th><th>Next</th></tr></thead>
+          <tbody>${threads.map(wtThreadRow).join('')}</tbody></table></div>`);
+      if (!parts.length) parts.push(`<p class="wt-empty">Nothing tracked below this node${state.wtFilter !== 'all' ? ' for the current filter' : ''}.</p>`);
+      body = parts.join('');
+    }
+
+    return `<div class="wt-detail">
+      <div class="wt-crumbs">${wtCrumbs(n.id, parent, nodes)}</div>
+      <h4 class="wt-title">${U.esc(n.label)}</h4>
+      <div class="wt-tags">
+        ${Comp.badge(WT_STATUS_KIND[n.status] || 'muted', WT_STATUS_LABEL[n.status] || n.status)}
+        <span class="wt-kind">${U.esc(n.kind)}</span>
+        ${n.owner ? '<span class="wt-badge-b">Needs the owner</span>' : ''}
+        ${n.moved ? '<span class="wt-moved">↑ moved this week</span>' : ''}
+        ${wtRefChips(n.refs)}
+      </div>
+      ${n.summary ? `<p class="wt-sum">${U.esc(n.summary)}</p>` : ''}
+      ${wtSourceChips(n.sources)}
+      ${body}
+    </div>`;
+  }
+
+  function workTreeCard() {
+    if (state.workTreeError) return `<div class="load-error">Work tree unavailable: ${U.esc(state.workTreeError)}</div>`;
+    const roots = (state.workTree && state.workTree.roots) || [];
+    if (!roots.length) {
+      return Comp.card({
+        key: 'work-tree', icon: '🌳', title: 'Work Tree',
+        body: Comp.emptyState({ icon: '🌳', title: 'No work tree yet', hint: (state.workTree && state.workTree.note) || 'Expected journal/state/work_tree.json' }),
+        open: false,
+      });
+    }
+    const { nodes, parent } = wtIndex();
+    const totals = roots.reduce((a, r) => {
+      const q = r.roll || {};
+      a.threads += q.threads || 0; a.attn += q.attn || 0; return a;
+    }, { threads: 0, attn: 0 });
+
+    const chips = WT_FILTERS.map(f =>
+      `<button type="button" class="chip${state.wtFilter === f.key ? ' is-active' : ''}" data-wt-filter="${f.key}">${U.esc(f.label)}</button>`
+    ).join('');
+
+    const body = `<div class="wt-toolbar">${chips}
+        <span class="wt-toolbar-sp"></span>
+        <button type="button" class="chip" data-wt-expand="1">Expand all</button>
+        <button type="button" class="chip" data-wt-collapse="1">Collapse</button>
+      </div>
+      <div class="wt-split">
+        <div class="wt-tree">${wtTreeRows(roots, 0)}</div>
+        ${wtDetail(nodes, parent)}
+      </div>`;
+
+    return Comp.card({
+      key: 'work-tree', icon: '🌳', title: 'Work Tree',
+      count: `${totals.threads} threads · ${totals.attn} need attention`,
+      status: totals.attn ? 'warn' : 'good',
+      body, open: true,
+    });
+  }
+
+  /* Surgical work-tree update — NEVER call render() for a work-tree click.
+     render() replaces #tab-work's innerHTML, so `.wt-tree` (max-height
+     560px; overflow-y:auto) is rebuilt from scratch at scrollTop 0. Only
+     the outline, the detail pane and the filter chips can change here; the
+     card header (count/status) comes from roots[].roll, which no click
+     mutates. Keeping the `.wt-tree` ELEMENT alive lets us restore its
+     scrollTop — swapping innerHTML collapses its content height, so the
+     browser clamps to 0 regardless. Returns false (caller falls back to
+     render()) when the card isn't on screen: first paint, load error,
+     empty tree.
+     `openOnly` marks clicks that touch state.wtOpen but not wtSelected
+     (twist, expand-all, collapse); wtDetail() never reads wtOpen, so the
+     detail pane is left alone and .wt-tablewrap keeps its scrollLeft. */
+  function wtRerender(openOnly) {
+    const panel = document.getElementById('tab-work');
+    const treeEl = panel && panel.querySelector('.wt-tree');
+    const detailEl = panel && panel.querySelector('.wt-detail');
+    if (!treeEl || !detailEl) return false;
+    const roots = (state.workTree && state.workTree.roots) || [];
+    if (!roots.length) return false;
+
+    const { nodes, parent } = wtIndex();
+    const detailHtml = openOnly ? '' : wtDetail(nodes, parent);
+    if (!openOnly && !detailHtml) return false;
+
+    const treeTop = treeEl.scrollTop;
+    treeEl.innerHTML = wtTreeRows(roots, 0);
+    treeEl.scrollTop = treeTop;
+    if (detailHtml) detailEl.outerHTML = detailHtml;
+    panel.querySelectorAll('[data-wt-filter]').forEach(c =>
+      c.classList.toggle('is-active', c.dataset.wtFilter === state.wtFilter));
+
+    /* Page scroll is deliberately NOT restored: a thread's detail pane is
+       shorter than a domain's table, and once the document shrinks the
+       browser has already clamped window.scrollY to the new maximum. That
+       position no longer exists, so scrolling back to it is impossible
+       rather than merely unimplemented. */
+    return true;
   }
 
   /* ── Decisions ── */
@@ -746,13 +998,22 @@ window.Tabs = window.Tabs || {};
   function render() {
     const panel = document.getElementById('tab-work');
     if (!panel || !canRender(panel)) return;
+    /* full teardown: keep the work-tree outline where the user left it, so
+       the 60s refresh loop doesn't yank it to the top mid-read */
+    const prevTree = panel.querySelector('.wt-tree');
+    const treeTop = prevTree ? prevTree.scrollTop : 0;
     panel.innerHTML = `<div class="stack">
       ${trackerCard()}
+      ${workTreeCard()}
       ${portfolioCard()}
       ${decisionsCard()}
       ${commitmentsCard()}
       ${peopleCard()}
     </div>`;
+    if (treeTop) {
+      const tree = panel.querySelector('.wt-tree');
+      if (tree) tree.scrollTop = treeTop;
+    }
   }
 
   async function load(filter) {
@@ -766,13 +1027,14 @@ window.Tabs = window.Tabs || {};
       return;
     }
 
-    const [trkR, portR, decR, comR, ppR, aiR] = await Promise.allSettled([
+    const [trkR, portR, decR, comR, ppR, aiR, wtR] = await Promise.allSettled([
       U.fetchJSON('/api/tracker'),
       U.fetchJSON('/api/portfolio'),
       U.fetchJSON('/api/decisions'),
       U.fetchJSON('/api/commitments'),
       U.fetchJSON('/api/stakeholders'),
       U.fetchJSON('/api/ai-task?list=1'),
+      U.fetchJSON('/api/work-tree'),
     ]);
 
     state.tracker = trkR.status === 'fulfilled' ? trkR.value : null;
@@ -787,6 +1049,8 @@ window.Tabs = window.Tabs || {};
     state.stakeholdersError = ppR.status === 'rejected' ? (ppR.reason && ppR.reason.message) || 'unknown error' : null;
     state.aiRuns = aiR.status === 'fulfilled' ? aiR.value : state.aiRuns;
     state.aiRunsError = aiR.status === 'rejected' ? (aiR.reason && aiR.reason.message) || 'unknown error' : null;
+    state.workTree = wtR.status === 'fulfilled' ? wtR.value : null;
+    state.workTreeError = wtR.status === 'rejected' ? (wtR.reason && wtR.reason.message) || 'unknown error' : null;
 
     render();
   }
@@ -795,6 +1059,57 @@ window.Tabs = window.Tabs || {};
   document.addEventListener('click', e => {
     const panel = document.getElementById('tab-work');
     if (!panel || !panel.contains(e.target)) return;
+
+    /* work-tree: twist toggles open/closed WITHOUT changing selection, so
+       exploring the outline never yanks the detail pane out from under you */
+    const wtTw = e.target.closest('[data-wt-tw]');
+    if (wtTw) {
+      e.stopPropagation();
+      const id = wtTw.dataset.wtTw;
+      const { nodes } = wtIndex();
+      if (nodes[id] && (nodes[id].children || []).length) {
+        state.wtOpen.has(id) ? state.wtOpen.delete(id) : state.wtOpen.add(id);
+        if (!wtRerender(true)) render();
+      }
+      return;
+    }
+    const wtGo = e.target.closest('[data-wt-go]');
+    if (wtGo) {
+      const id = wtGo.dataset.wtGo;
+      const { nodes, parent } = wtIndex();
+      if (!nodes[id]) return;
+      state.wtSelected = id;
+      let p = parent[id];
+      while (p) { state.wtOpen.add(p); p = parent[p]; }
+      if ((nodes[id].children || []).length) state.wtOpen.add(id);
+      if (!wtRerender()) render();
+      return;
+    }
+    const wtFind = e.target.closest('[data-wt-find]');
+    if (wtFind) {
+      const q = wtFind.dataset.wtFind;
+      const input = document.getElementById('quickfind-input');
+      if (input) { input.value = q; input.focus(); input.dispatchEvent(new Event('input', { bubbles: true })); }
+      return;
+    }
+    const wtF = e.target.closest('[data-wt-filter]');
+    if (wtF) {
+      state.wtFilter = wtF.dataset.wtFilter;
+      /* a filter swaps the whole row set, so a preserved offset would land on
+         an arbitrary slice — go back to the top, as the old full render did */
+      if (!wtRerender()) render();
+      else { const t = document.querySelector('#tab-work .wt-tree'); if (t) t.scrollTop = 0; }
+      return;
+    }
+    if (e.target.closest('[data-wt-expand]')) {
+      const { nodes } = wtIndex();
+      Object.values(nodes).forEach(n => { if ((n.children || []).length) state.wtOpen.add(n.id); });
+      if (!wtRerender(true)) render(); return;
+    }
+    if (e.target.closest('[data-wt-collapse]')) {
+      state.wtOpen = new Set(((state.workTree && state.workTree.roots) || []).map(r => r.id));
+      if (!wtRerender(true)) render(); return;
+    }
 
     const initRow = e.target.closest('[data-init-id]');
     if (initRow) {

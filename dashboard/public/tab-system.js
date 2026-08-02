@@ -53,8 +53,8 @@
   }
   function fmtUsd(n) { return n == null ? '—' : `$${Number(n).toFixed(2)}`; }
 
-  /* ── 1. Hero row: jobs failing / docs 7d / tickets done 7d / agy cost ── */
-  function heroSection(mR, cR) {
+  /* ── 1. Hero row: jobs failing / docs 7d / tickets done 7d / total AI cost ── */
+  function heroSection(mR, cR, tuR) {
     const tiles = [];
     const m = val(mR);
     if (m) {
@@ -84,15 +84,32 @@
     } else {
       tiles.push(`<div class="load-error">metrics unavailable: ${U.esc(errMsg(mR))}</div>`);
     }
+    /* Total AI cost = Claude per-token API-equivalent (token-tracker) + agy-bridge
+       actual spend. The old tile showed ONLY the agy half ($1.52), which read as
+       "this harness costs a dollar" when Claude inference is ~99.97% of the real
+       per-inference bill. Both halves are clamped to the SAME window (the
+       token-tracker range) so the sum is not a 30d + all-time mix. */
     const c = val(cR);
-    if (c) {
-      const t = c.totals || {};
+    const tu = val(tuR);
+    const claudeUsd = tu && tu.totals ? tu.totals.est_cost_usd : null;
+    let agyUsd = c && c.totals ? (c.totals.actual_usd ?? null) : null;
+    if (c && tu && tu.range_start && tu.range_end) {
+      agyUsd = Object.entries(c.by_day || {})
+        .filter(([d]) => d >= tu.range_start && d <= tu.range_end)
+        .reduce((a, [, s]) => a + (s.actual_usd ?? 0), 0);
+    }
+    if (claudeUsd != null || agyUsd != null) {
+      const win = tu && tu.range_start && tu.range_end
+        ? `${tu.range_start} → ${tu.range_end}` : `${(tu && tu.window_days) ?? 30}d`;
       tiles.push(Comp.statTile({
-        key: 'sys-agy-cost', icon: '💸', label: 'agy cost (total)', value: `$${(t.actual_usd ?? 0).toFixed(2)}`,
-        sub: t.calls != null ? `${t.saving_pct ?? 0}% saved · ${t.calls} calls` : (c.note || 'no usage yet'), tick: true,
+        key: 'sys-ai-cost', icon: '💸',
+        label: `AI cost ${(tu && tu.window_days) ?? 30}d (API-equiv)`,
+        value: fmtUsd((claudeUsd ?? 0) + (agyUsd ?? 0)),
+        sub: `Claude ${fmtUsd(claudeUsd)} · agy ${fmtUsd(agyUsd)} · ${win}`,
+        href: '#system', tick: true,
       }));
     } else {
-      tiles.push(`<div class="load-error">agy cost unavailable: ${U.esc(errMsg(cR))}</div>`);
+      tiles.push(`<div class="load-error">cost unavailable: ${U.esc(errMsg(cR))}</div>`);
     }
     return `<div class="hero-row">${tiles.join('')}</div>`;
   }
@@ -499,7 +516,7 @@
   const TASK_ICON = { harvest: '🌾', critic: '🔎', research: '🔬', draft: '✍️' };
 
   function costSection(cR) {
-    if (!cR || cR.status !== 'fulfilled') return errCard('cost', '💸', 'Cost & Savings', cR);
+    if (!cR || cR.status !== 'fulfilled') return errCard('cost', '💸', 'agy-bridge Cost & Savings', cR);
     const c = cR.value;
     const t = c.totals || {};
     const hasTotals = t.spent != null || t.saved != null;
@@ -539,7 +556,7 @@
       `<div class="section-label">By model (top 5)</div><div class="rows">${modelRows.join('') || Comp.emptyState({ icon: '💸', title: 'No model usage yet' })}</div>`;
 
     return Comp.card({
-      key: 'cost', icon: '💸', title: 'Cost & Savings',
+      key: 'cost', icon: '💸', title: 'agy-bridge Cost & Savings',
       count: hasTotals ? `${fmtUsd(t.spent)} spent · ${fmtUsd(t.saved)} saved` : (c.note || 'no usage yet'),
       body, open: true,
     });
@@ -819,7 +836,7 @@
       U.fetchJSON('/api/token-efficiency'),
     ]);
     panel.innerHTML = [
-      heroSection(mR, cR),
+      heroSection(mR, cR, tuR),
       freshnessSection(mR),
       routinesSection(rR, hbR),
       harnessSection(hR),

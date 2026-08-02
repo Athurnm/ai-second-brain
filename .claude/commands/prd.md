@@ -24,7 +24,25 @@ PRD workflow (Work):
    - **How will we know it worked?** Restate the success metric as a number or observable behavior change, not "improve UX."
    Then follow the 4-state pipeline in `.agent/skills/prd-pipeline/SKILL.md` (Harvest → Draft → Crucible ≥9.0/10 → Tickets). Delegate State 1 (Harvest) to the `harvester` subagent to keep this context lean. For light edits, draft directly. Template reference: `templates/prd_work.md`.
 4. Draft in ENGLISH as a markdown artifact for the owner to review. No em-dashes. Follow the authoring rules at the top of `templates/prd_work.md`: **spec content goes in a TABLE, parallel items go in real bullets, a connected argument goes in one paragraph.** Never write bare consecutive sentence-lines: markdown renders those as one wall-of-text paragraph. "Lists one item per line" means every BULLET gets a line, NOT every sentence. Blank line before every table and every list.
-4b. **MCP companion gate (standing rule, 17 Jul 2026).** If the product exposes an API or ships an SDK, the PRD MUST include the "MCP Companion" requirement block from the template: every API/SDK capability ships a matching MCP tool with the same capability, auth, and tenant scoping, versioned and documented in the same release. Capability parity is a release gate, not a later phase. If the product exposes no API and no SDK, drop the block. Do NOT present an API/SDK PRD without it.
+4b. **MCP companion gate (standing rule, 17 Jul 2026; scope clarified by the owner 30 Jul 2026).** If the product is an API or SDK product built for **EXTERNAL PARTNERS**, the PRD MUST include the "MCP Companion" requirement block from the template: every API/SDK capability ships a matching MCP tool with the same capability, auth, and tenant scoping, versioned and documented in the same release. Capability parity is a release gate, not a later phase. Do NOT present an external-partner API/SDK PRD without it.
+
+   **Internal APIs do NOT need an MCP companion.** The test is who consumes it, not whether an HTTP endpoint exists. A service-to-service call between Work's own components, a contract between Work's backend and Work's own frontend, or an endpoint used only by Work CS and admin tooling is internal. Drop the block.
+
+   **Intent counts, not just current state.** If a service is meant to be opened to external partners later, it needs the block now. Retrofitting capability parity after the API surface is fixed is a rewrite, not an increment.
+
+   | Product | External? | Block |
+   | :--- | :--- | :--- |
+   | Storefront API (Bank al-Etihad) | yes, a bank integrates against it | required |
+   | Seller Portal external API | yes, partner sellers | required |
+   | Any SDK a tenant embeds | yes | required |
+   | **Work Fulfillment Service** | **yes, intended to open externally** | **required** |
+   | **Storefront Analytics** | **yes, tenant-facing query API** | **required** |
+   | OMS Refund Flow | no, Work CS and admin tooling | none |
+   | OMS Order Batch Processing | no, Rewards Portal | none |
+   | Redemption Status via OMS | no, Rewards Portal and storefront | none |
+   | B2C Tax and Delivery Fee Display | no, backend to Work's own frontend | none |
+
+   Why this is spelled out: on 30 Jul 2026 the block was added to four internal OMS documents on a literal reading of "exposes an API", and had to be reverted. Judge the consumer first, and ask whether it is meant to open externally.
 4c. **Provenance gate (standing rule, 20 Jul 2026). A PRD with no stated provenance does not pass.** Before the PRD is presented to the owner or published to Drive, it MUST declare where its requirements came from. Two acceptable states, no third:
 
    - **Sourced.** The PRD cites at least one real, checkable source: a Fathom recording URL or recording ID, a dated meeting with its MOM path, or a named decision with the person who made it and the date. "Discussed with the team" is not a source. A source that cannot be opened is not a source.

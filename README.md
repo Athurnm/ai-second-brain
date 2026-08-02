@@ -11,7 +11,7 @@ So you spend your week deciding instead of compiling.
 ![First run 15 minutes](https://img.shields.io/badge/first%20run-15%20minutes-6FB5AC?style=flat-square)
 ![Any agentic harness](https://img.shields.io/badge/core-harness%20agnostic-97A0B0?style=flat-square)
 
-[What it does](#what-it-does-every-day) · [It learns you](#it-learns-you) · [Capabilities](#capability-catalog) · [How it stays cheap](#multi-agent-setup-faster-and-cheaper) · [Your dashboard](#your-cockpit-the-visual-dashboard) · [Desktop app](#the-desktop-app) · [Get started](#getting-started)
+[What it does](#what-it-does-every-day) · [It learns you](#it-learns-you) · [Capabilities](#capability-catalog) · [How it stays cheap](#multi-agent-setup-faster-and-cheaper) · [Your dashboard](#your-cockpit-the-visual-dashboard) · [Get started](#getting-started)
 
 </div>
 
@@ -378,29 +378,6 @@ Each registered job reports a heartbeat, and a silent overnight failure shows up
 
 ---
 
-## The Desktop App
-
-Everything above works from a terminal. If you'd rather have a chat window,
-there's a free companion app for that: **AI Second Brain Desktop**, a native
-Tauri shell that opens a chat UI over **your own logged-in Claude Code CLI**.
-
-- **Subscription auth, not API keys.** It spawns the `claude` CLI you
-  already have installed and drives it as a subprocess. No API key, no
-  separate bill, no credential file of its own.
-- **Bundled starter workspace.** First run offers to create a small
-  markdown-only workspace for you, holding an inbox, a notes folder, a
-  generic `CLAUDE.md` persona, and a few example commands. You can also
-  point it at a folder you already use, including a fuller harness like
-  this one.
-- **Two permission modes only.** Manual and Accept Edits. The "skip every
-  prompt" mode that exists in the underlying CLI is intentionally not
-  exposed here.
-
-See `desktop/README.md` for what it does, how auth works, and how to build
-it yourself.
-
----
-
 ## Getting Started
 
 ### The 15-minute path (no API keys, no OAuth)
@@ -448,7 +425,6 @@ Deeper references:
 meeting-recorder/   Record + transcribe meetings locally (macOS, Windows, Linux)
 meetbot/            Rust bot that auto-joins Meet/Teams calls and transcribes them
 dashboard/          Local visual dashboard web app (http://localhost:3737)
-desktop/            Free native chat UI over your own Claude Code CLI
 docs/               Setup, customizing, and architecture guides
 CLAUDE.md.template  Rename to CLAUDE.md and make it yours
 ```

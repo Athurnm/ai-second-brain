@@ -136,20 +136,52 @@ def list_all_channels(token):
     for channel in channels:
         print(f"- {channel['name']} (ID: {channel['id']})")
 
-def list_joined_channels(token):
+def _build_user_name_map(token):
     """
-    List channels the bot is actually IN.
+    id -> display name, one users.list sweep. Used to give DM conversations a
+    readable name, since an im object carries only a user ID.
+    """
+    names = {}
+    cursor = None
+    while True:
+        params = {"limit": 200}
+        if cursor:
+            params["cursor"] = cursor
+        response = make_slack_request("users.list", token, params)
+        if not response.get("ok"):
+            print(f"[WARN] users.list failed ({response.get('error')}), DM names will fall back to user IDs", file=sys.stderr)
+            break
+        for u in response.get("members", []):
+            profile = u.get("profile", {}) or {}
+            label = profile.get("display_name") or profile.get("real_name") or u.get("name") or u["id"]
+            names[u["id"]] = label
+        cursor = response.get("response_metadata", {}).get("next_cursor")
+        if not cursor:
+            break
+    return names
+
+def list_joined_channels(token, include_dms=False):
+    """
+    List conversations the authenticated user is actually IN.
+
+    include_dms also pulls im/mpim. DMs carry no 'name' field, only a user ID,
+    so they are labelled dm-<display name> via a users.list map and are
+    rendered with a [DM] marker so downstream filters can keep them.
     """
     channels = []
     cursor = None
     page = 1
-    
+
+    types = "public_channel,private_channel"
+    if include_dms:
+        types += ",im,mpim"
+
     while True:
         print(f"[DEBUG] Fetching joined channels page {page}...", file=sys.stderr)
-        params = {"limit": 100, "types": "public_channel,private_channel"}
+        params = {"limit": 100, "types": types}
         if cursor:
             params["cursor"] = cursor
-            
+
         # users.conversations is the API for "channels I am in"
         response = make_slack_request("users.conversations", token, params)
         if not response.get("ok"):
@@ -159,15 +191,28 @@ def list_joined_channels(token):
         channels_in_page = response.get("channels", [])
         channels.extend(channels_in_page)
         print(f"[DEBUG] Received {len(channels_in_page)} channels in page {page} (Total: {len(channels)})", file=sys.stderr)
-        
+
         cursor = response.get("response_metadata", {}).get("next_cursor")
         if not cursor:
             break
         page += 1
 
+    user_names = _build_user_name_map(token) if include_dms else {}
+
     print(f"Found {len(channels)} joined channels:")
     for channel in channels:
-        print(f"- {channel['name']} (ID: {channel['id']})")
+        is_dm = channel.get("is_im") or channel.get("is_mpim")
+        if not is_dm:
+            print(f"- {channel['name']} (ID: {channel['id']})")
+            continue
+        # updated is ms epoch; emit seconds so callers can filter dormant DMs
+        updated_s = int(channel.get("updated", 0)) // 1000
+        if channel.get("is_im"):
+            uid = channel.get("user", "")
+            label = f"dm-{user_names.get(uid, uid or 'unknown')}"
+        else:
+            label = channel.get("name", channel["id"])
+        print(f"- {label} (ID: {channel['id']}) [DM updated={updated_s}]")
 
 def get_thread_replies(token, channel_id, thread_ts):
     """
@@ -390,7 +435,7 @@ def download_file(token, url, save_path):
         print(f"Error downloading file: {e}", file=sys.stderr)
         return False
 
-def upload_file(token, channel_id, file_path, initial_comment=None):
+def upload_file(token, channel_id, file_path, initial_comment=None, thread_ts=None):
     """
     Uploads a file to a channel using the modern Slack API (files.getUploadURLExternal).
     """
@@ -430,6 +475,10 @@ def upload_file(token, channel_id, file_path, initial_comment=None):
         "channel_id": channel_id,
         "initial_comment": initial_comment
     }
+    # Without thread_ts the file lands as a loose channel message, detached from
+    # the message it belongs to. Pass the parent ts to keep it in the thread.
+    if thread_ts:
+        complete_params["thread_ts"] = thread_ts
     # completeUploadExternal requires POST with form data
     complete_response = make_slack_request("files.completeUploadExternal", token, complete_params)
     if not complete_response.get('ok'):
@@ -629,6 +678,7 @@ def main():
     parser.add_argument("--unfurl", action="store_true", help="Enable link/media unfurling on post (default: off).")
     parser.add_argument("--approved", action="store_true", help="Confirm the owner has explicitly approved this specific send before it goes out. Required for post/upload/invite; there is no environment override.")
     parser.add_argument("--full", action="store_true", help="Disable the 100-char truncation in history/search output (print full message text).")
+    parser.add_argument("--include-dms", action="store_true", help="list_joined_channels only: also list im/mpim conversations, labelled dm-<name> and marked [DM].")
 
     args = parser.parse_args()
 
@@ -682,7 +732,7 @@ def main():
     if args.action == "list_channels":
         list_all_channels(token)
     elif args.action == "list_joined_channels":
-        list_joined_channels(token)
+        list_joined_channels(token, include_dms=args.include_dms)
     elif args.action == "history":
         if not args.channel:
             print("Error: --channel is required for history action.", file=sys.stderr)
@@ -734,7 +784,7 @@ def main():
             print("Error: --channel and --path are required for upload action.", file=sys.stderr)
             sys.exit(1)
         require_send_approval("upload a file to Slack", args.approved)
-        upload_file(token, args.channel, args.path, args.comment)
+        upload_file(token, args.channel, args.path, args.comment, args.thread_ts)
     elif args.action == "post":
         text = args.text
         if args.text_file:
