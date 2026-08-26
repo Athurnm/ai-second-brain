@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """agy-bridge probe (optional): send a tiny prompt to each backend and log latency/throttle
-to the SAME telemetry log run.py uses, so `run.py --analyze` has data even for hours You
+to the SAME telemetry log run.py uses, so `run.py --analyze` has data even for hours the owner
 doesn't organically use the bridge. Run it hourly via /loop or the `schedule` skill, e.g.:
 
     /loop 1h python3 .agent/skills/agy-bridge/probe.py
@@ -18,7 +18,8 @@ PROBE_PROMPT = "Reply with exactly one word: PONG"
 # One cheap, representative model per backend.
 PROBE_TARGETS = [
     ("agy", "Gemini 3.5 Flash (Low)"),
-    ("zai", "glm-5.2"),
+    # ("zai", "glm-5.2"),  # retired 2026-07-27: subscription ended, every probe
+    # would log a guaranteed error row and poison --analyze's error-rate stats.
 ]
 
 def main():

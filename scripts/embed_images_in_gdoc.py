@@ -29,7 +29,7 @@ except ImportError:
     Image = None
 
 TOKENS = {"work": ".agent/skills/work-drive-connector/token.json",
-          "personal": ".agent/skills/google-drive-connector/token.json"}
+          "personal": ".agent/skills/personal-drive-connector/token.json"}
 URI = "https://lh3.googleusercontent.com/d/{}=w2000"
 
 def retry(fn, tries=6, delay=3):

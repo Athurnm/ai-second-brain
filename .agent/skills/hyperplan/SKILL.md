@@ -5,14 +5,14 @@ description: "Adversarial review. Stress-test a plan, decision, or draft with 5 
 
 # HYPERPLAN: Adversarial Review (PSB adaptation)
 
-Adapted from oh-my-openagent's hyperplan. Five hostile critics attack the target from orthogonal angles, then the main loop keeps only the points that survive. This is not consensus building; it is a pre-mortem. Weak assumptions get exposed before You commits.
+Adapted from oh-my-openagent's hyperplan. Five hostile critics attack the target from orthogonal angles, then the main loop keeps only the points that survive. This is not consensus building; it is a pre-mortem. Weak assumptions get exposed before the owner commits.
 
 ## When to use
-High-stakes, hard-to-reverse, or stakeholder-facing work: Loyalty Alliance Phase-0 decisions, a PRD before sign-off, a pitch or proposal to YourManager, AI Circle strategy, a roadmap commitment, a risky Slack/email. NOT for routine drafts (that is what `draft-reviewer` is for).
+High-stakes, hard-to-reverse, or stakeholder-facing work: Example Alliance Phase-0 decisions, a PRD before sign-off, a pitch or proposal to YourManager, AI Circle strategy, a roadmap commitment, a risky Slack/email. NOT for routine drafts (that is what `draft-reviewer` is for).
 
 ## Procedure
 
-1. **Announce and frame.** Say "HYPERPLAN MODE." Restate the target in one line and confirm where it lives (file path, Drive doc, or pasted text). If the target is vague or not provided, ask You to point to the doc or paste it BEFORE spawning anything.
+1. **Announce and frame.** Say "HYPERPLAN MODE." Restate the target in one line and confirm where it lives (file path, Drive doc, or pasted text). If the target is vague or not provided, ask the owner to point to the doc or paste it BEFORE spawning anything.
 
 2. **Spawn 5 critics IN PARALLEL.** One message, five `hyperplan-critic` subagents, each with exactly one lens below. Pass each the same target plus its lens. Each reads the target and returns its 3 to 5 strongest attacks. For model diversity, spawn **strategist** and **contrarian** with `model: opus`; the other three run at the agent default.
 
@@ -26,7 +26,7 @@ High-stakes, hard-to-reverse, or stakeholder-facing work: Loyalty Alliance Phase
 
 4. **Output:**
    - **Survivors**, ranked by severity, each with a concrete fix or the question that must be answered.
-   - **Refuted**, briefly, so You sees they were considered and dismissed on purpose.
+   - **Refuted**, briefly, so the owner sees they were considered and dismissed on purpose.
    - **Verdict**: GO / GO WITH CHANGES (list them) / RETHINK.
    - If the target is a draft, give the specific edits. If a decision, give the revised recommendation.
 

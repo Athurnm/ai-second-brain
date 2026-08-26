@@ -13,6 +13,7 @@ import ast
 import json
 import os
 import subprocess
+import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FATHOM = os.path.join(REPO, ".agent/skills/fathom-connector/scripts/fathom_client.py")
@@ -21,7 +22,7 @@ OUT = os.path.join(REPO, "journal", "state", "insights.json")
 BRIDGE = os.path.join(REPO, ".agent/skills/agy-bridge/run.py")
 
 def _fathom_full():
-    p = subprocess.run(["python3", FATHOM, "--action", "list", "--full"],
+    p = subprocess.run([sys.executable, FATHOM, "--action", "list", "--full"],
                        cwd=REPO, capture_output=True, text=True, timeout=120)
     txt = p.stdout
     i = txt.find("[\n")
@@ -69,8 +70,10 @@ def main():
     )
     pf = os.path.join("/tmp", "insights_prompt.txt")
     open(pf, "w", encoding="utf-8").write(prompt)
-    p = subprocess.run(["python3", BRIDGE, "--task", "draft", "--backend", "zai",
-                        "--model", "glm-5.2", "--prompt-file", pf],
+    # z.ai/GLM retired 2026-07-27 (subscription no longer active). Let agy-bridge
+    # walk its own chain, which now heads with Gemini via the agy CLI.
+    p = subprocess.run([sys.executable, BRIDGE, "--task", "draft",
+                        "--prompt-file", pf],
                        cwd=REPO, capture_output=True, text=True, timeout=180)
     out = p.stdout.strip()
     # GLM may wrap in fences; extract the JSON object
@@ -89,7 +92,7 @@ def main():
                          "action_items": g.get("action_items", [])})
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     json.dump({"meetings": insights}, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"wrote {OUT}: {len(insights)} meetings ({sum(1 for i in insights if i['takeaways'])} with GLM takeaways)")
+    print(f"wrote {OUT}: {len(insights)} meetings ({sum(1 for i in insights if i['takeaways'])} with model takeaways)")
 
 if __name__ == "__main__":
     main()

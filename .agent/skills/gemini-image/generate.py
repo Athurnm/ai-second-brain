@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate images via Google Gemini / Imagen API (You's key in token.env).
+"""Generate images via Google Gemini / Imagen API (the owner's key in token.env).
 
 Two backends:
   - imagen-4.0-generate-001  (:predict)  -> clean poster gen, true aspectRatio control
@@ -80,7 +80,7 @@ def main():
     ap.add_argument("--prompt")
     ap.add_argument("--prompt-file")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--model", default="imagen-4.0-generate-001")
+    ap.add_argument("--model", default="gemini-3-pro-image")
     ap.add_argument("--aspect", default="3:4")
     ap.add_argument("--n", type=int, default=1)
     a = ap.parse_args()

@@ -62,8 +62,8 @@ This document serves as your complete slide-by-slide presentation deck, talk tra
 ---
 
 ## Slide 5: Live Demo — Real PM Workflows 🪄
-* **Visual**: Black screen with a glowing "LIVE DEMO" badge. Columns showing 4 real-world workflows You uses.
-* **Interactive Steps for You**:
+* **Visual**: Black screen with a glowing "LIVE DEMO" badge. Columns showing 4 real-world workflows the owner uses.
+* **Interactive Steps for the owner**:
   Show how your terminal agent solves actual daily work:
   
   ### 1. The Daily Standup & Update (`daily_update_runner.py`)

@@ -29,6 +29,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CREDENTIALS_FILE = os.path.join(SCRIPT_DIR, 'credentials.json')
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json')
 
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import assert_drive_result  # Drive Operation Verification (CLAUDE.md)
+
 # Full drive access for Secondary's drive
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
@@ -163,11 +167,12 @@ def upload_file(file_path, folder_id=None, convert_to_docs=False, share=False):
 
     try:
         file = service.files().create(
-            body=file_metadata, 
-            media_body=media, 
+            body=file_metadata,
+            media_body=media,
             fields='id, webViewLink',
             supportsAllDrives=True
         ).execute()
+        assert_drive_result(file, 'gdrive_manager (secondary) upload')
         print(f"File ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
 
@@ -277,11 +282,12 @@ def update_file(file_id, file_path, convert_to_docs=False):
 
     try:
         file = service.files().update(
-            fileId=file_id, 
-            media_body=media, 
+            fileId=file_id,
+            media_body=media,
             fields='id, webViewLink',
             supportsAllDrives=True
         ).execute()
+        assert_drive_result(file, 'gdrive_manager (secondary) update')
         print(f"Successfully updated Document ID: {file.get('id')}")
         print(f"Link: {file.get('webViewLink')}")
         return file.get('id')

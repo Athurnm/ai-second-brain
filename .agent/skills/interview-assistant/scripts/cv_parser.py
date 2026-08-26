@@ -26,7 +26,7 @@ def load_credentials(account):
     if account == 'work':
         token_path = os.path.join(REPO_ROOT, '.agent', 'skills', 'work-drive-connector', 'token.json')
     else:
-        token_path = os.path.join(REPO_ROOT, '.agent', 'skills', 'google-drive-connector', 'token.json')
+        token_path = os.path.join(REPO_ROOT, '.agent', 'skills', 'personal-drive-connector', 'token.json')
         
     if not os.path.exists(token_path):
         print(f"Error: Token file not found at {token_path}", file=sys.stderr)

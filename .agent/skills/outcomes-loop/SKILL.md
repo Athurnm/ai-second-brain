@@ -79,7 +79,7 @@ followed by `report` embedded in the Monday morning/weekly-report SOP.
 - Sources: Mixpanel via `.agent/skills/mixpanel-connector/scripts/mixpanel_client.py`
   (`query-events` / `query-funnel` / `retention`); Metabase via
   `.agent/skills/metabase-connector/scripts/metabase.js sql <db_id> "<query>"`
-  (base `metabase.workincentives.me`, db_id 2 for the main app DB — confirm
+  (base `metabase.yourcompany.me`, db_id 2 for the main app DB — confirm
   per-metric).
 - `check` NEVER crashes the run over one bad metric. A Metabase non-zero exit,
   or any response text matching an auth-shaped pattern (`401`,

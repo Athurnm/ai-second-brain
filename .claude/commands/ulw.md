@@ -7,6 +7,6 @@ Read `.agent/skills/ulw/SKILL.md` and follow it exactly. It is the single source
 
 Apply the routing table in CLAUDE.md (`## Subagents`) to pick model + effort per subtask, and the existing quality gates (`draft-reviewer`, `report-auditor`). Keep synthesis and strategy in the main loop. If the task is large and highly parallel, offer to run it as a Workflow instead (ask first).
 
-This is synthesis-heavy orchestration: if the session is on a low-tier model, tell You before starting.
+This is synthesis-heavy orchestration: if the session is on a low-tier model, tell the owner before starting.
 
 Task: $ARGUMENTS

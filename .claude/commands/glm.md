@@ -1,8 +1,17 @@
+---
+description: Turn the GLM offload mode on or off, so heavy mechanical work routes to a non-Claude model through agy-bridge.
+---
+
 # /glm
 
-Toggle **GLM offload mode** on/off. When ON, the Router offloads heavy generation / research /
-draft sub-tasks to GLM 5.2 via agy-bridge (local agy CLI, **zero Claude Code quota**); Claude
-stays the orchestrator (plans, reviews, applies). When OFF, normal harness routing. Default OFF.
+Toggle **offload mode** on/off. When ON, the Router offloads heavy generation / research /
+draft sub-tasks to agy-bridge (local agy CLI, **zero Claude Code quota**); Claude stays the
+orchestrator (plans, reviews, applies). When OFF, normal harness routing. Default OFF.
+
+**Backend is Gemini via agy.** z.ai / GLM 5.2 was retired 2026-07-27 when the subscription ended.
+The command, the flag file, and the `glm` name are kept as-is so muscle memory and existing cron
+entries keep working. Never pass `--backend zai`: it is removed from every chain and live calls
+error out.
 
 **Usage:** `/glm on` · `/glm off` · `/glm status`
 
@@ -13,7 +22,7 @@ stays the orchestrator (plans, reviews, applies). When OFF, normal harness routi
    echo on  > .agent/glm_mode.flag    # or: echo off
    cat .agent/glm_mode.flag
    ```
-3. Confirm the new state to You. The SessionStart hook (`glm_mode.sh`) surfaces it each session;
+3. Confirm the new state to the owner. The SessionStart hook (`glm_mode.py`) surfaces it each session;
    within the current session, honor the new state immediately.
 
 **Behavior when ON:** route bulk reads → `agy-bridge --task harvest`; content/code/copy generation →

@@ -47,6 +47,8 @@ and token mechanic, so point to it rather than reinventing it.
      .agent/skills/*/token.env .agent/skills/*/credentials.json 2>/dev/null` so you don't re-ask
      for tools already wired.
    - Platform: run `bash .agent/scripts/detect_platform.sh` if present, else infer from `uname`.
+   - Runtime: run `bash .agent/scripts/detect_runtime.sh` if present, to learn which agent
+     runtime, model, and tier this session is on before asking the human anything about it.
 2. Greet briefly. Explain the shape: "I'll ask about you, your work, your track record, and your
    rules, then help you connect your tools. About 15 to 30 minutes, and you can stop anytime."
 3. Get a go-ahead, then start Phase 1.
@@ -106,11 +108,27 @@ Lock down the guardrails:
 Now request the access you need to actually *do* the work. For each tool the user says they use,
 follow `docs/SETUP.md` rather than duplicating its steps, and drive them through it:
 
-1. Ask which of these they use: Google Workspace (Drive, Docs, Calendar, Gmail), Slack, a meeting
-   recorder (Fathom), Figma, analytics (Mixpanel or Metabase), a tracker (Jira or ClickUp),
-   WhatsApp. Use the "Which skills do you actually need?" decision tree in `docs/SETUP.md §10`;
-   most people need only Google plus Slack plus a recorder to get 80% of the value.
-2. For each chosen tool, in order (Google first, because it's the foundation):
+1. Ask which of these they use: Google Workspace (Drive, Docs, Calendar, Gmail), Slack, Figma,
+   analytics (Mixpanel or Metabase), a tracker (Jira or ClickUp), WhatsApp. Use the "Which skills
+   do you actually need?" decision tree in `docs/SETUP.md §10`; most people need only Google plus
+   Slack plus the meeting recorder to get 80% of the value.
+2. **Set up the local meeting recorder by default.** Do not ask whether they want a meeting tool
+   and do not lead with Fathom. Meeting notes are one of the highest-value things this harness
+   does, the recorder needs no account or API key, and the audio stays on their machine, so treat
+   it as part of the standard setup and walk them through it:
+   - Confirm `ffmpeg` is installed (`ffmpeg -version`), and install it if not.
+   - `cp meeting-recorder/config.example.json meeting-recorder/config.json`, then fill in the
+     section for their platform (`macos` / `windows` / `wsl`).
+   - Run `python3 meeting-recorder/recorder.py --list-devices` with them and help pick the
+     loopback or monitor device. This is the step people get stuck on, so do not just hand them
+     the command.
+   - Record a short test, process it with `python3 meeting-recorder/watcher.py --once`, and
+     confirm a transcript plus a `MOM_*.md` draft actually appeared. If nothing appeared, treat
+     that as a failed setup and troubleshoot from `docs/MEETING_RECORDER.md`.
+   - Full reference for engines, daily use, and the Vexa auto-join bot: `docs/MEETING_RECORDER.md`.
+   - Only after this works, ask whether they *also* use a cloud recorder (Fathom). If yes, wire
+     `fathom-connector` as an addition. If no, say plainly that they are already covered.
+3. For each chosen tool, in order (Google first, because it's the foundation):
    - Point them to the exact `docs/SETUP.md` section for getting the credential.
    - Offer to do the mechanical parts for them: `cp .env.example .env`, create the connector's
      folder plus a placeholder `token.env`, and place `credentials.json` once they've downloaded
@@ -120,8 +138,23 @@ follow `docs/SETUP.md` rather than duplicating its steps, and drive them through
    - Remember ground rule 3: the secret value goes into the file or the browser, never into this
      chat.
    - Tick that integration in the `Integrations Active` checklist.
-3. If they want to skip a tool for now, that's fine: mark it unchecked and move on. They can run
+4. If they want to skip a tool for now, that's fine: mark it unchecked and move on. They can run
    `/setup slack` (or any tool name) later to wire just that one.
+5. Ask about the **agy-bridge** (`.agent/skills/agy-bridge`), separately from the tools above,
+   since it's an optional cost saver, not a requirement: "Do you have a subscription to any
+   non-Claude model I could use as a cheaper co-processor for bulk/harvest work: z.ai's GLM Coding
+   Plan, Kimi Code, Antigravity (agy CLI for Gemini/GPT-OSS), or none of these?"
+   - If **none**: tell them that's completely fine, the harness runs Claude-only by default, and
+     skip token setup for this skill entirely. Note it as Claude-only mode, nothing to configure.
+   - If **one or more**: point them to the matching section of
+     `.agent/skills/agy-bridge/SKILL.md` (`## Setup`) and `token.env.example`, walk them through
+     `cp token.env.example token.env` plus pasting the token into the file (never into chat), and
+     verify with `python3 .agent/skills/agy-bridge/run.py --doctor`.
+   - Either way, persist the answer so it's on record instead of asking again next session:
+     `python3 .agent/scripts/harness_config.py --set non_claude_backends=<answer>`, where
+     `<answer>` is `none` or a comma separated list such as `zai,kimi,antigravity`. Note: this
+     only records the value today, nothing reads it back yet, so treat it as saved for future
+     routing use rather than something that already changes behavior.
 
 ## Phase 7 - Assemble & write CLAUDE.md
 

@@ -33,7 +33,7 @@ function loadEnv() {
 
 loadEnv();
 
-const BASE_URL = process.env.METABASE_BASE_URL || "https://metabase.workincentives.me";
+const BASE_URL = process.env.METABASE_BASE_URL || "https://metabase.yourcompany.me";
 const USERNAME = process.env.METABASE_USERNAME;
 const PASSWORD = process.env.METABASE_PASSWORD;
 const SESSION_FILE = path.join(process.cwd(), ".metabase_session");
@@ -57,7 +57,7 @@ async function getSessionToken() {
     throw new Error(
       "Missing METABASE_USERNAME or METABASE_PASSWORD or METABASE_SESSION_TOKEN in your .env file.\n" +
       "Please configure these to your .env file:\n" +
-      "METABASE_BASE_URL=https://metabase.workincentives.me\n" +
+      "METABASE_BASE_URL=https://metabase.yourcompany.me\n" +
       "METABASE_SESSION_TOKEN=your-session-cookie-value-for-google-oauth"
     );
   }

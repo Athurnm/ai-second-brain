@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-mention_ledger.py - Stateful Slack sweep: track every mention of You (channels,
+mention_ledger.py - Stateful Slack sweep: track every mention of the owner (channels,
 threads, DMs) until he has actually responded, plus a full-message watermark sweep
 of ALL joined channels for the GLM classification digest.
 
-Design (2026-07-09, per You):
+Design (2026-07-09, per the owner):
   Layer 1 (this script, pure Python, cron */30): collect + mechanical reply-state.
   Layer 2 (GLM via agy-bridge --task harvest): classify digest + open items.
   Layer 3 (Claude, morning/evening update): surface "Waiting on your reply".
@@ -46,7 +46,7 @@ BRIAN_ID_DEFAULT = '<SLACK_ID>'          # verified via auth.test 2026-07-09
 FRED_ID = '<SLACK_ID>'                    # any YourManager message = high priority
 PRIORITY_AUTHORS = {FRED_ID}
 
-# You's decision: only these reactions count as "answered"; eyes does NOT.
+# the owner's decision: only these reactions count as "answered"; eyes does NOT.
 ACK_REACTIONS = {'white_check_mark', 'heavy_check_mark', '+1', 'thumbsup', 'ok_hand'}
 
 FIRST_RUN_MENTION_LOOKBACK_DAYS = 3        # don't flood the ledger on first run
@@ -54,7 +54,7 @@ FIRST_RUN_CHANNEL_LOOKBACK_HOURS = 24
 ANSWERED_RETENTION_DAYS = 14               # prune answered/dismissed after this
 API_PAUSE = 0.15                           # pacing between Slack calls
 
-# Auto-dismiss noise so the queue only holds real "waiting on You" items.
+# Auto-dismiss noise so the queue only holds real "waiting on the owner" items.
 # CONSERVATIVE by design: a false-dismiss (hiding a real ask) is worse than a
 # little residual noise, so we only fire on bots or an unambiguous closer phrase.
 ACK_PHRASES = [
@@ -67,17 +67,24 @@ ACK_PHRASES = [
 ]
 
 # App/bot accounts that post as a normal user (no bot_id) but are pure noise.
-# Grow this as new notifier apps appear in You's DMs.
+# Grow this as new notifier apps appear in the owner's DMs.
 NOISE_AUTHORS = {
     'USLACKBOT',
     '<SLACK_ID>',   # Google Calendar app
+    'system health grafana alert',   # Grafana alerts bot (posts w/o bot_id)
 }
 
-def is_noise(text, is_bot, author=None):
+# Channels that are pure automated-alert firehoses: every message is noise,
+# the owner never replies. Items from these are auto-dismissed on sweep.
+NOISE_CHANNELS = {
+    '<SLACK_ID>',   # system-health-grafana-alerts
+}
+
+def is_noise(text, is_bot, author=None, channel=None):
     """True only for bot/notifier messages or short pure-acknowledgment closers.
     Never fires on questions, links-only, or bare '^' pings (those may need
     attention). Keeps false-dismiss risk near zero."""
-    if is_bot or author in NOISE_AUTHORS:
+    if channel in NOISE_CHANNELS or is_bot or author in NOISE_AUTHORS:
         return True
     t = (text or '').lower()
     t = re.sub(r'<[^>]+>', ' ', t)          # drop <@U..> mentions and <http..> links
@@ -135,11 +142,42 @@ def load_state():
             'items': {}, 'channel_names': {}, 'last_sweep': None}
 
 def save_state(state):
+    """Merge into whatever is on disk, then write. Never replace outright.
+
+    A replace is only safe while one machine writes this file. Two do now: the
+    macOS listener and the WSL sweep, and either may be the only one running for
+    a whole day. The second write would otherwise be built on a picture that
+    never contained the first machine's records, and would delete them with no
+    conflict to notice. That is the 17 Aug 2026 incident in CLAUDE.md.
+
+    Merging makes a write additive: it can add an item or advance one, never
+    remove or revert. Deletion still happens, but only through the retention
+    rule inside the merge, which both machines derive identically from the data
+    rather than sending to each other.
+
+    Returns the state that was actually written, which is not always the one
+    passed in. A caller that reads counts back out of its own dict afterwards
+    would otherwise report a number that predates the merge.
+    """
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+
+    if os.path.exists(STATE_PATH):
+        try:
+            with open(STATE_PATH) as f:
+                on_disk = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            on_disk = None      # unreadable: our copy is the better of the two
+        if on_disk is not None:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from ledger_merge import merge_states
+            state = merge_states(on_disk, state,
+                                 retention_days=ANSWERED_RETENTION_DAYS)
+
     tmp = STATE_PATH + '.tmp'
     with open(tmp, 'w') as f:
         json.dump(state, f, indent=1, ensure_ascii=False)
     os.replace(tmp, STATE_PATH)
+    return state
 
 def digest_append(rows):
     if not rows:
@@ -163,7 +201,7 @@ def new_item(state, channel_id, channel_name, ts, author, text, permalink, kind,
     item_id = f'{channel_id}:{ts}'
     if item_id in state['items']:
         return
-    noise = is_noise(text, is_bot or str(author).startswith('B'), author)
+    noise = is_noise(text, is_bot or str(author).startswith('B'), author, channel_id)
     state['items'][item_id] = {
         'channel': channel_id, 'channel_name': channel_name, 'ts': ts,
         'thread_ts': thread_ts, 'author': author, 'text': text[:600],
@@ -266,7 +304,7 @@ def sweep_channels(token, state, brian_id):
             if author == brian_id:
                 brian_acted.append((cid, float(m['ts'])))
                 continue
-            # every DM message not from You is a candidate "needs response"
+            # every DM message not from the owner is a candidate "needs response"
             if is_im:
                 new_item(state, cid, f'DM:{name}', m['ts'], author, text, '', 'dm',
                          is_bot=is_bot)
@@ -282,9 +320,9 @@ def sweep_channels(token, state, brian_id):
     return len(digest_rows), dm_items, brian_acted
 
 def resolve_open_items(token, state, brian_id):
-    """Mechanical reply-state: an item is answered when You replied after it
+    """Mechanical reply-state: an item is answered when the owner replied after it
     (same thread, or same channel for non-thread items) or ack-reacted on it.
-    Also reopens a thread item if someone followed up after You's last reply."""
+    Also reopens a thread item if someone followed up after the owner's last reply."""
     answered = 0
     by_channel_open = {}
     for item_id, it in state['items'].items():
@@ -302,7 +340,7 @@ def resolve_open_items(token, state, brian_id):
                 continue
             msgs = resp.get('messages', [])
             root = msgs[0] if msgs else {}
-            # 1) ack-reaction by You on the root/mention message
+            # 1) ack-reaction by the owner on the root/mention message
             for r in root.get('reactions', []):
                 if r.get('name') in ACK_REACTIONS and brian_id in r.get('users', []):
                     it.update(status='answered', answered_by='reaction',
@@ -311,7 +349,7 @@ def resolve_open_items(token, state, brian_id):
                     break
             if it['status'] != 'open':
                 continue
-            # 2) You message later in the same thread
+            # 2) the owner message later in the same thread
             brian_after = [float(m['ts']) for m in msgs
                            if m.get('user') == brian_id and float(m['ts']) > float(it['ts'])]
             if brian_after:
@@ -319,7 +357,7 @@ def resolve_open_items(token, state, brian_id):
                           answered_at=time.time())
                 answered += 1
                 continue
-        # 3) non-thread items: any You message in the channel after the item
+        # 3) non-thread items: any the owner message in the channel after the item
         plain = [(iid, it) for iid, it in items
                  if it['status'] == 'open' and not it['thread_ts']]
         if plain:
@@ -422,13 +460,23 @@ def sweep_noise_backlog(state):
     for it in state['items'].values():
         if it['status'] != 'open':
             continue
-        if is_noise(it['text'], str(it['author']).startswith('B'), it['author']):
+        if is_noise(it['text'], str(it['author']).startswith('B'), it['author'], it.get('channel')):
             it.update(status='dismissed', answered_by='auto_noise',
                       answered_at=time.time())
             n += 1
     return n
 
 def cmd_sweep(args):
+    # The sweep used to be the only writer of this file, so it needed no lock.
+    # Push ingestion is a second writer now (slack-push/scripts/ingest.py), and
+    # both rewrite the whole document, which is a lost update whenever they
+    # overlap. Same lock, same name, on both sides.
+    sys.path.insert(0, os.path.join(BASE_DIR, '.agent', 'scripts'))
+    from ledger_lock import ledger_lock
+    with ledger_lock('slack_mention_ledger'):
+        return _sweep(args)
+
+def _sweep(args):
     token = load_token()
     auth = slack('auth.test', token)
     brian_id = auth.get('user_id') or BRIAN_ID_DEFAULT
@@ -526,11 +574,11 @@ def cmd_classify(args):
     state = load_state()
     open_items = [it for it in state['items'].values() if it['status'] == 'open']
     prompt = (
-        'You are a mechanical Slack triage classifier for You (Work PM, Slack id '
+        'You are a mechanical Slack triage classifier for the owner (Work PM, Slack id '
         f'{BRIAN_ID_DEFAULT}). For EACH message below output one JSON line: '
         '{"ts":..., "channel":..., "class":"needs_reply|action_item|meeting_input|fyi|noise", '
         '"urgency":"high|normal|low", "summary":"<max 15 words>"}. '
-        'needs_reply = a human is waiting on You specifically. YourManager messages are always high. '
+        'needs_reply = a human is waiting on the owner specifically. YourManager messages are always high. '
         'Output ONLY JSON lines, no prose.\n\n'
         '== OPEN LEDGER ITEMS (already known, classify urgency only) ==\n'
         + '\n'.join(json.dumps({'ts': i['ts'], 'channel': i['channel_name'],

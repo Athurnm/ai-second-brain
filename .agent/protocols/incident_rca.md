@@ -28,7 +28,7 @@ Lightweight root-cause-analysis procedure for Work operational incidents (outage
 ### 4. Prevention (concrete, owned, dated)
 - Exactly **3 prevention actions** (more dilutes; fewer is usually under-thinking it). Each must name **what / owner / due date** and attack the root cause, not the symptom.
 - Split into: **Detect** (would we catch it faster next time?), **Prevent** (would this specific cause recur?), **Mitigate** (if it recurs, smaller blast radius?). One per bucket is a good default.
-- Cross-check ownership against the source: don't default actions to You when another team clearly owns them (see [[feedback_ownership_not_brian_by_default]]). File each as a ticket and link it.
+- Cross-check ownership against the source: don't default actions to the owner when another team clearly owns them (see [[feedback_ownership_not_brian_by_default]]). File each as a ticket and link it.
 
 ## Output format
 ```

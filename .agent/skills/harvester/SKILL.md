@@ -31,7 +31,7 @@ Grouped by source, in plain markdown with no narrative:
 - Action items: (owner + due date)
 - Blockers:
 - Metrics:
-- Mentions of You:
+- Mentions of the owner:
 ```
 
 End with:

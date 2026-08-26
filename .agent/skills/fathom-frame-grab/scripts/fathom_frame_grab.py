@@ -17,8 +17,8 @@ Decode note: the johnvansickle ffmpeg-static segfaults on these TS chunks on som
 WSL kernels, so we decode with PyAV (its own libav). `pip install av pillow`.
 
 Usage:
-  python3 fathom_frame_grab.py --call 724217462 --at 1520,1560 --out ./shots
-  python3 fathom_frame_grab.py --call https://fathom.video/calls/724217462 \
+  python3 fathom_frame_grab.py --call 123456789 --at 1520,1560 --out ./shots
+  python3 fathom_frame_grab.py --call https://fathom.video/calls/123456789 \
       --at 25:20,26:00 --out ./shots --crop 16,152,924,690 --scale 1.6
 """
 import argparse, os, re, sys, time, urllib.request, urllib.error

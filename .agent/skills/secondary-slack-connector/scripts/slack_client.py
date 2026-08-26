@@ -8,6 +8,12 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SKILL_DIR, '..', '..', '..', '..'))
+
+sys.path.insert(0, os.path.join(REPO_ROOT, '.agent', 'scripts'))
+from file_utils import require_send_approval  # Outbound send gate (CLAUDE.md)
+
 # Ensure terminal outputs are always encoded in UTF-8 to prevent Windows UnicodeEncodeError
 try:
     if sys.stdout.encoding != 'utf-8':
@@ -509,6 +515,7 @@ def main():
     parser.add_argument("--query", help="Query for search action")
     parser.add_argument("--limit", type=int, default=20, help="Number of messages to retrieve")
     parser.add_argument("--replies", action="store_true", help="Fetch thread replies in history")
+    parser.add_argument("--approved", action="store_true", help="Confirm the owner has explicitly approved this specific send before it goes out. Required for post/upload; there is no environment override.")
 
     args = parser.parse_args()
 
@@ -571,11 +578,13 @@ def main():
         if not args.channel or not args.path:
             print("Error: --channel and --path are required for upload action.", file=sys.stderr)
             sys.exit(1)
+        require_send_approval("upload a file to Slack", args.approved)
         upload_file(token, args.channel, args.path, args.comment)
     elif args.action == "post":
         if not args.channel or not args.text:
             print("Error: --channel and --text are required for post action.", file=sys.stderr)
             sys.exit(1)
+        require_send_approval("post a Slack message", args.approved)
         post_message(token, args.channel, args.text)
 
 if __name__ == "__main__":

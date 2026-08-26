@@ -16,13 +16,15 @@ Design (2026-07-10, per the 8-component harness upgrade plan):
     are being built in parallel).
   - `generate` is idempotent: reruning for the same date overwrites that date's
     cards + state entry (no duplication).
-  - KNOWN GAP: gcal_manager.py's `list --json` output does NOT include an
-    `attendees` field (verified by reading the connector source), even though
-    the harness-upgrade plan assumed it would. This script degrades gracefully:
-    attendee slugs are inferred from (a) an `attendees` field IF a future
-    connector version adds it, (b) email addresses found in the event
-    description, and (c) known-person name/alias substring matches against the
-    event summary + description. See SKILL.md "Gotchas".
+  - DEPENDENCY: gcal_manager.py's `list --json` DOES return a populated
+    `attendees` field (email + responseStatus; displayName usually empty). The
+    real dependency is on `people.json` records having their `emails[]`
+    populated, since attendee resolution joins each attendee email to a person
+    slug. If those emails are stale/empty the email->slug join yields nothing
+    and attendee resolution falls back to empty. Resolution order: (a) native
+    `attendees` emails, (b) email addresses found in the event description, and
+    (c) known-person name/alias substring matches against the event summary +
+    description. See SKILL.md "Gotchas".
 
 Subcommands:
   generate [--date YYYY-MM-DD]   build cards for that WIB date (default: today)
@@ -37,6 +39,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -55,6 +58,30 @@ WAITING_ON_PATH = os.path.join(BASE_DIR, 'journal', 'state', 'waiting_on.json')
 
 GCAL_SCRIPT = os.path.join(BASE_DIR, '.agent', 'skills', 'google-calendar-connector', 'gcal_manager.py')
 HEARTBEAT_SCRIPT = os.path.join(BASE_DIR, '.agent', 'scripts', 'heartbeat.py')
+JIRA_SCRIPT = os.path.join(BASE_DIR, '.agent', 'skills', 'jira-connector', 'scripts', 'jira_client.py')
+
+sys.path.insert(0, os.path.join(BASE_DIR, '.agent', 'scripts'))
+try:
+    from portfolio_tagger import ALIASES as PORTFOLIO_ALIASES, resolve_storefront
+except ImportError:      # tagger missing -> cards degrade to unfiltered, never crash
+    PORTFOLIO_ALIASES = {}
+    def resolve_storefront(text):
+        return None
+
+# Meeting-title keywords that name a portfolio outright. Checked before the
+# topic aliases, since a title like "Marketplace - Sprint Review" is explicit.
+PORTFOLIO_TITLE_HINTS = {
+    'marketplace': ['marketplace', 'market place'],
+    'platform': ['platform'],
+    'b2c': ['b2c', 'superapp', 'super app'],
+    'ecom-solution': ['e-commerce solution', 'ecommerce solution', 'ecom solution',
+                      'seller portal', ' sp ', 'pim', 'oms'],
+}
+# "storefront" is deliberately absent above: Marketplace owns the storefront
+# instances and E-Commerce Solution owns the storefront product, so the word
+# alone decides nothing. resolve_storefront() reads the surrounding context.
+
+SPRINT_TITLE_WORDS = ('sprint', 'backlog', 'refinement', 'grooming')
 
 WIB = datetime.timezone(datetime.timedelta(hours=7))
 CARD_RETENTION_DAYS = 14
@@ -121,8 +148,12 @@ def parse_event_dt(value):
 
 def fetch_calendar_events():
     """timeout-wrapped gcal_manager.py list --json (Work profile), per spec.
-    Tolerates connector auth failure / missing token -> empty list, no crash."""
-    cmd = ['timeout', '180s', sys.executable, GCAL_SCRIPT, 'list',
+    Tolerates connector auth failure / missing token -> empty list, no crash.
+    The `timeout` binary is GNU coreutils and not present on stock macOS, so
+    only prepend it when available; subprocess.run's own timeout still bounds
+    the call either way."""
+    cmd = ([shutil.which('timeout'), '180s'] if shutil.which('timeout') else []) + \
+          [sys.executable, GCAL_SCRIPT, 'list',
            '--days-back', '0', '--days-forward', '1', '--profile', 'work', '--json']
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=190)
@@ -176,45 +207,70 @@ def load_waiting_on():
 
 EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 
+# the owner himself -- never list the calendar owner as an attendee.
+SELF_EMAILS = {'you@yourcompany.com', 'you@example.com'}
+
+def pretty_name_from_email(email):
+    """Fallback display name for an attendee not in people.json:
+    'Teammate.kachavarapu@...' -> 'Teammate Kachavarapu', 'ext.raouf.cherkawi@...'
+    -> 'Raouf Cherkawi'."""
+    local = re.sub(r'^ext\.', '', (email or '').split('@')[0])
+    parts = [p for p in re.split(r'[._-]+', local) if p]
+    return ' '.join(p.capitalize() for p in parts) or email
+
 def resolve_attendees(event, people):
-    """Best-effort attendee -> people-slug resolution. Degrades gracefully:
-    the calendar connector currently does not return an `attendees` field, so
-    most of the signal comes from emails in the description and name/alias
-    hits in the summary+description text."""
-    slugs = set()
-    names_seen = set()
+    """Resolve an event's attendees. Returns (matched_slugs, display):
+      - matched_slugs: people.json slugs, used to key the ledger joins.
+      - display: ordered list of EVERY attendee (dicts name/role/slug), so
+        guests not in people.json still render (name falls back to the email
+        local-part) instead of silently vanishing. the owner is excluded.
 
-    # (a) native attendees field, if a future connector version provides it
-    for att in event.get('attendees') or []:
-        email = (att.get('email') or '').lower()
-        disp = att.get('displayName') or ''
-        for slug, person in people.items():
-            if email and email in [e.lower() for e in person.get('emails', [])]:
-                slugs.add(slug)
-            elif disp and disp.lower() == person.get('name', '').lower():
-                slugs.add(slug)
-        if disp:
-            names_seen.add(disp)
+    The connector returns a populated `attendees` field, so when it is present
+    we resolve by EMAIL ONLY -- the old name/alias substring pass caused false
+    positives (e.g. the 3-char alias 'Ali' hitting 'personalization'). The
+    text-mining fallbacks run ONLY when the payload carries no attendees[]."""
+    email_to_slug = {}
+    for slug, person in people.items():
+        for e in person.get('emails', []) or []:
+            email_to_slug[e.lower()] = slug
 
+    raw = event.get('attendees') or []
+    matched = set()
+    display = []
+
+    if raw:
+        for att in raw:
+            email = (att.get('email') or '').lower()
+            if not email or email in SELF_EMAILS:
+                continue
+            slug = email_to_slug.get(email)
+            if slug and slug in people:
+                matched.add(slug)
+                p = people[slug]
+                display.append({'name': p.get('name', email), 'role': p.get('role'), 'slug': slug})
+            else:
+                disp = (att.get('displayName') or '').strip() or pretty_name_from_email(email)
+                display.append({'name': disp, 'role': None, 'slug': None})
+        return matched, display
+
+    # --- fallback: no attendees[] in payload -> mine summary+description ---
     haystack = f"{event.get('summary', '')} {event.get('description', '')}"
     haystack_l = haystack.lower()
-
-    # (b) emails embedded in the description (invite text often lists them)
     found_emails = {m.lower() for m in EMAIL_RE.findall(haystack)}
     for slug, person in people.items():
-        if found_emails & {e.lower() for e in person.get('emails', [])}:
-            slugs.add(slug)
-
-    # (c) name/alias substring match against summary+description
+        if found_emails & {e.lower() for e in person.get('emails', []) or []}:
+            matched.add(slug)
+    # word-boundary name/alias match, min length 4 (avoids 'Ali' inside a word)
     for slug, person in people.items():
-        candidates = [person.get('name', '')] + person.get('aliases', [])
-        for cand in candidates:
-            cand = (cand or '').strip()
-            if len(cand) >= 3 and cand.lower() in haystack_l:
-                slugs.add(slug)
+        for cand in [person.get('name', '')] + (person.get('aliases') or []):
+            cand = (cand or '').strip().lower()
+            if len(cand) >= 4 and re.search(r'\b' + re.escape(cand) + r'\b', haystack_l):
+                matched.add(slug)
                 break
-
-    return slugs
+    for slug in sorted(matched):
+        p = people[slug]
+        display.append({'name': p.get('name'), 'role': p.get('role'), 'slug': slug})
+    return matched, display
 
 # ------------------------------------------------------------- ticket join --
 
@@ -238,45 +294,160 @@ def related_tickets(event, tickets):
 # ------------------------------------------------------------- fathom join --
 
 def last_time_we_met(event, people, attendee_slugs, registry):
-    """Best-effort 'last meeting with these people' lookup: prefer participant
-    name overlap (>=2 tokens against attendee full names), fall back to a
-    title-token overlap against the event summary (>=2) when attendees could
-    not be resolved -- both degrade to 'no match' rather than crash."""
+    """'Last time we met about THIS topic' lookup. Matches only on TOPIC:
+    requires >=2 shared title tokens between the event summary and a past
+    meeting's title. Shared attendees alone do NOT qualify -- everyone attends
+    the same standups, so attendee overlap produced irrelevant matches (an
+    'AI Search' card pointing at a generic 'B2C Standup'). Attendee overlap is
+    kept only as a tie-breaker among topic-matched candidates. No topic match
+    -> 'No prior meeting matched.'"""
     ev_tokens = tokens(event.get('summary', ''))
-    attendee_names = set()
-    for slug in attendee_slugs:
-        person = people.get(slug, {})
-        if person.get('name'):
-            attendee_names.add(person['name'].lower())
+    if len(ev_tokens) < 2:
+        return None
+    attendee_names = {people[s]['name'].lower() for s in attendee_slugs
+                      if s in people and people[s].get('name')}
 
     best = None
     best_score = 0
     for rec in registry.values():
-        participants = {p.lower() for p in rec.get('participants', [])}
-        score = 0
-        if attendee_names:
-            # token overlap between attendee full names and participant names
-            for name in attendee_names:
-                name_tokens = tokens(name)
-                for p in participants:
-                    if name_tokens & tokens(p):
-                        score += 2
         title_tokens = tokens(rec.get('matched_meeting') or rec.get('raw_title') or '')
-        score += len(ev_tokens & title_tokens)
-        if score >= 2 and score > best_score:
+        title_overlap = len(ev_tokens & title_tokens)
+        if title_overlap < 2:
+            continue  # must share the actual topic, not just the attendees
+        attendee_bonus = 0
+        participants = {p.lower() for p in rec.get('participants', [])}
+        for name in attendee_names:
+            name_tokens = tokens(name)
+            if any(name_tokens & tokens(p) for p in participants):
+                attendee_bonus += 1
+        score = title_overlap * 10 + attendee_bonus
+        if score > best_score:
             best_score = score
             best = rec
     return best
 
+# ------------------------------------------------------ slack text cleanup --
+
+_USER_RE = re.compile(r'<@([A-Z0-9]+)(?:\|([^>]+))?>')
+_SUBTEAM_RE = re.compile(r'<!subteam\^[A-Z0-9]+(?:\|([^>]+))?>')
+_CHAN_RE = re.compile(r'<#[A-Z0-9]+(?:\|([^>]+))?>')
+_URL_RE = re.compile(r'<(https?://[^>|]+)(?:\|([^>]+))?>')
+_ID_RE = re.compile(r'^(DM:)?[UWC][A-Z0-9]{6,}$')
+
+def make_user_resolver(people, user_names):
+    """slack_id -> display name, preferring people.json, then the mention
+    ledger's user_names cache, then the raw id."""
+    by_id = {p['slack_id']: p['name'] for p in people.values()
+             if p.get('slack_id') and p.get('name')}
+    cache = user_names or {}
+
+    def resolve(uid):
+        if not uid:
+            return 'someone'
+        return by_id.get(uid) or cache.get(uid) or uid
+    return resolve
+
+def clean_slack_text(text, resolve_user):
+    """Render raw Slack mrkdwn readable: resolve <@ID|Name>/<@ID> mentions,
+    turn <url|label> into markdown links, collapse whitespace."""
+    if not text:
+        return ''
+    text = _USER_RE.sub(lambda m: '@' + (m.group(2) or resolve_user(m.group(1))), text)
+    text = _SUBTEAM_RE.sub(lambda m: '@' + (m.group(1) or 'group'), text)
+    text = _CHAN_RE.sub(lambda m: '#' + (m.group(1) or 'channel'), text)
+    text = _URL_RE.sub(lambda m: f"[{m.group(2) or 'link'}]({m.group(1)})", text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+def channel_label(item, channel_names, resolve_user):
+    """Human channel name, resolving raw ids and DM pseudo-channels."""
+    chan = (item.get('channel_name') or '').strip()
+    cid = item.get('channel', '')
+    if chan.startswith('DM:'):
+        return 'DM: ' + resolve_user(chan[3:])
+    if chan.startswith('mpdm-'):
+        n = chan.count('--') + 1
+        return f'Group DM ({n} people)'
+    if chan and not _ID_RE.match(chan):
+        return chan
+    if cid.startswith('C'):
+        return (channel_names or {}).get(cid) or chan or cid
+    if chan.startswith(('U', 'W')):
+        return 'DM: ' + resolve_user(chan)
+    return (channel_names or {}).get(cid) or 'DM: ' + resolve_user(item.get('author', ''))
+
 # --------------------------------------------------------------- card build --
 
+# ------------------------------------------------------------------ portfolio --
+
+def infer_meeting_portfolios(event):
+    """Which of the owner's four portfolios this meeting is actually about.
+
+    Returns a set, because some standups genuinely straddle two ("B2C + SP + PIM").
+    An empty set means "could not tell" and the caller must NOT filter, otherwise
+    an unrecognised meeting would silently show an empty card.
+
+    Deliberately reads the TITLE only. Attendee lists are the very thing that
+    caused cross-portfolio bleed: a wide invite is not evidence of scope.
+    """
+    title = (event.get('summary') or '').lower()
+    if not title:
+        return set()
+    padded = f' {title} '
+
+    storefront = resolve_storefront(padded)
+    if storefront:
+        return {storefront}
+
+    found = set()
+    for pid, needles in PORTFOLIO_TITLE_HINTS.items():
+        for needle in needles:
+            if needle in padded:
+                found.add(pid)
+                break
+    if found:
+        return found
+
+    for pid, needles in PORTFOLIO_ALIASES.items():
+        for needle in needles:
+            if needle in padded:
+                found.add(pid)
+                break
+    return found
+
+def split_by_portfolio(items, meeting_portfolios):
+    """(in_scope, out_of_scope). No filtering when the meeting is unclassified."""
+    if not meeting_portfolios:
+        return list(items), []
+    in_scope, out_of_scope = [], []
+    for it in items:
+        (in_scope if it.get('portfolio') in meeting_portfolios else out_of_scope).append(it)
+    return in_scope, out_of_scope
+
+def is_sprint_meeting(event):
+    title = (event.get('summary') or '').lower()
+    return any(w in title for w in SPRINT_TITLE_WORDS)
+
+def fetch_sprint_status(portfolio, stale_before):
+    """Active-sprint snapshot via the jira connector. Never fatal: a missing token
+    or a slow board degrades the card to 'unavailable' rather than killing the run."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, JIRA_SCRIPT, 'sprint-status',
+             '--portfolio', portfolio, '--stale-before', stale_before],
+            capture_output=True, text=True, timeout=90)
+        if proc.returncode != 0:
+            return {'error': (proc.stderr or proc.stdout or 'jira_client failed').strip()[:200]}
+        return json.loads(proc.stdout)
+    except Exception as e:
+        return {'error': str(e)[:200]}
+
 def build_card(event, people, tickets, registry, mention_items, decisions,
-                commitments, waiting_items):
+                commitments, waiting_items, user_names=None, channel_names=None):
     start_dt = parse_event_dt(event.get('start'))
     time_wib = start_dt.strftime('%H:%M') if start_dt else '--:--'
     title = event.get('summary', '(No title)')
 
-    attendee_slugs = resolve_attendees(event, people)
+    attendee_slugs, attendee_display = resolve_attendees(event, people)
     attendees = [people[s] for s in attendee_slugs if s in people]
 
     fathom_hit = last_time_we_met(event, people, attendee_slugs, registry)
@@ -289,25 +460,40 @@ def build_card(event, people, tickets, registry, mention_items, decisions,
                        if d.get('status') == 'open'
                        and (set(d.get('stakeholder_slugs', [])) & attendee_slugs)]
 
-    you_owe_them = [c for c in commitments.values()
-                     if c.get('status') == 'open' and c.get('to_slug') in attendee_slugs]
+    # Attendee membership decides WHO could answer; portfolio decides WHETHER the
+    # item belongs in this room at all. Both gates, in that order.
+    owe_candidates = [c for c in commitments.values()
+                       if c.get('status') == 'open' and c.get('to_slug') in attendee_slugs]
+    owed_candidates = [w for w in waiting_items.values()
+                        if w.get('status') in ('open', 'breached')
+                        and w.get('owner_slug') in attendee_slugs]
 
-    they_owe_you = [w for w in waiting_items.values()
-                      if w.get('status') in ('open', 'breached')
-                      and w.get('owner_slug') in attendee_slugs]
+    meeting_portfolios = infer_meeting_portfolios(event)
+    you_owe_them, you_owe_other = split_by_portfolio(owe_candidates, meeting_portfolios)
+    they_owe_you, they_owe_other = split_by_portfolio(owed_candidates, meeting_portfolios)
+
+    sprint = None
+    if is_sprint_meeting(event) and len(meeting_portfolios) == 1:
+        stale_before = (wib_now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+        sprint = fetch_sprint_status(next(iter(meeting_portfolios)), stale_before)
 
     tix = related_tickets(event, tickets)
 
     lines = []
     lines.append(f'# {time_wib} WIB — {title}')
     lines.append('')
-    lines.append('## Attendees')
-    if attendees:
-        for p in attendees:
-            role = f" ({p.get('role')})" if p.get('role') else ''
-            lines.append(f"- {p.get('name', '(unknown)')}{role}")
+    if meeting_portfolios:
+        lines.append(f"**Portfolio:** {', '.join(sorted(meeting_portfolios))}")
     else:
-        lines.append('- (not resolvable from calendar payload — see SKILL.md gap note)')
+        lines.append('**Portfolio:** unclassified — items below are NOT filtered by portfolio')
+    lines.append('')
+    lines.append('## Attendees')
+    if attendee_display:
+        for a in attendee_display:
+            role = f" ({a['role']})" if a.get('role') else ''
+            lines.append(f"- {a.get('name', '(unknown)')}{role}")
+    else:
+        lines.append('- (no attendees in calendar payload)')
     lines.append('')
 
     lines.append('## Last time we met')
@@ -348,9 +534,16 @@ def build_card(event, people, tickets, registry, mention_items, decisions,
 
     lines.append('## Unanswered pings')
     if pings:
+        resolve_user = make_user_resolver(people, user_names)
         for it in pings:
-            text = re.sub(r'\s+', ' ', it.get('text', ''))[:160]
-            lines.append(f"- {it.get('channel_name', '?')} — {text}")
+            text = clean_slack_text(it.get('text', ''), resolve_user)
+            if len(text) > 200:
+                text = text[:200].rstrip() + '…'
+            chan = channel_label(it, channel_names, resolve_user)
+            author = resolve_user(it.get('author', ''))
+            link = it.get('permalink') or ''
+            label = f"[#{chan}]({link})" if link else f"#{chan}"
+            lines.append(f"- {label} · @{author}: {text}")
     else:
         lines.append('- None.')
     lines.append('')
@@ -363,12 +556,61 @@ def build_card(event, people, tickets, registry, mention_items, decisions,
         lines.append('- None matched.')
     lines.append('')
 
+    if sprint:
+        lines.append('## Sprint board')
+        if sprint.get('error'):
+            lines.append(f"- Unavailable: {sprint['error']}")
+        else:
+            for b in sprint.get('boards', []):
+                if b.get('error'):
+                    lines.append(f"- {b.get('name')}: {b['error']}")
+                    continue
+                base = f"https://{b['domain']}/browse/"
+                lines.append(f"**{b['name']} ({b['project_key']}) · {b.get('sprint_name')} "
+                             f"· ends {b.get('end_date')}**")
+                lines.append(f"- {b['total']} issues: {b['done']} done, {b['open']} open")
+                order = sorted(b.get('by_status', {}).items(), key=lambda kv: -kv[1])
+                status_str = ', '.join(f'{k} {v}' for k, v in order)
+                lines.append(f"- Status: {status_str}")
+                top = list(b.get('by_assignee', {}).items())[:1]
+                if top and b['open']:
+                    who, n = top[0]
+                    lines.append(f"- Heaviest load: {who} holds {n} of {b['open']} open "
+                                 f"({round(n / b['open'] * 100)}%)")
+                stale = b.get('stale', [])
+                if stale:
+                    lines.append(f"- ⚠️ {len(stale)} open issue(s) untouched for over a week:")
+                    for r in stale[:8]:
+                        lines.append(f"    - [{r['key']}]({base}{r['key']}) · {r['updated']} "
+                                     f"· {r['status']} · {r['assignee']} · {r['summary'][:60]}")
+                    if len(stale) > 8:
+                        lines.append(f"    - ...and {len(stale) - 8} more")
+                lines.append('')
+        lines.append('')
+
+    if you_owe_other or they_owe_other:
+        lines.append('## Other portfolios — do NOT raise here')
+        lines.append('<details>')
+        lines.append('<summary>Open items these attendees carry that belong to another '
+                     'portfolio or are unclassified</summary>')
+        lines.append('')
+        for c in you_owe_other:
+            lines.append(f"- (you owe · {c.get('portfolio', '?')}) {c.get('text', '')} `{c.get('id')}`")
+        for w in they_owe_other:
+            lines.append(f"- (they owe · {w.get('portfolio', '?')}) {w.get('what', '')} `{w.get('id')}`")
+        lines.append('')
+        lines.append('</details>')
+        lines.append('')
+
     return '\n'.join(lines), {
         'title': title, 'time_wib': time_wib,
         'attendee_slugs': sorted(attendee_slugs),
         'n_decisions': len(open_decisions), 'n_pings': len(pings),
         'n_you_owe': len(you_owe_them), 'n_they_owe': len(they_owe_you),
         'n_tickets': len(tix), 'has_last_meeting': bool(fathom_hit),
+        'portfolios': sorted(meeting_portfolios),
+        'n_filtered_out': len(you_owe_other) + len(they_owe_other),
+        'has_sprint': bool(sprint and not sprint.get('error')),
     }
 
 # --------------------------------------------------------------------- prune --
@@ -402,13 +644,16 @@ def prune_old_cards():
 # -------------------------------------------------------------------- main --
 
 def cmd_generate(args):
-    target_date = args.date or wib_now().strftime('%Y-%m-%d')
+    target_date = getattr(args, 'date', None) or wib_now().strftime('%Y-%m-%d')
     try:
         events = fetch_calendar_events()
         people = load_people()
         tickets = load_tickets()
         registry = load_fathom_registry()
-        mention_items = load_mention_ledger()
+        mention_data = load_json(MENTION_LEDGER_PATH, {})
+        mention_items = mention_data.get('items', {}) if isinstance(mention_data, dict) else {}
+        user_names = mention_data.get('user_names', {}) if isinstance(mention_data, dict) else {}
+        channel_names = mention_data.get('channel_names', {}) if isinstance(mention_data, dict) else {}
         decisions = load_decisions()
         commitments = load_commitments()
         waiting_items = load_waiting_on()
@@ -435,7 +680,8 @@ def cmd_generate(args):
             slug = slugify(ev.get('summary', 'meeting'))[:40] or 'meeting'
             fname = f"{dt.strftime('%H%M')}_{slug}.md"
             content, meta = build_card(ev, people, tickets, registry, mention_items,
-                                        decisions, commitments, waiting_items)
+                                        decisions, commitments, waiting_items,
+                                        user_names=user_names, channel_names=channel_names)
             fpath = os.path.join(day_dir, fname)
             tmp = fpath + '.tmp'
             with open(tmp, 'w') as f:
@@ -460,7 +706,7 @@ def cmd_generate(args):
         raise
 
 def cmd_report(args):
-    target_date = args.date or wib_now().strftime('%Y-%m-%d')
+    target_date = getattr(args, 'date', None) or wib_now().strftime('%Y-%m-%d')
     state = load_state()
     entry = state.get('dates', {}).get(target_date)
     if not entry or not entry.get('cards'):

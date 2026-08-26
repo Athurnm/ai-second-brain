@@ -10,7 +10,7 @@ This skill helps you manage action items and backlogs across the client/project 
 ## Directory Structure
 
 ```
-c:\Users\You\Product Repo\
+c:\Users\the owner\Product Repo\
 ├── processed/
 │   └── clients/
 │       └── [client-name]/           # e.g., Work, Secondary
@@ -67,7 +67,7 @@ To find all backlog files:
 
 ```
 // turbo
-find_by_name(Pattern: "*backlog*.md", SearchDirectory: "c:\Users\You\Product Repo\processed\clients")
+find_by_name(Pattern: "*backlog*.md", SearchDirectory: "c:\Users\the owner\Product Repo\processed\clients")
 ```
 
 ### 2. View Client/Project Backlog

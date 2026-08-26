@@ -122,6 +122,45 @@ For each recurring task, define the exact steps. The AI follows these in order.
 
 ---
 
+## Subagents
+
+Referenced by `.claude/hooks/routing_mode.sh`, which prints the session model at startup so the main loop knows which direction to delegate.
+
+Spawn subagents to isolate context, parallelize independent work, or offload bulk mechanical tasks. Don't spawn when the parent needs the reasoning, when synthesis has to hold things together, or when spawn overhead dominates. **Categorize the work first, then match model + effort:**
+
+| Category | What it covers | Model | Effort | Run as |
+| :--- | :--- | :--- | :--- | :--- |
+| **harvest** | bulk read (transcripts, notes, chat history), file collection, format conversion | haiku | low | `harvester` subagent |
+| **lookup** | scoped search: find one fact, grep a registry, locate a doc | haiku | low | `Explore` / general subagent |
+| **draft** | first-pass writing from a clear source: notes from a transcript, a routine reply | sonnet | medium | `draft` subagent |
+| **review** | adversarial pre-send check of a finished draft | haiku/sonnet | medium/high | `draft-reviewer` |
+| **synthesize** | weigh + prioritize + write the deliverable | opus / fable | high | **main loop** (don't delegate the writing) |
+| **plan** | decompose a complex, multi-step, or ambiguous job before execution | fable | xhigh | **main loop** if already on fable, else `Agent(model: "fable")` |
+| **strategize** | hard tradeoffs and decisions, adversarial planning | opus / fable | xhigh/max | **main loop** + adversarial subagents |
+
+Pick the cheapest row that fully covers the task; mechanical -> delegate, judgment -> keep in main loop.
+
+**Delegation goes both ways.** The Agent tool takes an explicit `model` (`haiku` | `sonnet` | `opus` | `fable`), so a spawned agent's tier is independent of what the main loop is running. Match the model to the WORK, not to the session:
+
+- **Delegate DOWN (bulk / mechanical).** Whatever the main loop is on, push harvest, lookup, routine drafts, and conversion to `haiku`/`sonnet`. This is the default and applies just as hard on a flagship session: a flagship main loop is for holding the deliverable together, not for reading 12 transcripts.
+- **Delegate UP (hard thinking).** On an opus session facing complex decomposition or ambiguous planning, spawn `Agent(model: "fable", effort: "xhigh")` for the plan, then execute and synthesize back in the main loop. On a fable session, spawn `opus` when you want a second flagship lens.
+- **Main loop keeps final synthesis, judgment, and owner-facing output.** An up-delegated agent returns a plan or an analysis, never the finished deliverable.
+- Multi-step fan-out with mixed tiers -> Workflow tool with explicit per-stage `model` + `effort` (e.g. plan stage `fable`, execute stages `sonnet`, verify stage `opus`).
+- The main loop cannot swap its OWN model/effort. If the whole session is on the wrong tier, say so and ask for `/model` or `/effort`; spawning is the workaround for a single task, not a session-wide mismatch.
+- Cost discipline: a higher tier is justified by decision-density, not by task size. Big-but-mechanical -> haiku. Small-but-load-bearing -> flagship.
+
+**Announce the plan, don't gate on it.** Before any task that will spawn subagents or run a Workflow, emit ONE compact line, then start work in the SAME turn without waiting for approval:
+
+`Plan agent: <1-line what> | <tier>: <who does what> | main loop: <what stays>`
+
+Example: `Plan agent: notes for 3 meetings | haiku x3: pull transcript + raw facts | main loop: write notes + action items`
+
+Skip it for single-tool or trivial work. This is a notification, not a checkpoint. The Approval Gates below are untouched and still block. If the plan changes mid-task (an agent fails, scope grows), state the new routing in one line and keep going.
+
+Parent owns final output and cross-spawn synthesis. Owner instructions override.
+
+---
+
 ## Approval Gates [REQUIRED]
 
 Things the AI must NEVER do without explicit approval:

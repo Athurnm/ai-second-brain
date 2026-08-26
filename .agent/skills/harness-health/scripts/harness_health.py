@@ -36,6 +36,7 @@ Reports: journal/harness_health/<YYYY-MM>.md (one run = one section, appended)
 import argparse
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -80,10 +81,19 @@ CRON_REGISTRY = [
         'log_file': os.path.join(BASE_DIR, '.agent', 'scripts', 'dashboard_keepalive.log'),
     },
     {
+        # Meeting-recorder cron. Job id stays 'vexa-auto' (heartbeat rows + the
+        # dashboard job map key off it), but since the Jul-2026 cutover the
+        # client it runs drives *meetbot* (Rust, :8060), not vexa-lite; the
+        # backend is set by MEETBOT=/VEXA_API_BASE= on the cron line itself.
+        # Script path and log path are unchanged by the cutover, so this match
+        # still resolves -- verified against the live crontab 19 Jul 2026.
         'job': 'vexa-auto',
         'match': 'meeting-recorder/vexa_bots.py',
         'cadence_minutes': 5,
-        'signal_cadence_minutes': 60,   # quiet runs emit no output; idle heartbeat is hourly
+        # Was 60: quiet cycles used to print nothing, so the log only moved on
+        # the hourly idle heartbeat. cmd_auto now writes one trace line EVERY
+        # cycle, so the signal cadence is the real cron cadence again and a
+        # silent cron is caught in ~15min instead of ~3h.
         'heartbeat_job': 'vexa-auto',
         'log_file': '/tmp/vexa_auto.log',
     },
@@ -224,6 +234,14 @@ def classify_cron_lines(lines):
     return repo_lines, other_lines
 
 def check_cron(findings):
+    if platform.system() == 'Darwin':
+        # Cron for this repo only runs on the WSL automation host. On a macOS
+        # checkout, crontab -l reflects the local machine, not the repo's
+        # jobs, so treat the whole check as not applicable rather than
+        # producing false "missing job" findings.
+        return {'installed_repo_jobs': [], 'other_repo_blocks_count': 0,
+                'registry_status': [], 'error': None,
+                'skipped': 'not_applicable_macos: automation host is WSL'}
     lines, err = read_crontab()
     result = {'installed_repo_jobs': [], 'other_repo_blocks_count': 0,
               'registry_status': [], 'error': err}
@@ -359,7 +377,7 @@ def latest_heartbeat_ts(job):
 
 def load_job_acks():
     """journal/state/job_acks.json: {job: ack_epoch}. Fail rows at/before the
-    ack are considered handled (You pressed Ack on the dashboard)."""
+    ack are considered handled (the owner pressed Ack on the dashboard)."""
     path = os.path.join(BASE_DIR, 'journal', 'state', 'job_acks.json')
     try:
         with open(path, encoding='utf-8') as f:
@@ -368,7 +386,7 @@ def load_job_acks():
         return {}
 
 def heartbeat_fail_scan(job, lookback_days, ack_epoch=0.0):
-    """Counts fail/needs_reauth rows in the window, EXCLUDING rows You has
+    """Counts fail/needs_reauth rows in the window, EXCLUDING rows the owner has
     acked. Also returns how many un-acked fails are recent (<48h) -- only
     those justify 'fail' severity; older residue is informational."""
     cutoff = time.time() - lookback_days * 86400

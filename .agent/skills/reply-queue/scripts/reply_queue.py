@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 reply_queue.py - Auto-drafted Reply Queue: extend the Slack mention ledger with
-ready-to-approve draft replies for OPEN items, so You can review/edit/approve
+ready-to-approve draft replies for OPEN items, so the owner can review/edit/approve
 instead of writing every reply from scratch.
 
-Design (Komponen 7, per bangun-aja-semuanya-barengan-wiggly-noodle plan):
+Design (Component 7, per the bangun-aja-semuanya-barengan-wiggly-noodle plan):
   Layer 1 (mention_ledger.py, READ-ONLY here): collects + tracks open/answered.
   Layer 2 (this script): batches open items -> agy-bridge --task harvest (GLM) to
-    draft replies in You's voice. GLM never sends anything - drafts only.
+    draft replies in the owner's voice. GLM never sends anything - drafts only.
   Layer 3 (SOP): morning/evening update embeds `report` verbatim. Actually sending
     a reply still goes through /slack-draft with explicit approval.
 
@@ -52,15 +52,15 @@ DEFAULT_LIMIT = 15
 RETENTION_DAYS = 14   # drop drafted entries for items no longer open/known > this
 
 VOICE_PROMPT_HEADER = (
-    "You are drafting Slack REPLIES for You to review and send himself - you are "
-    "NOT sending anything. Write in You's voice: plain flowing prose, no emoji, no "
+    "You are drafting Slack REPLIES for the owner to review and send himself - you are "
+    "NOT sending anything. Write in the owner's voice: plain flowing prose, no emoji, no "
     "numbered or bolded lists, direct and warm-brief (2-5 sentences). Do not use "
     "em-dashes. Do not add parenthetical asides. Each draft should read like a real "
     "person replying in Slack, not a formal memo.\n\n"
     "For EACH item below, output exactly this block format (blank line between items):\n"
     "ITEM: <item_id>\n"
     "DRAFT: <the reply text, one paragraph, no line breaks>\n\n"
-    "Only draft a reply when there is something You can plausibly say without more "
+    "Only draft a reply when there is something the owner can plausibly say without more "
     "context than given. If an item cannot be drafted responsibly (needs info you don't "
     "have), still include the block but set DRAFT to exactly: SKIP - needs more context.\n\n"
     "Items:\n\n"

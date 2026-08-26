@@ -1,6 +1,6 @@
 ---
 name: Google Drive Connector
-description: Personal Google Drive skill (you@example.com). Upload, update, delete, search, read, share, and list comments on Drive files. Uses token at google-drive-connector/token.json.
+description: Personal Google Drive skill (you@example.com). Upload, update, delete, search, read, share, and list comments on Drive files. Uses token at personal-drive-connector/token.json.
 ---
 
 # Google Drive Connector (Personal Account)
@@ -15,7 +15,7 @@ For `you@example.com`. Use `work-drive-connector` for Work documents.
 ## Commands
 
 ```bash
-BASE="timeout 180s python3 .agent/skills/google-drive-connector/gdrive_manager.py"
+BASE="timeout 180s python3 .agent/skills/personal-drive-connector/gdrive_manager.py"
 
 $BASE upload   --file path.md --convert [--share] [--folder FOLDER_ID] [--role viewer|commenter|writer]
 $BASE update   --id FILE_ID --file path.md --convert

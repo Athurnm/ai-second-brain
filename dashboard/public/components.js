@@ -127,12 +127,12 @@
      Comp.breadcrumb([{label:'Work', href:'#work'}, {label:'OTO Aggregator'}])
        -> <nav> trail for drill views; the LAST part is the current page and
        never renders as a link (href ignored there).
-     Comp.jiraChip('MSP-183')  -> compact mono ticket chip, opens the right
+     Comp.jiraChip('ABC-123')  -> compact mono ticket chip, opens the right
        Jira in a new tab. Prefix routing: MSP- / MBA- / STOR- ->
        examplevendor.atlassian.net; MP-, MPS- and every other prefix ->
-       work-incentives.atlassian.net. Visually distinct from badges.
+       yourcompany.atlassian.net. Visually distinct from badges.
      Comp.taskRow({ticket:{id:'T-9', title:'OTO webhook retries',
-                   priority:'P1', jira_key:'MPS-1524', project:'Marketplace',
+                   priority:'P1', jira_key:'ABC-123', project:'Marketplace',
                    due:'2026-07-15', owner:'Teammate', status:'in_progress'},
                    children:[{ticket:{id:'T-9a', title:'…', status:'done'}}],
                    depth:0, expandBody:noteHtml + Comp.actionBar(t)})
@@ -229,19 +229,19 @@
        open and brightens on hover. Nothing to do — keep passing
        expandBody and the chevron appears; plain non-expandable div.row
        never grows one, so "has a chevron" === "click to expand".
-     Comp.aiButton({kind:'draft-prd', ref:'T-123', label:'🤖 AI kerjain'})
+     Comp.aiButton({kind:'draft-prd', ref:'T-123', label:'🤖 AI, work on it'})
        -> button that POSTs /api/ai-task {kind, ref} on click (wiring is
        delegated in components.js — just render it). On {ok, id} the
-       button swaps itself into an "⏳ AI jalan…" status pill and the
+       button swaps itself into an "⏳ AI running…" status pill and the
        SHARED POLLER (one interval for ALL runs — never one per button)
        polls GET /api/ai-task?id=<id> every 5s for up to 8 min:
-         done  -> pill "✅ Selesai · lihat hasil"; clicking it opens the
+         done  -> pill "✅ Done · see result"; clicking it opens the
                   wide drawer with the run's tail (Comp.logPanel) + the
                   draft itself when the run carries result_path (fetched
                   via /api/file/<result_path>). `psb:ai-done`
                   {detail:{id, kind, ref, run}} fires on window once.
-         error -> pill "⛔ Gagal · lihat log" + toast (drawer shows tail)
-         8 min -> pill "⏱ Timeout · lihat log", polling stops.
+         error -> pill "⛔ Failed · see log" + toast (drawer shows tail)
+         8 min -> pill "⏱ Timeout · see log", polling stops.
        POST failure or HTTP 409 -> toast + button reverts (no pill).
        Poller status vocabulary (defensive server contract): done/ok/
        success/completed -> done · error/fail/failed -> error · anything
@@ -366,24 +366,47 @@ const U = {
   mdToHtml(md) {
     const inline = s => s
       .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      /* [text](url): http(s) opens a new tab; #hash is an internal view link;
+         any other value is a repo-relative path (e.g. a BRD/PRD .md) — render
+         it as a drawer opener so the doc is readable in-place instead of
+         leaking through as raw [text](path) literal text (server serves it via
+         /api/file/, same as the declarative data-drawer-path openers). */
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, url) => {
+        if (/^https?:/i.test(url)) return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+        if (/^#/.test(url)) return `<a href="${url}">${text}</a>`;
+        return `<a class="doc-link" data-drawer-path="${url}" data-drawer-title="${text}">${text}</a>`;
+      })
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:]|$)/g, '$1<em>$2</em>');
     const out = [];
-    let inList = false, para = [];
+    let listTag = null, para = [], quote = [];
     const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; } };
-    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const closeList = () => { if (listTag) { out.push(`</${listTag}>`); listTag = null; } };
+    const flushQuote = () => {
+      if (quote.length) { out.push(`<blockquote>${quote.map(q => `<p>${inline(q)}</p>`).join('')}</blockquote>`); quote = []; }
+    };
+    const openList = tag => {
+      if (listTag !== tag) { closeList(); out.push(`<${tag}>`); listTag = tag; }
+    };
     for (const raw of U.esc(md || '').split('\n')) {
       const ln = raw.trimEnd();
+      /* input was HTML-escaped BEFORE this loop, so a '>' quote marker is '&gt;' */
+      const bq = ln.match(/^\s*&gt;\s?(.*)/);
       const h = ln.match(/^(#{1,3})\s+(.+)/);
       const li = ln.match(/^\s*[-*]\s+(.+)/);
-      if (h) { flushPara(); closeList(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); }
-      else if (li) { flushPara(); if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${inline(li[1])}</li>`); }
-      else if (!ln.trim()) { flushPara(); closeList(); }
+      /* numbered lines ("1. …") are ORDERED LIST items — without this branch a
+         numbered Top-5 collapses into one giant unreadable paragraph */
+      const oli = ln.match(/^\s*\d+[.)]\s+(.+)/);
+      const hr = /^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(ln);
+      if (bq) { flushPara(); closeList(); if (bq[1].trim()) quote.push(bq[1]); }
+      else if (h) { flushPara(); closeList(); flushQuote(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); }
+      else if (hr) { flushPara(); closeList(); flushQuote(); out.push('<hr>'); }
+      else if (li) { flushPara(); flushQuote(); openList('ul'); out.push(`<li>${inline(li[1])}</li>`); }
+      else if (oli) { flushPara(); flushQuote(); openList('ol'); out.push(`<li>${inline(oli[1])}</li>`); }
+      else if (!ln.trim()) { flushPara(); closeList(); flushQuote(); }
       else para.push(ln);
     }
-    flushPara(); closeList();
+    flushPara(); closeList(); flushQuote();
     return out.join('\n');
   },
 
@@ -601,7 +624,10 @@ const Comp = {
     </div>`;
   },
 
-  toast(msg, ok = true) {
+  /* action (optional): {label:'Undo', onClick:async fn} renders a button in the
+     toast (used for reversible actions — mis-click safety). Such toasts linger
+     8s instead of 3.2s and stay clickable; clicking runs onClick + dismisses. */
+  toast(msg, ok = true, action = null) {
     let root = document.getElementById('toast-root');
     if (!root) {
       root = document.createElement('div');
@@ -610,10 +636,22 @@ const Comp = {
       document.body.appendChild(root);
     }
     const el = document.createElement('div');
-    el.className = `toast ${ok ? 'toast--ok' : 'toast--err'}`;
+    el.className = `toast ${ok ? 'toast--ok' : 'toast--err'}${action ? ' has-action' : ''}`;
     el.textContent = `${ok ? '✓' : '⛔'} ${msg}`;
-    root.appendChild(el);
-    setTimeout(() => { el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300); }, 3200);
+    if (action && action.label && typeof action.onClick === 'function') {
+      const btn = document.createElement('button');
+      btn.className = 'toast-action';
+      btn.textContent = action.label;
+      btn.addEventListener('click', async e => {
+        e.preventDefault();
+        btn.disabled = true;
+        try { await action.onClick(); } catch (err) { Comp.toast(`Failed: ${err.message}`, false); }
+        el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300);
+      });
+      el.appendChild(btn);
+    }
+    const ttl = action ? 8000 : 3200;
+    setTimeout(() => { el.classList.add('is-leaving'); setTimeout(() => el.remove(), 300); }, ttl);
     return '';
   },
 
@@ -636,7 +674,7 @@ const Comp = {
     if (!k) return '';
     const prefix = k.split('-')[0];
     const host = EXAMPLEVENDOR_PREFIXES.includes(prefix)
-      ? 'examplevendor.atlassian.net' : 'work-incentives.atlassian.net';
+      ? 'examplevendor.atlassian.net' : 'yourcompany.atlassian.net';
     return `<a class="jira-chip" href="https://${host}/browse/${encodeURIComponent(k)}"` +
       ` target="_blank" rel="noopener" title="Open ${U.esc(k)} in Jira">${U.esc(k)}</a>`;
   },
@@ -967,7 +1005,7 @@ const Comp = {
      wiring + the shared poller live in components.js (see AI below).
      Re-render safe: if this {kind, ref} already has a tracked run,
      render its CURRENT pill instead of a fresh button. */
-  aiButton({ kind, ref, label = '🤖 AI kerjain' } = {}) {
+  aiButton({ kind, ref, label = '🤖 AI, work on it' } = {}) {
     const existing = AI.activeFor(kind, ref);
     if (existing) return AI.pillHtml(existing);
     return `<button class="ai-btn" data-ai-kind="${U.esc(kind ?? '')}"` +
@@ -1077,7 +1115,7 @@ const Comp = {
       const dirGood = good === 'down' ? delta < 0 : delta > 0;
       const cls = delta === 0 ? '' : (dirGood ? ' trend-delta--good' : ' trend-delta--warn');
       const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '·');
-      const txt = delta === 0 ? 'sama dgn 7 hari sebelumnya' : `${Math.abs(delta)} vs 7 hari sebelumnya`;
+      const txt = delta === 0 ? 'same as the 7 days before' : `${Math.abs(delta)} vs the 7 days before`;
       deltaHtml = `<div class="trend-delta${cls}">${arrow} ${U.esc(txt)}</div>`;
     }
 
@@ -1267,7 +1305,7 @@ const AI = {
       if (Date.now() - rec.startedAt > this.MAX_MS) {
         rec.state = 'timeout';
         this._paint(rec);
-        Comp.toast(`AI run ${rec.id}: 8 menit tanpa selesai — polling berhenti, cek lognya`, false);
+        Comp.toast(`AI run ${rec.id}: 8 minutes with no result — polling stopped, check the log`, false);
         continue;
       }
       try {
@@ -1281,11 +1319,11 @@ const AI = {
         if (!rec.announced) {
           rec.announced = true;
           if (st === 'done') {
-            Comp.toast(`AI selesai: ${rec.kind || rec.id}`, true);
+            Comp.toast(`AI finished: ${rec.kind || rec.id}`, true);
             window.dispatchEvent(new CustomEvent('psb:ai-done',
               { detail: { id: rec.id, kind: rec.kind, ref: rec.ref, run: rec.run } }));
           } else {
-            Comp.toast(`AI run gagal: ${rec.kind || rec.id}`, false);
+            Comp.toast(`AI run failed: ${rec.kind || rec.id}`, false);
           }
         }
       } catch { /* transient poll error — keep trying until the budget ends */ }
@@ -1298,15 +1336,15 @@ const AI = {
     const meta = ` data-ai-id="${U.esc(rec.id)}" data-ai-kind="${U.esc(rec.kind ?? '')}"` +
       ` data-ai-ref="${U.esc(rec.ref ?? '')}"`;
     if (rec.state === 'done') {
-      return `<button class="ai-pill ai-pill--done"${meta} title="Buka hasil run ${U.esc(rec.id)}">✅ Selesai · lihat hasil</button>`;
+      return `<button class="ai-pill ai-pill--done"${meta} title="Open the result of run ${U.esc(rec.id)}">✅ Done · see result</button>`;
     }
     if (rec.state === 'error') {
-      return `<button class="ai-pill ai-pill--err"${meta} title="Buka log run ${U.esc(rec.id)}">⛔ Gagal · lihat log</button>`;
+      return `<button class="ai-pill ai-pill--err"${meta} title="Open the log of run ${U.esc(rec.id)}">⛔ Failed · see log</button>`;
     }
     if (rec.state === 'timeout') {
-      return `<button class="ai-pill ai-pill--err"${meta} title="Polling stop setelah 8 menit — run mungkin masih jalan">⏱ Timeout · lihat log</button>`;
+      return `<button class="ai-pill ai-pill--err"${meta} title="Polling stopped after 8 minutes — the run may still be going">⏱ Timeout · see log</button>`;
     }
-    return `<span class="ai-pill ai-pill--running"${meta}>⏳ AI jalan…</span>`;
+    return `<span class="ai-pill ai-pill--running"${meta}>⏳ AI running…</span>`;
   },
 
   /* swap every rendered pill for this run to its current state */
@@ -1411,7 +1449,7 @@ document.addEventListener('click', async e => {
       window.dispatchEvent(new CustomEvent('psb:waiting-added',
         { detail: { id: res && res.id, owner: payload.owner, what: payload.what } }));
     } catch (err) {
-      Comp.toast(`Chase gagal: ${err.message}`, false);
+      Comp.toast(`Chase failed: ${err.message}`, false);
       chase.disabled = false;
     }
     return;
@@ -1448,13 +1486,13 @@ document.addEventListener('click', async e => {
       window.dispatchEvent(new CustomEvent('psb:ticket-saved',
         { detail: { id, ticket: res && res.ticket, commitment_id: commitmentId } }));
     } catch (err) {
-      Comp.toast(`Gagal bikin ticket: ${err.message}`, false);
+      Comp.toast(`Could not create the ticket: ${err.message}`, false);
       mk.disabled = false;
     }
     return;
   }
 
-  /* 🤖 AI kerjain -> POST /api/ai-task, swap to status pill, track in AI */
+  /* 🤖 AI, work on it -> POST /api/ai-task, swap to status pill, track in AI */
   const aiBtn = e.target.closest('.ai-btn');
   if (aiBtn) {
     e.preventDefault();               /* may sit inside a <summary> */
@@ -1477,8 +1515,8 @@ document.addEventListener('click', async e => {
       AI.track(id, kind, ref);
       aiBtn.outerHTML = AI.pillHtml(AI.runs.get(String(id)));
     } catch (err) {
-      const msg = /^HTTP 409/.test(err.message || '') ? 'run untuk ini masih jalan' : err.message;
-      Comp.toast(`AI task gagal: ${msg}`, false);
+      const msg = /^HTTP 409/.test(err.message || '') ? 'a run for this is still going' : err.message;
+      Comp.toast(`AI task failed: ${msg}`, false);
       aiBtn.disabled = false;
       aiBtn.textContent = orig;
     }

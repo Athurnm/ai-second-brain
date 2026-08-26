@@ -18,7 +18,7 @@ During daily work, scripts and tools generate temp files (`.txt`, `.log`, `.json
 
 ### Step 1: Scan Root for Stray Files
 
-Scan `c:\Users\You\Product Repo\` (root only, not subdirectories) for files that **should not be there**. 
+Scan `c:\Users\the owner\Product Repo\` (root only, not subdirectories) for files that **should not be there**. 
 
 **Files that STAY at root** (whitelist):
 - `Dashboard.md`

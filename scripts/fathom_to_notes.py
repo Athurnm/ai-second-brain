@@ -11,6 +11,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 
+# The You (personal brand) repo is a SEPARATE checkout, per the hard data
+# separation rule in CLAUDE.md. You-classified meetings must land there, NOT
+# inside this Work repo. Writing to `REPO_ROOT / "You"` created a phantom
+# You/ directory inside PSB and committed personal-brand notes into the Work
+# repo (found 17 Jul 2026). Resolve the real sibling repo; if it is not present
+# on this machine, fall back to local triage rather than recreating the phantom.
+YOU_REPO = Path(
+    os.environ.get("YOU_REPO", "~/antigravity-projects/You"))
+TRIAGE_DIR = REPO_ROOT / "_temp" / "meeting_triage"
+
 # LLM transcript-scan pass (catches action items Fathom's auto-detect missed).
 # Set FATHOM_LLM_ACTION_ITEMS=0 to disable. Routes through agy-bridge (GLM 5.2).
 LLM_ACTION_ITEMS = os.environ.get("FATHOM_LLM_ACTION_ITEMS", "1") != "0"
@@ -26,12 +36,40 @@ except ImportError:
 
 # Mapping constants
 CLIENT_MAPPINGS = [
-    {"domain": "workincentives.com", "client": "Work"},
+    {"domain": "yourcompany.com", "client": "Work"},
     {"domain": "secondary.id", "client": "Secondary"},
 ]
 
 PERSONAL_EMAIL = "you@example.com"
 PROJECT_KEYWORDS = ["Taaruf Lalu Nikah", "You", "BWC"]
+
+# fathom_registry_sync already resolves client/project via calendar matching, which
+# is more reliable than the invitee/title heuristic below. In particular, meetings
+# the owner joins on his personal Google account (no yourcompany.com invitee captured)
+# would otherwise fall through to a You/General default. Trust the registry first.
+FATHOM_REGISTRY = REPO_ROOT / "journal" / "fathom_registry.json"
+_REGISTRY_CACHE = None
+
+def registry_lookup(m_id):
+    """Return (client, project) from fathom_registry for this recording_id, or (None, None).
+    Only returns a known enterprise client (Work/Secondary) so genuinely-personal meetings
+    still fall through to the heuristic classifier."""
+    global _REGISTRY_CACHE
+    if m_id is None:
+        return None, None
+    if _REGISTRY_CACHE is None:
+        try:
+            with open(FATHOM_REGISTRY) as f:
+                _REGISTRY_CACHE = json.load(f)
+        except Exception:
+            _REGISTRY_CACHE = {}
+    entry = _REGISTRY_CACHE.get(str(m_id))
+    if not entry:
+        return None, None
+    client = entry.get("client")
+    if client in ("Work", "Secondary"):
+        return client, entry.get("project") or "General"
+    return None, None
 
 # Calendar Helper (adapted from gcal_sweep_raw.py)
 DEFAULT_TOKEN = os.path.join(os.getcwd(), "token_calendar.json")
@@ -96,8 +134,44 @@ def match_meeting_to_event(meeting, events):
             return event
     return None
 
-def classify_by_emails_and_title(all_emails, title, desc=""):
-    """Core classification logic — shared by calendar and Fathom invitee paths."""
+# Content signals that a recording is Work work. the owner's Fathom account is his
+# PERSONAL one, so PERSONAL_EMAIL rides on nearly every recording and is NOT
+# evidence of a personal meeting. Combined with an "Impromptu Google Meet
+# Meeting" title (no keyword to match) and Fathom invitees that resolve to just
+# "owner arfi" (no yourcompany.com address), that sent the ExampleCo Ideation
+# Workshop and the Sprint End Demo into You on 17 Jul. Same class of failure
+# as the 4 Jul incident where 13 meetings were mis-filed. The 4 Jul rule is:
+# classify Impromptu recordings by CONTENT, never DEFAULT to You.
+WORK_SIGNALS = (
+    "work", "exampleprogram", "example program", "ExampleProgram", "exampleco", "examplevendor", "ExampleVendor",
+    "storefront", "seller portal", "marketplace", "ExamplePlatform", "super platform",
+    "Example Catalogue", "online catalog", "ExampleSupplier", "ExampleVendor", "Teammate", "ExampleVendor",
+    "ExampleFeature", "buy box", "oms", "pim", "b2c", "ExampleProgram", "Example Alliance",
+    "Teammate", "Teammate", "Teammate", "Teammate", "Teammate", "Teammate", "Teammate", "Teammate",
+    "Teammate", "Teammate", "Teammate", "YourManager Teammate", "Teammate", "Teammate",
+)
+
+def work_signal(*texts):
+    """True if any Work signal appears in the given text. Used only to RESCUE a
+    recording that would otherwise fall through to You."""
+    blob = " ".join(t for t in texts if t).lower()
+    return any(s in blob for s in WORK_SIGNALS)
+
+def work_project_from_text(*texts):
+    blob = " ".join(t for t in texts if t).lower()
+    if "ExampleProgram" in blob or "exampleco" in blob: return "Example Program"
+    if "marketplace" in blob: return "Marketplace"
+    if "seller portal" in blob: return "Seller Portal"
+    if "b2c" in blob or "super app" in blob or "pim" in blob: return "B2C SuperApp"
+    if "platform" in blob: return "Platform"
+    return "General"
+
+def classify_by_emails_and_title(all_emails, title, desc="", content=""):
+    """Core classification logic — shared by calendar and Fathom invitee paths.
+
+    `content` is the recording summary/transcript when available. It is consulted
+    ONLY as a last resort, to rescue a recording from the You default.
+    """
     title_l = title.lower()
     # TLN check
     if "tln" in title_l or "taaruf" in title_l or any("tln" in e for e in all_emails):
@@ -116,16 +190,51 @@ def classify_by_emails_and_title(all_emails, title, desc=""):
                 elif "pim" in title_l: project = "B2C SuperApp"
                 elif "standup" in title_l or "scrum" in title_l: project = "General"
             return client, project
-    # Personal projects
+    # Personal projects. An EXPLICIT You keyword is required - the personal
+    # email alone proves nothing, since the owner records everything on that account.
     if any(PERSONAL_EMAIL in email for email in all_emails):
         for kw in PROJECT_KEYWORDS:
             if kw.lower() in title_l or kw.lower() in (desc or "").lower():
                 return "You", kw
-        return "You", "General"
+        # No You keyword. Before giving up, look for Work signal in the
+        # content: this is the Impromptu case, where the title carries nothing.
+        if work_signal(title, desc, content):
+            return "Work", work_project_from_text(title, desc, content)
+        # Genuinely unclassifiable. Return None so it lands in triage rather than
+        # defaulting into You and crossing the data-separation boundary.
+        return None, None
+    # Not a personal-account meeting either, but still rescue an obvious Work one.
+    if work_signal(title, desc, content):
+        return "Work", work_project_from_text(title, desc, content)
     return None, None
+
+def recording_content(meeting):
+    """Summary + participant names as one blob, for content-based classification.
+
+    An 'Impromptu Google Meet Meeting' carries no signal in its title, so the
+    only thing that can tell Work from You is what was actually said and who
+    said it.
+    """
+    if not meeting:
+        return ""
+    parts = []
+    for key in ('default_summary', 'summary', 'ai_summary', 'meeting_title', 'title'):
+        v = meeting.get(key)
+        if isinstance(v, str):
+            parts.append(v)
+        elif isinstance(v, dict):
+            parts.append(json.dumps(v, ensure_ascii=False))
+    for p in (meeting.get('participants') or []):
+        parts.append(p if isinstance(p, str) else json.dumps(p, ensure_ascii=False))
+    for i in (meeting.get('calendar_invitees') or []):
+        if isinstance(i, dict):
+            parts.append(f"{i.get('name', '')} {i.get('email', '')}")
+    return " ".join(parts)[:20000]
 
 def identify_client_and_project(event, meeting=None):
     """Determines folder structure. Uses calendar event first, falls back to Fathom invitees."""
+    content = recording_content(meeting)
+
     # --- Path 1: Google Calendar event ---
     if event:
         organizer = event.get('organizer', {}).get('email', '').lower()
@@ -133,7 +242,7 @@ def identify_client_and_project(event, meeting=None):
         all_emails = [organizer] + attendees
         title = event.get('summary', '')
         desc = event.get('description', '')
-        client, project = classify_by_emails_and_title(all_emails, title, desc)
+        client, project = classify_by_emails_and_title(all_emails, title, desc, content)
         if client:
             return client, project
 
@@ -142,7 +251,7 @@ def identify_client_and_project(event, meeting=None):
         invitees = meeting.get('calendar_invitees') or []
         all_emails = [i.get('email', '').lower() for i in invitees]
         title = meeting.get('title') or meeting.get('meeting_title', '')
-        client, project = classify_by_emails_and_title(all_emails, title)
+        client, project = classify_by_emails_and_title(all_emails, title, "", content)
         if client:
             return client, project
 
@@ -152,9 +261,13 @@ def resolve_meetings_path(path_parts):
     """Maps [client, project] to filesystem path for meeting notes."""
     client, project = path_parts[0], path_parts[1] if len(path_parts) > 1 else "General"
     if client == "You":
+        # Write into the SEPARATE You repo, never into this Work repo. If the
+        # sibling repo is not checked out here, triage locally instead of
+        # recreating the phantom You/ directory inside PSB.
+        base = YOU_REPO if YOU_REPO.is_dir() else TRIAGE_DIR
         if project == "General":
-            return REPO_ROOT / "You" / "meetings"
-        return REPO_ROOT / "You" / project / "meetings"
+            return base / "meetings"
+        return base / project / "meetings"
     if client == "Work":
         if project == "General":
             return REPO_ROOT / "Clients" / "Work" / "meetings"
@@ -190,6 +303,17 @@ def format_transcript(transcript):
         lines.append(f"**{prev_speaker}**: {' '.join(buffer)}")
     return "\n\n".join(lines)
 
+def _owner_name(item, default=""):
+    """Fathom returns assignee as an object ({name, email, team}), not a string.
+    Stringifying it leaks the raw dict into the MOM table and from there into the
+    commitment ledger, so always reduce it to a display name."""
+    raw = item.get("assignee") or item.get("owner")
+    if isinstance(raw, dict):
+        raw = raw.get("name") or raw.get("email") or ""
+    if not isinstance(raw, str):
+        raw = "" if raw is None else str(raw)
+    return raw.strip() or default
+
 def format_action_items(action_items):
     """Formats Fathom action items into a markdown table."""
     if not action_items:
@@ -199,7 +323,7 @@ def format_action_items(action_items):
         for item in action_items:
             if isinstance(item, dict):
                 task = item.get("text") or item.get("description") or str(item)
-                owner = item.get("assignee") or item.get("owner") or "—"
+                owner = _owner_name(item, "—")
                 rows.append(f"| {task} | {owner} | Pending |")
             else:
                 rows.append(f"| {item} | — | Pending |")
@@ -216,7 +340,7 @@ def _fathom_items_as_text(action_items):
         for item in action_items:
             if isinstance(item, dict):
                 task = item.get("text") or item.get("description") or str(item)
-                owner = item.get("assignee") or item.get("owner") or ""
+                owner = _owner_name(item)
                 out.append(f"- {task}" + (f" (owner: {owner})" if owner else ""))
             else:
                 out.append(f"- {item}")
@@ -427,7 +551,9 @@ def generate_meeting_note(result):
         return False  # already exists, skip
 
     filepath.write_text(note, encoding="utf-8")
-    print(f"  [note] Written: {filepath.relative_to(REPO_ROOT)}")
+    # os.path.relpath, not Path.relative_to: You notes land in the sibling
+    # repo outside REPO_ROOT, where relative_to raises ValueError.
+    print(f"  [note] Written: {os.path.relpath(filepath, REPO_ROOT)}")
     return True
 
 def process_sync():
@@ -446,10 +572,17 @@ def process_sync():
     # fathom_client.list_meetings returns the 'items' list directly now
     for m in meetings:
         event = match_meeting_to_event(m, events)
-        client, project = identify_client_and_project(event, meeting=m)
-        
         m_id = m.get("recording_id") or m.get("id")
         m_title = m.get("title") or m.get("meeting_title", "Untitled")
+
+        # Registry (calendar-resolved) wins over the invitee/title heuristic for
+        # enterprise clients — prevents Work meetings joined on the owner's personal
+        # account from being misfiled into You/meetings.
+        reg_client, reg_project = registry_lookup(m_id)
+        if reg_client:
+            client, project = reg_client, reg_project
+        else:
+            client, project = identify_client_and_project(event, meeting=m)
         
         # Print for logs
         print(f"\n--- MATCH FOUND ---")
@@ -473,12 +606,19 @@ def process_sync():
     # Generate local meeting note .md files
     notes_written = 0
     notes_skipped = 0
+    notes_failed = 0
     for result in results:
-        if generate_meeting_note(result):
-            notes_written += 1
-        else:
-            notes_skipped += 1
-    print(f"Meeting notes: {notes_written} written, {notes_skipped} already existed.")
+        # One bad meeting must not kill the rest of the batch.
+        try:
+            if generate_meeting_note(result):
+                notes_written += 1
+            else:
+                notes_skipped += 1
+        except Exception as e:
+            notes_failed += 1
+            m_title = (result.get("meeting") or {}).get("title") or "Untitled"
+            print(f"  [note] FAILED ({m_title}): {e}")
+    print(f"Meeting notes: {notes_written} written, {notes_skipped} already existed, {notes_failed} failed.")
 
 if __name__ == "__main__":
     process_sync()

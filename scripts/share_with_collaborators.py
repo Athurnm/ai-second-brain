@@ -2,11 +2,11 @@
 """Grant the standing Work collaborators (Teammate + known ExampleVendor team) commenter
 access on a Drive file.
 
-Standing rule (You, 2026-06-24): always allow Teammate and all known ExampleVendor team
+Standing rule (the owner, 2026-06-24): always allow Teammate and all known ExampleVendor team
 to access the Master Product List and any document we create, with comment access.
 
 Run this AFTER the domain-restrict step on any Work GDoc we create/update, so the
-external ExampleVendor collaborators (who are not on the workincentives.com domain grant)
+external ExampleVendor collaborators (who are not on the yourcompany.com domain grant)
 can still open and comment.
 
 The collaborator list lives in scripts/work_collaborators.txt (one email per line).
@@ -23,7 +23,7 @@ from googleapiclient.errors import HttpError
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOKENS = {
     "work": os.path.join(REPO, ".agent/skills/work-drive-connector/token.json"),
-    "personal": os.path.join(REPO, ".agent/skills/google-drive-connector/token.json"),
+    "personal": os.path.join(REPO, ".agent/skills/personal-drive-connector/token.json"),
 }
 LIST_FILE = os.path.join(REPO, "scripts/work_collaborators.txt")
 

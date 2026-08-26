@@ -6,7 +6,7 @@ description: Convert markdown to real editable Google Docs, or upload any file t
 # Google Docs Creator Skill
 
 Creates **real editable Google Docs** from markdown, or uploads any file to Drive.
-Supports `work` (brian.faridhi@workincentives.com) and `personal` (you@example.com) accounts.
+Supports `work` (you@yourcompany.com) and `personal` (you@example.com) accounts.
 
 > **Update Protocol:** See `CLAUDE.md § Update Protocol`. Use `gdrive_manager.py update --convert` for revisions — not `create-doc`.
 
@@ -22,7 +22,7 @@ Supports `work` (brian.faridhi@workincentives.com) and `personal` (you@example.c
 # after create/update, before restricting + sharing:
 python3 .agent/skills/gdocs-create/format_pass.py <DOC_ID> [<DOC_ID> ...] --account work
 # exit 1 = literal --/-> still in the doc -> fix source markdown, re-run update --convert, re-run this
-python3 .agent/scripts/drive_permissions.py restrict <DOC_ID> --domain workincentives.com --apply
+python3 .agent/scripts/drive_permissions.py restrict <DOC_ID> --domain yourcompany.com --apply
 ```
 
 Full canonical flow for a new shared doc: `create-doc` → `format_pass.py` (widths + lint) → `drive_permissions.py restrict` → output ID + link + verify.
@@ -48,7 +48,7 @@ timeout 180s python3 ".agent/skills/gdocs-create/gdocs_create.py" create-doc \
 
 ### Update Existing Doc
 
-Use `work-drive-connector` or `google-drive-connector`:
+Use `work-drive-connector` or `personal-drive-connector`:
 
 ```bash
 timeout 180s python3 ".agent/skills/work-drive-connector/gdrive_manager.py" update \
@@ -82,5 +82,5 @@ timeout 180s python3 ".agent/skills/gdocs-create/gdocs_create.py" upload \
 | Account | Token File | Status |
 | :--- | :--- | :--- |
 | work | `work-drive-connector/token.json` | Auto-refreshed ✅ |
-| personal | `google-drive-connector/token.json` | Auto-refreshed ✅ |
+| personal | `personal-drive-connector/token.json` | Auto-refreshed ✅ |
 | secondary | `secondary-drive-connector/token.json` | Generic slot (ex-Secondary token, revoked) |

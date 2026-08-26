@@ -84,7 +84,7 @@ STATUS_MAP = {
     # ── E-commerce Core ─────────────────────────────────────────────────
     ('Ecom Solutions', 'Seller Offer Management'):          'To Do',
     ('Ecom Solutions', 'Inventory Management Service'):     'In Progress',
-    ('Ecom Solutions', 'MGC Legacy Sync'):                  'In Progress',
+    ('Ecom Solutions', 'ExampleProgram Legacy Sync'):                  'In Progress',
     ('Ecom Solutions', 'Sales Channel Management'):         'To Do',
     ('Ecom Solutions', 'Collection Management'):            'To Do',
     ('Ecom Solutions', 'Review Management'):                'To Do',

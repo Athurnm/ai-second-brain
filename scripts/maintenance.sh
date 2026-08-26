@@ -25,11 +25,20 @@ AUTH_RC=$?
 # Self-report to the Routines panel so harness-health sees this job directly.
 # Summary carries the healthy-service ratio (e.g. "3/6") so partial token
 # expiries are visible without flapping the job to fail for known-dead profiles.
+# Degraded (some services unhealthy but the sweep itself ran) reports ok+needs-reauth,
+# which the dashboard/harness-health already surface as a 'warn' state -- distinct
+# from a hard fail (auth_manager itself crashed/timed out).
 RATIO=$(grep -o 'Routine Finished: [0-9]*/[0-9]*' "$LOG_FILE" | tail -1 | grep -o '[0-9]*/[0-9]*')
-if [ "$AUTH_RC" -eq 0 ]; then
-  python3 "$REPO_DIR/.agent/scripts/heartbeat.py" --job maintenance --status ok --summary "token refresh sweep: ${RATIO:-?} services healthy" >> "$LOG_FILE" 2>&1
-else
+FAILED_NAMES=$(grep '] Failed services:' "$LOG_FILE" | tail -1 | sed -E 's/^.*\] Failed services: //')
+HEALTHY_COUNT="${RATIO%%/*}"
+TOTAL_COUNT="${RATIO##*/}"
+
+if [ "$AUTH_RC" -ne 0 ]; then
   python3 "$REPO_DIR/.agent/scripts/heartbeat.py" --job maintenance --status fail --summary "auth_manager exit $AUTH_RC (${RATIO:-?} healthy)" >> "$LOG_FILE" 2>&1
+elif [ -n "$HEALTHY_COUNT" ] && [ -n "$TOTAL_COUNT" ] && [ "$HEALTHY_COUNT" -lt "$TOTAL_COUNT" ]; then
+  python3 "$REPO_DIR/.agent/scripts/heartbeat.py" --job maintenance --status ok --needs-reauth --summary "token refresh degraded: ${RATIO} healthy, failed: ${FAILED_NAMES:-unknown}" >> "$LOG_FILE" 2>&1
+else
+  python3 "$REPO_DIR/.agent/scripts/heartbeat.py" --job maintenance --status ok --summary "token refresh sweep: ${RATIO:-?} services healthy" >> "$LOG_FILE" 2>&1
 fi
 
 echo "Daily Maintenance Finished: $(date)" >> "$LOG_FILE"

@@ -1,11 +1,11 @@
 ---
 name: Google Docs Writer (Legacy)
-description: Legacy skill — upload markdown as formatted Google Docs via MCP HTML conversion. Prefer gdocs-create for new docs and work/google-drive-connector for updates.
+description: Legacy skill — upload markdown as formatted Google Docs via MCP HTML conversion. Prefer gdocs-create for new docs and work/personal-drive-connector for updates.
 ---
 
 # Google Docs Writer Skill (Legacy)
 
-> **Prefer `gdocs-create` for new docs and `work-drive-connector`/`google-drive-connector` for updates.**
+> **Prefer `gdocs-create` for new docs and `work-drive-connector`/`personal-drive-connector` for updates.**
 > Use this only if those are unavailable or you need `.docx` output specifically.
 
 > **Update Protocol:** See `CLAUDE.md § Update Protocol`.

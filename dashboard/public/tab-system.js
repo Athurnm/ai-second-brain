@@ -30,15 +30,16 @@
      a muted "known jobs" hint on a 404, since U.fetchJSON discards the response body
      on a non-OK status (it throws a plain Error before parsing json). */
   const JOB_LOG_KNOWN = ['maintenance', 'dashboard-keepalive', 'vexa-auto', 'mention-ledger',
-    'commitment-ledger', 'waiting-watchdog', 'outcomes-loop', 'premeeting-cards', 'harness-health'];
+    'commitment-ledger', 'waiting-watchdog', 'outcomes-loop', 'premeeting-cards', 'harness-health',
+    'work-hours'];
 
   /* Mirrors server.py's JOB_RUN_MAP whitelist — only these jobs get a [▶ Run now]
      button on a failing routine row (everything else still gets [✓ Ack]). */
   const RUNNABLE_JOBS = new Set(['outcomes-loop', 'harness-health', 'commitment-ledger',
-    'waiting-watchdog', 'premeeting-cards', 'maintenance']);
+    'waiting-watchdog', 'premeeting-cards', 'maintenance', 'work-hours']);
 
   /* Job-specific "why + what to do" line for a failing routine — shown even before
-     the lazy job-log is expanded, so "ini fail bisa diapain?" has an answer inline. */
+     the lazy job-log is expanded, so "what can I do about this failure?" has an answer inline. */
   const FAIL_HINTS = {
     'outcomes-loop': 'Metabase session expired → refresh METABASE_SESSION_TOKEN di root .env',
     'harness-health': 'See the findings list in the Harness health card below for what tripped it',
@@ -52,8 +53,8 @@
   }
   function fmtUsd(n) { return n == null ? '—' : `$${Number(n).toFixed(2)}`; }
 
-  /* ── 1. Hero row: jobs failing / docs 7d / tickets done 7d / agy cost ── */
-  function heroSection(mR, cR) {
+  /* ── 1. Hero row: jobs failing / docs 7d / tickets done 7d / total AI cost ── */
+  function heroSection(mR, cR, tuR) {
     const tiles = [];
     const m = val(mR);
     if (m) {
@@ -83,15 +84,32 @@
     } else {
       tiles.push(`<div class="load-error">metrics unavailable: ${U.esc(errMsg(mR))}</div>`);
     }
+    /* Total AI cost = Claude per-token API-equivalent (token-tracker) + agy-bridge
+       actual spend. The old tile showed ONLY the agy half ($1.52), which read as
+       "this harness costs a dollar" when Claude inference is ~99.97% of the real
+       per-inference bill. Both halves are clamped to the SAME window (the
+       token-tracker range) so the sum is not a 30d + all-time mix. */
     const c = val(cR);
-    if (c) {
-      const t = c.totals || {};
+    const tu = val(tuR);
+    const claudeUsd = tu && tu.totals ? tu.totals.est_cost_usd : null;
+    let agyUsd = c && c.totals ? (c.totals.actual_usd ?? null) : null;
+    if (c && tu && tu.range_start && tu.range_end) {
+      agyUsd = Object.entries(c.by_day || {})
+        .filter(([d]) => d >= tu.range_start && d <= tu.range_end)
+        .reduce((a, [, s]) => a + (s.actual_usd ?? 0), 0);
+    }
+    if (claudeUsd != null || agyUsd != null) {
+      const win = tu && tu.range_start && tu.range_end
+        ? `${tu.range_start} → ${tu.range_end}` : `${(tu && tu.window_days) ?? 30}d`;
       tiles.push(Comp.statTile({
-        key: 'sys-agy-cost', icon: '💸', label: 'agy cost (total)', value: `$${(t.actual_usd ?? 0).toFixed(2)}`,
-        sub: t.calls != null ? `${t.saving_pct ?? 0}% saved · ${t.calls} calls` : (c.note || 'no usage yet'), tick: true,
+        key: 'sys-ai-cost', icon: '💸',
+        label: `AI cost ${(tu && tu.window_days) ?? 30}d (API-equiv)`,
+        value: fmtUsd((claudeUsd ?? 0) + (agyUsd ?? 0)),
+        sub: `Claude ${fmtUsd(claudeUsd)} · agy ${fmtUsd(agyUsd)} · ${win}`,
+        href: '#system', tick: true,
       }));
     } else {
-      tiles.push(`<div class="load-error">agy cost unavailable: ${U.esc(errMsg(cR))}</div>`);
+      tiles.push(`<div class="load-error">cost unavailable: ${U.esc(errMsg(cR))}</div>`);
     }
     return `<div class="hero-row">${tiles.join('')}</div>`;
   }
@@ -192,7 +210,7 @@
         const badge = isReauth ? Comp.badge('warn', 'reauth')
           : acked ? Comp.badge('muted', 'acked')
           : Comp.badge('serious', 'failing');
-        /* "job vexa failing, gw bisa ngapain?" — heartbeat-only rows get no
+        /* "job vexa is failing, what can I do?" — heartbeat-only rows get no
            [Run now] (no run-map entry exists for them) but DO get [Ack]
            (/api/ack-job takes any job name; the join above mutes the row) and
            the same AI-solve escape hatch as a failing/reauth routine row;
@@ -201,7 +219,7 @@
            confirmed read needs no re-ack and no AI offer.
            Rendered as an always-visible subtext (same placement routinesSection
            uses for its Run now/Ack/AI solve row) — NOT buried inside the
-           collapsed expandBody, so it answers "bisa ngapain" without a click. */
+           collapsed expandBody, so it answers "what can I do" without a click. */
         const actionBtns = acked ? '' : [
           `<button class="prep-link job-ack-btn" data-job="${U.esc(j.job)}">✓ Ack</button>`,
           Comp.aiButton({ kind: 'fix-job', ref: j.job, label: '🤖 AI solve' }),
@@ -243,7 +261,7 @@
         } else if (r.state === 'reauth') {
           /* NOT counted as failing — status=ok, just needs a human token refresh */
           rank = 1; badge = Comp.badge('warn', 'reauth');
-          /* "gw bisa ngapain?" applies to reauth too — AI can't refresh a token
+          /* "what can I do?" applies to reauth too — AI can't refresh a token
              itself but CAN diagnose/point at the fix, same fix-job kind as a
              failing job */
           subtext = `<div class="row-subtext">⚠ needs reauth` +
@@ -259,7 +277,7 @@
           if (lr.summary) bits.push(`<div class="row-subtext">${U.esc(lr.summary)}</div>`);
           const hint = FAIL_HINTS[r.job];
           if (hint) bits.push(`<div class="row-subtext">${hint}</div>`);
-          /* "ini fail bisa diapain?" — always give an action, never a dead end:
+          /* "what can I do about this failure?" — always give an action, never a dead end:
              [Run now] (only for jobs server.py's JOB_RUN_MAP whitelists) + [Ack]
              + AI solve (every unacked failing row — acked ones already have a
              human-confirmed read, no need to offer AI again).
@@ -298,7 +316,7 @@
     });
   }
 
-  /* ── Run now / Ack — the answer to "ini fail bisa diapain?" ── */
+  /* ── Run now / Ack — the answer to "what can I do about this failure?" ── */
   async function runJob(btn) {
     if (btn.disabled) return;
     const job = btn.dataset.job;
@@ -388,7 +406,7 @@
     const rows = [];
     if (Object.keys(bySev).length) {
       /* severity chips are now CLICKABLE — opens the full grouped findings
-         list in a wide drawer instead of leaving You stuck at a bare count */
+         list in a wide drawer instead of leaving the owner stuck at a bare count */
       const chips = Object.entries(bySev).map(([sev, n]) =>
         `<button class="sev-chip-btn" title="Open findings">${Comp.badge(SEV_KIND[sev] || 'muted', `${sev} ${n}`)}</button>`).join('');
       rows.push(Comp.listRow({ key: 'harness:findings', icon: '🔎', title: 'Findings by severity', right: chips }));
@@ -428,8 +446,8 @@
     groups.forEach(g => (g.nodes || []).forEach(n => { _harnessMapNodes[n.id] = n; }));
     const totalNodes = groups.reduce((a, g) => a + (g.nodes || []).length, 0);
     const body = Comp.harnessMap(hmR.value) +
-      `<div class="row-subtext">Indra ngumpulin sinyal → Refleks ngolah mekanis tiap beberapa menit → ` +
-      `Otak (Claude) synthesize dan decide → Memori nyimpen state → Tangan eksekusi (selalu approval-gated)</div>`;
+      `<div class="row-subtext">Senses collect signals → Reflexes handle the mechanical work every few minutes → ` +
+      `Brain (Claude) synthesizes and decides → Memory holds state → Hands execute (always approval-gated)</div>`;
     return Comp.card({
       key: 'harness-map', icon: '🗺', title: 'Harness map', count: `${totalNodes} nodes`, open: true, body,
     });
@@ -498,7 +516,7 @@
   const TASK_ICON = { harvest: '🌾', critic: '🔎', research: '🔬', draft: '✍️' };
 
   function costSection(cR) {
-    if (!cR || cR.status !== 'fulfilled') return errCard('cost', '💸', 'Cost & Savings', cR);
+    if (!cR || cR.status !== 'fulfilled') return errCard('cost', '💸', 'agy-bridge Cost & Savings', cR);
     const c = cR.value;
     const t = c.totals || {};
     const hasTotals = t.spent != null || t.saved != null;
@@ -538,7 +556,7 @@
       `<div class="section-label">By model (top 5)</div><div class="rows">${modelRows.join('') || Comp.emptyState({ icon: '💸', title: 'No model usage yet' })}</div>`;
 
     return Comp.card({
-      key: 'cost', icon: '💸', title: 'Cost & Savings',
+      key: 'cost', icon: '💸', title: 'agy-bridge Cost & Savings',
       count: hasTotals ? `${fmtUsd(t.spent)} spent · ${fmtUsd(t.saved)} saved` : (c.note || 'no usage yet'),
       body, open: true,
     });
@@ -551,7 +569,7 @@
      line). Endpoint is landing concurrently with this card — a missing
      route currently drops the TCP connection with no HTTP response at all
      (fetch rejects), so ANY rejected promise here (network refusal, 404,
-     future 5xx) renders the SAME graceful "belum ada data token" EmptyState
+     future 5xx) renders the SAME graceful "no token data yet" EmptyState
      rather than the alarm-red .load-error the other System cards use. */
   const TU_TASK_ICON = { harvest: '🌾', critic: '🔎', research: '🔬', draft: '✍️',
     review: '🔍', synthesize: '🧵', strategize: '♟', lookup: '📌' };
@@ -572,17 +590,58 @@
     return String(Math.round(v));
   }
 
+  /* current period/date filter for the Token Usage card. days=null + no
+     start/end == the cached default 30d view; days=N == trailing N days;
+     start&end == an explicit inclusive WIB-date range. */
+  let tuRange = { days: null, start: null, end: null };
+
+  function tuRangeQS() {
+    if (tuRange.start && tuRange.end) return `?start=${tuRange.start}&end=${tuRange.end}`;
+    if (tuRange.days && tuRange.days !== 30) return `?days=${tuRange.days}`;
+    return '';
+  }
+
+  /* the period segmented control + custom date range, reflecting tuRange so
+     the active button/inputs survive a re-render */
+  function tuControls() {
+    const isDefault = !tuRange.start && (tuRange.days == null || tuRange.days === 30);
+    const active = d => (!tuRange.start && String(tuRange.days ?? 30) === String(d)) ||
+      (d === 30 && isDefault) ? ' active' : '';
+    const seg = [7, 14, 30, 90]
+      .map(d => `<button class="tu-range-btn${active(d)}" data-tu-days="${d}">${d}d</button>`).join('');
+    return `<div class="tu-controls">` +
+      `<div class="tu-seg">${seg}</div>` +
+      `<div class="tu-daterange">` +
+      `<input type="date" class="tu-start" value="${tuRange.start || ''}" aria-label="start date">` +
+      `<span class="tu-sep">→</span>` +
+      `<input type="date" class="tu-end" value="${tuRange.end || ''}" aria-label="end date">` +
+      `<button class="tu-apply" data-tu-apply>Apply</button>` +
+      `</div></div>`;
+  }
+
+  /* re-fetch the token-usage endpoint with the current filter and swap just the
+     Token Usage card in place (the delegated listeners live on #tab-system so
+     they survive the outerHTML replacement) */
+  async function refreshTokenCard() {
+    const card = document.querySelector('#tab-system details.card[data-key="token-usage"]');
+    let tuR;
+    try { tuR = { status: 'fulfilled', value: await U.fetchJSON('/api/token-usage' + tuRangeQS()) }; }
+    catch (reason) { tuR = { status: 'rejected', reason }; }
+    const html = tokenUsageSection(tuR);
+    if (card) { const tmp = document.createElement('div'); tmp.innerHTML = html; card.replaceWith(tmp.firstElementChild); }
+  }
+
   function tokenUsageEmpty(hint) {
     return Comp.card({
       key: 'token-usage', icon: '🧮', title: 'Token Usage (Claude)',
-      body: Comp.emptyState({ icon: '🧮', title: 'Belum ada data token', hint }),
-      open: false,
+      body: tuControls() + Comp.emptyState({ icon: '🧮', title: 'No token data yet', hint }),
+      open: true,
     });
   }
 
   function tokenUsageSection(tuR) {
     if (!tuR || tuR.status !== 'fulfilled') {
-      return tokenUsageEmpty('/api/token-usage belum live — coba lagi setelah endpoint kelar dideploy');
+      return tokenUsageEmpty('/api/token-usage is not live yet — try again once the endpoint is deployed');
     }
     const d = tuR.value || {};
     const totals = d.totals || {};
@@ -598,7 +657,9 @@
     const refreshingSuffix = d.refreshing ? ' · ⏳ refreshing' : '';
     const totalTok = (totals.input_tokens ?? 0) + (totals.output_tokens ?? 0) +
       (totals.cache_read_tokens ?? 0) + (totals.cache_write_tokens ?? 0);
-    const count = `${fmtCompact(totalTok)} tokens · ${fmtUsd(totals.est_cost_usd)} est · ${windowDays}d${refreshingSuffix}`;
+    const rangeLabel = d.range_start && d.range_end
+      ? `${d.range_start} → ${d.range_end}` : `${windowDays}d`;
+    const count = `${fmtCompact(totalTok)} tokens · ${fmtUsd(totals.est_cost_usd)} est · ${rangeLabel}${refreshingSuffix}`;
 
     /* top strip: cost-share distBar (top 6 + Other) + a 14-of-30-day cost miniBars */
     const sortedByCost = byType.slice().sort((a, b) => (b.total_cost_usd ?? 0) - (a.total_cost_usd ?? 0));
@@ -611,10 +672,11 @@
     const distHtml = Comp.distBar(distItems, { label: 'Cost share by task type' });
 
     const dayPoints = byDay.slice(-14).map(p => ({ label: p.date, value: p.est_cost_usd ?? 0 }));
-    const barsHtml = Comp.miniBars(dayPoints, { w: 200, h: 36, kind: 'cat-1', label: 'Est cost — last 14d' });
+    const dayLabel = `Est cost — last ${dayPoints.length}d`;
+    const barsHtml = Comp.miniBars(dayPoints, { w: 200, h: 36, kind: 'cat-1', label: dayLabel });
     const topStrip = `<div class="two-col">` +
       `${distHtml || Comp.emptyState({ icon: '📊', title: 'No cost-share data yet' })}` +
-      `<div class="stack"><div class="section-label">Est cost · last 14d</div>` +
+      `<div class="stack"><div class="section-label">${dayLabel}</div>` +
       `${barsHtml || Comp.emptyState({ icon: '📉', title: 'No daily data yet' })}</div></div>`;
 
     /* the main table: per task type, sorted by total cost desc — type badge
@@ -652,7 +714,7 @@
       ? `<div class="row-subtext">${U.esc(d.note)} — <a class="prep-link" href="#system">offload cost riil → Cost & Savings di atas</a></div>`
       : '';
 
-    const body = topStrip +
+    const body = tuControls() + topStrip +
       `<div class="section-label">By task type</div>` +
       `<div class="rows">${typeRows.join('') || Comp.emptyState({ icon: '🧮', title: 'No task-type data yet' })}</div>` +
       perModelCard + footer;
@@ -660,11 +722,109 @@
     return Comp.card({ key: 'token-usage', icon: '🧮', title: 'Token Usage (Claude)', count, body, open: true });
   }
 
+  /* ── 8. 📈 Token Efficiency: /api/token-efficiency — weekly totals +
+     offload share (built by .agent/scripts/token_efficiency.py), distinct
+     from the 30d Token Usage card above (that one is a rolling window; this
+     one is week-over-week trend + hotspots + a changelog of optimizations
+     tried, so "did the last change actually help" has an answer). Same
+     graceful-empty contract as tokenUsageEmpty above — a missing/empty
+     payload never renders as a .load-error. */
+  function tokenEfficiencyEmpty(hint) {
+    return Comp.card({
+      key: 'token-efficiency', icon: '📈', title: 'Token Efficiency',
+      body: Comp.emptyState({ icon: '📈', title: 'No efficiency data yet', hint }),
+      open: false,
+    });
+  }
+
+  function pctDelta(curr, prev) {
+    if (!Number.isFinite(curr) || !Number.isFinite(prev) || prev === 0) return null;
+    return ((curr - prev) / prev) * 100;
+  }
+
+  function deltaChip(curr, prev, { lowerIsBetter = true } = {}) {
+    const d = pctDelta(curr, prev);
+    if (d == null) return '';
+    const rounded = Math.round(d);
+    const improved = lowerIsBetter ? rounded < 0 : rounded > 0;
+    const kind = rounded === 0 ? 'muted' : improved ? 'good' : 'warn';
+    const arrow = rounded === 0 ? '→' : rounded > 0 ? '↑' : '↓';
+    return Comp.badge(kind, `${arrow} ${Math.abs(rounded)}% vs last wk`);
+  }
+
+  function tokenEfficiencySection(teR) {
+    if (!teR || teR.status !== 'fulfilled') {
+      return tokenEfficiencyEmpty('/api/token-efficiency is not live yet — try again once the endpoint is deployed');
+    }
+    const d = teR.value || {};
+    const eff = d.efficiency;
+    const weeks = Array.isArray(eff && eff.weeks) ? eff.weeks.slice() : [];
+    const changelog = Array.isArray(d.changelog) ? d.changelog.slice() : [];
+    if (!eff || !weeks.length) {
+      return tokenEfficiencyEmpty('no weeks in journal/state/token_efficiency.json yet — run token_efficiency.py report');
+    }
+
+    const last = weeks[weeks.length - 1];
+    const prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+    const lastTotals = last.totals || {};
+    const prevTotals = (prev && prev.totals) || {};
+
+    const count = `${fmtCompact(lastTotals.tokens)} tok · ${fmtUsd(lastTotals.cost_usd)} · ${last.week || 'this wk'}`;
+
+    /* hero chips: this week's totals + week-over-week delta (tokens lower is
+       better, offload share higher is better) */
+    const chips = [
+      `<div class="stat-sub">${fmtCompact(lastTotals.tokens)} tokens · ${lastTotals.runs ?? 0} runs · ${fmtUsd(lastTotals.cost_usd)}</div>`,
+      `<div class="stat-sub">${deltaChip(lastTotals.tokens, prevTotals.tokens, { lowerIsBetter: true })}` +
+      ` ${deltaChip(lastTotals.offloaded_share_pct, prevTotals.offloaded_share_pct, { lowerIsBetter: false })}</div>`,
+    ].join('');
+
+    /* per-week trend: total tokens (a) vs offloaded tokens (b) — same
+       duoBars widget Cost & Savings uses for spent/saved, so the offload
+       share reads as the visual "b slice" of each week's bar */
+    const weekBars = weeks.slice(-10).map(w => ({
+      date: w.week,
+      a: (w.totals || {}).tokens || 0,
+      b: Object.values(w.by_task_type || {}).reduce((a, t) => a + (t.offloaded_tokens || 0), 0),
+    }));
+    const trendLegend = `<div class="stat-sub">${Comp.badge('cat-1', 'total tokens')}${Comp.badge('cat-2', 'offloaded')}</div>`;
+    const trendHtml = `<div class="stack">${trendLegend}${Comp.duoBars(weekBars) || Comp.emptyState({ icon: '📉', title: 'No weekly data yet' })}</div>`;
+
+    /* top-3 hotspots (server pre-ranks; render verbatim, capped at 3 as a
+       belt-and-braces in case the payload ever grows) */
+    const hotspots = (eff.hotspots || []).slice(0, 3);
+    const hotspotRows = hotspots.map((h, i) => Comp.listRow({
+      key: `te:hotspot:${h.task_type}`, icon: '🔥', title: h.task_type || '(unknown)',
+      badges: [Comp.badge(tuKind(i), fmtCompact(h.tokens))],
+      expandBody: h.why ? `<p>${U.esc(h.why)}</p>` : '',
+    }));
+
+    /* what-changed: changelog rows newest-first, expand shows the expected
+       effect + touched files (mirrors harnessFindingRow's linkChips use) */
+    const changeRows = changelog.slice().reverse().slice(0, 20).map(c => {
+      const ts = c.ts_wib ? U.esc(c.ts_wib.slice(0, 16).replace('T', ' ')) : '—';
+      const files = Comp.linkChips(c.files || []);
+      return Comp.listRow({
+        key: `te:change:${c.ts_wib || Math.random()}`, icon: '🛠', title: c.what || '(no description)',
+        meta: ts,
+        expandBody: `${c.expected_effect ? `<p>${U.esc(c.expected_effect)}</p>` : ''}${files}`,
+      });
+    });
+
+    const body = `<div class="two-col">${chips}${trendHtml}</div>` +
+      `<div class="section-label">Top hotspots</div>` +
+      `<div class="rows">${hotspotRows.join('') || Comp.emptyState({ icon: '🔥', title: 'No hotspots flagged' })}</div>` +
+      `<div class="section-label">What changed</div>` +
+      `<div class="rows">${changeRows.join('') || Comp.emptyState({ icon: '🛠', title: 'No optimizations logged yet' })}</div>`;
+
+    return Comp.card({ key: 'token-efficiency', icon: '📈', title: 'Token Efficiency', count, body, open: false });
+  }
+
   /* ── render + registration ── */
   async function render() {
     const panel = document.getElementById('tab-system');
     if (!panel) return;
-    const [mR, rR, hR, cR, spR, hbR, hmR, tuR] = await Promise.allSettled([
+    const [mR, rR, hR, cR, spR, hbR, hmR, tuR, teR] = await Promise.allSettled([
       U.fetchJSON('/api/metrics'),
       U.fetchJSON('/api/routines'),
       U.fetchJSON('/api/harness'),
@@ -673,9 +833,10 @@
       U.fetchJSON('/api/heartbeat'),
       U.fetchJSON('/api/harness-map'),
       U.fetchJSON('/api/token-usage'),
+      U.fetchJSON('/api/token-efficiency'),
     ]);
     panel.innerHTML = [
-      heroSection(mR, cR),
+      heroSection(mR, cR, tuR),
       freshnessSection(mR),
       routinesSection(rR, hbR),
       harnessSection(hR),
@@ -683,6 +844,7 @@
       activitySection(spR, mR),
       costSection(cR),
       tokenUsageSection(tuR),
+      tokenEfficiencySection(teR),
     ].join('\n');
     wireRoutineLogs(panel);
   }
@@ -712,7 +874,23 @@
     const sevBtn = e.target.closest('#tab-system .sev-chip-btn');
     if (sevBtn) { e.preventDefault(); openHarnessFindings(); return; }
     const mapNode = e.target.closest('#tab-system .map-node');
-    if (mapNode) { e.preventDefault(); onMapNodeClick(mapNode); }
+    if (mapNode) { e.preventDefault(); onMapNodeClick(mapNode); return; }
+    const tuBtn = e.target.closest('#tab-system .tu-range-btn');
+    if (tuBtn) {
+      e.preventDefault();
+      tuRange = { days: Number(tuBtn.dataset.tuDays), start: null, end: null };
+      refreshTokenCard();
+      return;
+    }
+    const tuApply = e.target.closest('#tab-system .tu-apply');
+    if (tuApply) {
+      e.preventDefault();
+      const box = tuApply.closest('.tu-controls');
+      const s = box?.querySelector('.tu-start')?.value;
+      const en = box?.querySelector('.tu-end')?.value;
+      if (s && en) { tuRange = { days: null, start: s, end: en }; refreshTokenCard(); }
+      else Comp.toast('Pick both start and end dates', false);
+    }
   });
 
   /* An AI-solve run (kind:'fix-job') finished — re-render so its row picks up
